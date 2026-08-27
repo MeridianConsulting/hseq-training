@@ -306,7 +306,6 @@ CREATE TABLE sesion_participantes (
   sesion_id INT UNSIGNED NOT NULL,
   asignacion_id BIGINT UNSIGNED NOT NULL,
   estado_asistencia ENUM('PROGRAMADO','EVALUADO') NOT NULL DEFAULT 'PROGRAMADO',
-  motivo_ausencia VARCHAR(255) NULL COMMENT 'Usar cuando estado_asistencia = AUSENTE',
   registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

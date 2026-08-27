@@ -11,6 +11,35 @@ if (!function_exists('env')) {
     }
 }
 
+if (!function_exists('config')) {
+    /**
+     * Lee valores de los archivos en /config usando notacion de punto: config('catalogs.areas.tabla').
+     */
+    function config(string $key, mixed $default = null): mixed
+    {
+        static $cargados = [];
+
+        $segmentos = explode('.', $key);
+        $archivo = array_shift($segmentos);
+
+        if (!array_key_exists($archivo, $cargados)) {
+            $ruta = BASE_PATH . '/config/' . $archivo . '.php';
+            $cargados[$archivo] = file_exists($ruta) ? require $ruta : [];
+        }
+
+        $valor = $cargados[$archivo];
+
+        foreach ($segmentos as $segmento) {
+            if (!is_array($valor) || !array_key_exists($segmento, $valor)) {
+                return $default;
+            }
+            $valor = $valor[$segmento];
+        }
+
+        return $valor;
+    }
+}
+
 if (!function_exists('generateUuid')) {
     function generateUuid(): string
     {
