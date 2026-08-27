@@ -5,10 +5,11 @@
 -- 3) meridian_personal (24_08_2026_meridian_personal.sql)
 --
 -- Criterio de integracion:
--- - NO se crean tablas locales de trabajadores, usuarios, cargos ni proyectos.
--- - persona_id_ext, contrato_id_ext, cargo_id_ext y usuario_id_ext son referencias LOGICAS
---   a meridian_personal. No se declaran FOREIGN KEY entre bases (incluye user_roles y auditoria).
---   La integridad se valida en aplicacion consultando meridian_personal.
+-- - Los usuarios de acceso al modulo HSEQ viven en meridian_capacitaciones.usuarios.
+-- - NO se crean tablas locales de trabajadores, cargos ni proyectos.
+-- - persona_id_ext, contrato_id_ext y cargo_id_ext son referencias LOGICAS a meridian_personal.
+--   No se declaran FOREIGN KEY entre bases. La integridad se valida en aplicacion.
+-- - Las columnas *_usuario_id_ext referencian meridian_capacitaciones.usuarios.usuario_id.
 -- - El proyecto se conserva como VARCHAR porque meridian_personal.contratos.proyecto no tiene un proyecto_id normalizado.
 -- - La auditoria de este modulo vive en meridian_capacitaciones.auditoria. No se reutiliza meridian_personal.auditoria.
 -- - Alertas, indicadores, resumenes y reportes deben calcularse desde los datos operativos; no requieren tablas propias.
@@ -138,14 +139,33 @@ CREATE TABLE fuentes_normativas (
   UNIQUE KEY uq_fuentes_normativas_nombre (nombre)
 ) ENGINE=InnoDB;
 
+-- Acceso al modulo HSEQ (independiente de meridian_personal.usuarios_sistema).
+CREATE TABLE usuarios (
+  usuario_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre_usuario VARCHAR(50) NOT NULL,
+  correo VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  rol VARCHAR(50) NOT NULL DEFAULT 'usuario',
+  estado ENUM('Activo','Inactivo') NOT NULL DEFAULT 'Activo',
+  intentos_fallidos SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  bloqueado_hasta TIMESTAMP NULL DEFAULT NULL,
+  ultimo_acceso TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_usuarios_nombre_usuario (nombre_usuario),
+  UNIQUE KEY uq_usuarios_correo (correo),
+  KEY ix_usuarios_estado (estado)
+) ENGINE=InnoDB;
+
 CREATE TABLE user_roles (
   user_role_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  usuario_id_ext INT UNSIGNED NOT NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id (referencia logica, sin FK entre bases)',
+  usuario_id INT UNSIGNED NOT NULL,
   role_id INT UNSIGNED NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_user_roles_user_role (usuario_id_ext, role_id),
-  KEY ix_user_roles_usuario (usuario_id_ext),
+  UNIQUE KEY uq_user_roles_user_role (usuario_id, role_id),
+  KEY ix_user_roles_usuario (usuario_id),
+  CONSTRAINT fk_user_roles_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(usuario_id),
   CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
 ) ENGINE=InnoDB;
 
@@ -175,7 +195,7 @@ CREATE TABLE capacitaciones (
   requiere_listado_asistencia TINYINT(1) NOT NULL DEFAULT 0,
   fuente_normativa_id INT UNSIGNED NULL,
   estado ENUM('ACTIVA','INACTIVA') NOT NULL DEFAULT 'ACTIVA',
-  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_capacitaciones_codigo (codigo),
@@ -202,7 +222,7 @@ CREATE TABLE matriz_aplicabilidad (
   periodicidad_id INT UNSIGNED NULL COMMENT 'Puede sobreescribir capacitaciones.periodicidad_default_id para este cargo/ambito',
   obligatoria TINYINT(1) NOT NULL DEFAULT 1,
   activa TINYINT(1) NOT NULL DEFAULT 1,
-  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY ix_matriz_cargo (cargo_id_ext),
@@ -221,9 +241,9 @@ CREATE TABLE planes_anuales (
   plan_anual_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   anio SMALLINT UNSIGNED NOT NULL,
   estado ENUM('BORRADOR','EN_REVISION','APROBADO') NOT NULL DEFAULT 'BORRADOR',
-  aprobado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  aprobado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   fecha_aprobacion DATETIME NULL,
-  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_plan_anio (anio)
@@ -260,7 +280,7 @@ CREATE TABLE sesiones_capacitacion (
   enlace_virtual VARCHAR(500) NULL,
   proveedor_id INT UNSIGNED NULL,
   cupo_maximo INT UNSIGNED NULL,
-  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_sesion_plan_det FOREIGN KEY (plan_detalle_id) REFERENCES plan_anual_detalle(plan_detalle_id),
@@ -288,7 +308,7 @@ CREATE TABLE asignaciones_capacitacion (
   proceso_id INT UNSIGNED NULL,
   ambito ENUM('ADMINISTRACION','PROYECTO') NULL,
   proyecto VARCHAR(120) NULL COMMENT 'Snapshot del proyecto al momento de asignar',
-  creada_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  creada_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY ix_asig_persona (persona_id_ext),
@@ -306,7 +326,7 @@ CREATE TABLE sesion_participantes (
   sesion_id INT UNSIGNED NOT NULL,
   asignacion_id BIGINT UNSIGNED NOT NULL,
   estado_asistencia ENUM('PROGRAMADO','EVALUADO') NOT NULL DEFAULT 'PROGRAMADO',
-  registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_sesion_asignacion (sesion_id, asignacion_id),
@@ -323,7 +343,7 @@ CREATE TABLE cumplimientos_capacitacion (
   horas_efectivas DECIMAL(6,2) NOT NULL,
   nota_evaluacion DECIMAL(5,2) NULL COMMENT 'La matriz Excel actual usa escala 0 a 5',
   fecha_vencimiento DATE NULL COMMENT 'Vigencia materializada: fecha_realizacion + capacitaciones.vigencia_id. NULL = no vence',
-  registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_cumplimiento_asignacion (asignacion_id),
@@ -339,7 +359,7 @@ CREATE TABLE soportes_cumplimiento (
   nombre_archivo VARCHAR(255) NOT NULL,
   ruta_archivo VARCHAR(500) NOT NULL,
   mime_type VARCHAR(100) NULL,
-  cargado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
+  cargado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY ix_soporte_cumplimiento (cumplimiento_id),
   CONSTRAINT fk_soporte_cumplimiento FOREIGN KEY (cumplimiento_id) REFERENCES cumplimientos_capacitacion(cumplimiento_id)
@@ -353,7 +373,7 @@ CREATE TABLE soportes_cumplimiento (
 
 CREATE TABLE auditoria (
   auditoria_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id (referencia logica, sin FK entre bases)',
+  usuario_id_ext INT UNSIGNED NULL COMMENT 'usuarios.usuario_id',
   accion VARCHAR(60) NOT NULL,
   entidad VARCHAR(60) NULL,
   entidad_id INT UNSIGNED NULL,
@@ -432,9 +452,9 @@ WHERE v.estado_calculado IN (
 -- asignaciones_capacitacion.contrato_id_ext  -> meridian_personal.contratos.contrato_id
 -- asignaciones_capacitacion.cargo_id_ext     -> meridian_personal.cargos.cargo_id
 -- matriz_aplicabilidad.cargo_id_ext           -> meridian_personal.cargos.cargo_id
--- user_roles.usuario_id_ext                   -> meridian_personal.usuarios_sistema.usuario_id
--- auditoria.usuario_id_ext                    -> meridian_personal.usuarios_sistema.usuario_id
--- *_usuario_id_ext                            -> meridian_personal.usuarios_sistema.usuario_id
+-- user_roles.usuario_id                       -> usuarios.usuario_id
+-- auditoria.usuario_id_ext                    -> usuarios.usuario_id
+-- *_usuario_id_ext                            -> usuarios.usuario_id
 -- proyecto                                    -> meridian_personal.contratos.proyecto (texto; pendiente normalizar)
 --
 -- Para RF-005/RF-022, el sistema HSEQ debe consultar el estado del trabajador en meridian_personal,

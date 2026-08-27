@@ -53,12 +53,6 @@ class Application
         });
 
         set_exception_handler(function (\Throwable $e): void {
-            Logger::error($e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
             if ($e instanceof ValidationException) {
                 Response::validationError($e->getErrors(), $e->getMessage());
                 return;
@@ -68,6 +62,12 @@ class Application
                 Response::unauthorized($e->getMessage());
                 return;
             }
+
+            Logger::error($e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
             if ($e instanceof HttpException) {
                 Response::error($e->getMessage(), $e->getStatusCode());
