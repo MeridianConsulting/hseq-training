@@ -6,10 +6,21 @@
 --
 -- Criterio de integracion:
 -- - NO se crean tablas locales de trabajadores, usuarios, cargos ni proyectos.
--- - persona_id_ext, contrato_id_ext, cargo_id_ext y usuario_id_ext son referencias logicas a meridian_personal.
+-- - persona_id_ext, contrato_id_ext, cargo_id_ext y usuario_id_ext son referencias LOGICAS
+--   a meridian_personal. No se declaran FOREIGN KEY entre bases (incluye user_roles y auditoria).
+--   La integridad se valida en aplicacion consultando meridian_personal.
 -- - El proyecto se conserva como VARCHAR porque meridian_personal.contratos.proyecto no tiene un proyecto_id normalizado.
--- - La auditoria puede reutilizar meridian_personal.auditoria.
+-- - La auditoria de este modulo vive en meridian_capacitaciones.auditoria. No se reutiliza meridian_personal.auditoria.
 -- - Alertas, indicadores, resumenes y reportes deben calcularse desde los datos operativos; no requieren tablas propias.
+--
+-- Periodicidad vs vigencia:
+-- - PERIODICIDAD: frecuencia con la que se debe volver a asignar/programar la capacitacion
+--   (ciclo de repeticion). Catalogo `periodicidades`; se usa en capacitaciones y matriz_aplicabilidad.
+-- - VIGENCIA: tiempo que permanece valida una capacitacion YA REALIZADA. Catalogo `vigencias`;
+--   se copia a cumplimientos_capacitacion.fecha_vencimiento al registrar el cumplimiento
+--   (fecha_realizacion + vigencia). NULL = no vence.
+-- - fecha_limite_cumplimiento (asignaciones) es el plazo para completar una asignacion PENDIENTE;
+--   no es la vigencia del curso ya tomado.
 
 CREATE DATABASE IF NOT EXISTS meridian_capacitaciones
   CHARACTER SET utf8mb4
@@ -29,6 +40,30 @@ CREATE TABLE areas (
   UNIQUE KEY uq_areas_nombre (nombre)
 ) ENGINE=InnoDB;
 
+-- Cada cuanto se debe repetir/reasignar la capacitacion (ciclo de programacion).
+CREATE TABLE periodicidades (
+  periodicidad_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  cantidad SMALLINT UNSIGNED NOT NULL,
+  unidad ENUM('DIAS','MESES','ANIOS') NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_periodicidades_nombre (nombre)
+) ENGINE=InnoDB;
+
+-- Cuanto tiempo es valida una capacitacion una vez realizada.
+CREATE TABLE vigencias (
+  vigencia_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(80) NOT NULL,
+  cantidad SMALLINT UNSIGNED NOT NULL,
+  unidad ENUM('DIAS','MESES','ANIOS') NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_vigencias_nombre (nombre)
+) ENGINE=InnoDB;
+
 CREATE TABLE procesos (
   proceso_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
@@ -46,21 +81,94 @@ CREATE TABLE proveedores_capacitadores (
   UNIQUE KEY uq_proveedores_nombre (nombre)
 ) ENGINE=InnoDB;
 
+CREATE TABLE roles (
+  role_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_roles_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE tipos_capacitacion (
+  tipo_capacitacion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_tipos_cap_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE categorias_capacitacion (
+  categoria_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_categorias_cap_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE modalidades (
+  modalidad_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(60) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_modalidades_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE ubicaciones (
+  ubicacion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_ubicaciones_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE fuentes_normativas (
+  fuente_normativa_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(180) NOT NULL,
+  descripcion TEXT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fuentes_normativas_nombre (nombre)
+) ENGINE=InnoDB;
+
+CREATE TABLE user_roles (
+  user_role_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  usuario_id_ext INT UNSIGNED NOT NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id (referencia logica, sin FK entre bases)',
+  role_id INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_roles_user_role (usuario_id_ext, role_id),
+  KEY ix_user_roles_usuario (usuario_id_ext),
+  CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
+) ENGINE=InnoDB;
+
 -- =========================================================
 -- CATALOGO PRINCIPAL DE CAPACITACIONES
 -- =========================================================
 
 CREATE TABLE capacitaciones (
   capacitacion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  codigo VARCHAR(30) NOT NULL,
   nombre VARCHAR(180) NOT NULL,
   objetivo TEXT NOT NULL,
   descripcion_temario TEXT NULL,
+  categoria_id INT UNSIGNED NULL,
   tipo_capacitacion_id INT UNSIGNED NULL,
   duracion_estimada_horas DECIMAL(6,2) NOT NULL,
-  criticidad VARCHAR(30) NOT NULL,
+  criticidad ENUM('BAJA','MEDIA','ALTA') NOT NULL DEFAULT 'MEDIA',
+  es_tarea_critica TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Independiente de criticidad: identifica tareas criticas vs cursos de criticidad alta',
   responsable VARCHAR(120) NULL,
   proveedor_default_id INT UNSIGNED NULL,
-  periodicidad ENUM('MENSUAL','ANUAL','TRIMESTRAL','SEMESTRAL', 'BIMESTRAL', 'OTRO'),
+  periodicidad_default_id INT UNSIGNED NULL COMMENT 'Ciclo de repeticion/reasignacion. NULL = no periodica',
+  vigencia_id INT UNSIGNED NULL COMMENT 'Validez del cumplimiento una vez realizado. NULL = no vence',
+  modalidad_default_id INT UNSIGNED NULL,
   evaluacion TINYINT(1) NOT NULL DEFAULT 0,
   nota_minima DECIMAL(5,2) NOT NULL DEFAULT 0,
   certificado TINYINT(1) NOT NULL DEFAULT 0,
@@ -71,7 +179,13 @@ CREATE TABLE capacitaciones (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_capacitaciones_codigo (codigo),
+  CONSTRAINT fk_cap_categoria FOREIGN KEY (categoria_id) REFERENCES categorias_capacitacion(categoria_id),
+  CONSTRAINT fk_cap_tipo FOREIGN KEY (tipo_capacitacion_id) REFERENCES tipos_capacitacion(tipo_capacitacion_id),
   CONSTRAINT fk_cap_proveedor FOREIGN KEY (proveedor_default_id) REFERENCES proveedores_capacitadores(proveedor_id),
+  CONSTRAINT fk_cap_periodicidad FOREIGN KEY (periodicidad_default_id) REFERENCES periodicidades(periodicidad_id),
+  CONSTRAINT fk_cap_vigencia FOREIGN KEY (vigencia_id) REFERENCES vigencias(vigencia_id),
+  CONSTRAINT fk_cap_modalidad FOREIGN KEY (modalidad_default_id) REFERENCES modalidades(modalidad_id),
+  CONSTRAINT fk_cap_fuente FOREIGN KEY (fuente_normativa_id) REFERENCES fuentes_normativas(fuente_normativa_id)
 ) ENGINE=InnoDB;
 
 -- Equivale a la hoja "MATRIZ POR CARGO" y a RF-007.
@@ -85,7 +199,7 @@ CREATE TABLE matriz_aplicabilidad (
   proceso_id INT UNSIGNED NULL,
   ambito ENUM('ADMINISTRACION','PROYECTO') NULL,
   proyecto VARCHAR(120) NULL COMMENT 'Debe corresponder a meridian_personal.contratos.proyecto cuando aplique',
-  periodicidad_id INT UNSIGNED NULL,
+  periodicidad_id INT UNSIGNED NULL COMMENT 'Puede sobreescribir capacitaciones.periodicidad_default_id para este cargo/ambito',
   obligatoria TINYINT(1) NOT NULL DEFAULT 1,
   activa TINYINT(1) NOT NULL DEFAULT 1,
   creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
@@ -95,7 +209,8 @@ CREATE TABLE matriz_aplicabilidad (
   KEY ix_matriz_proyecto (proyecto),
   CONSTRAINT fk_matriz_cap FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(capacitacion_id),
   CONSTRAINT fk_matriz_area FOREIGN KEY (area_id) REFERENCES areas(area_id),
-  CONSTRAINT fk_matriz_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id)
+  CONSTRAINT fk_matriz_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id),
+  CONSTRAINT fk_matriz_periodicidad FOREIGN KEY (periodicidad_id) REFERENCES periodicidades(periodicidad_id)
 ) ENGINE=InnoDB;
 
 -- =========================================================
@@ -141,7 +256,7 @@ CREATE TABLE sesiones_capacitacion (
   capacitacion_id INT UNSIGNED NOT NULL,
   fecha_hora DATETIME NOT NULL,
   modalidad_id INT UNSIGNED NOT NULL,
-  ubicacion_id INT UNSIGNED NULL,
+  ubicacion_id INT UNSIGNED NULL COMMENT 'Opcional; tipicamente NULL en modalidad virtual',
   enlace_virtual VARCHAR(500) NULL,
   proveedor_id INT UNSIGNED NULL,
   cupo_maximo INT UNSIGNED NULL,
@@ -166,6 +281,7 @@ CREATE TABLE asignaciones_capacitacion (
   capacitacion_id INT UNSIGNED NOT NULL,
   matriz_aplicabilidad_id INT UNSIGNED NULL,
   fecha_asignacion DATE NOT NULL,
+  fecha_limite_cumplimiento DATE NOT NULL COMMENT 'Plazo para completar la asignacion pendiente. El vencimiento de la capacitacion ya realizada esta en cumplimientos_capacitacion.fecha_vencimiento',
   origen ENUM('AUTOMATICA','MANUAL','INDUCCION','REINDUCCION') NOT NULL,
   cargo_id_ext INT UNSIGNED NULL COMMENT 'Snapshot: meridian_personal.cargos.cargo_id al momento de asignar',
   area_id INT UNSIGNED NULL,
@@ -178,6 +294,7 @@ CREATE TABLE asignaciones_capacitacion (
   KEY ix_asig_persona (persona_id_ext),
   KEY ix_asig_capacitacion (capacitacion_id),
   KEY ix_asig_proyecto (proyecto),
+  KEY ix_asig_fecha_limite (fecha_limite_cumplimiento),
   CONSTRAINT fk_asig_cap FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(capacitacion_id),
   CONSTRAINT fk_asig_matriz FOREIGN KEY (matriz_aplicabilidad_id) REFERENCES matriz_aplicabilidad(matriz_aplicabilidad_id),
   CONSTRAINT fk_asig_area FOREIGN KEY (area_id) REFERENCES areas(area_id),
@@ -188,8 +305,8 @@ CREATE TABLE sesion_participantes (
   sesion_participante_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   sesion_id INT UNSIGNED NOT NULL,
   asignacion_id BIGINT UNSIGNED NOT NULL,
-  estado_asistencia ENUM('CONVOCADO','ASISTIO','TARDE','AUSENTE') NOT NULL DEFAULT 'CONVOCADO',
-  motivo_ausencia VARCHAR(255) NULL,
+  estado_asistencia ENUM('PROGRAMADO','EVALUADO') NOT NULL DEFAULT 'PROGRAMADO',
+  motivo_ausencia VARCHAR(255) NULL COMMENT 'Usar cuando estado_asistencia = AUSENTE',
   registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -206,7 +323,7 @@ CREATE TABLE cumplimientos_capacitacion (
   resultado VARCHAR(60) NULL,
   horas_efectivas DECIMAL(6,2) NOT NULL,
   nota_evaluacion DECIMAL(5,2) NULL COMMENT 'La matriz Excel actual usa escala 0 a 5',
-  fecha_vencimiento DATE NULL,
+  fecha_vencimiento DATE NULL COMMENT 'Vigencia materializada: fecha_realizacion + capacitaciones.vigencia_id. NULL = no vence',
   registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -230,22 +347,53 @@ CREATE TABLE soportes_cumplimiento (
 ) ENGINE=InnoDB;
 
 -- =========================================================
+-- AUDITORIA DEL MODULO (propia de meridian_capacitaciones)
+-- =========================================================
+-- Estrategia unica: cada accion HSEQ se registra aqui.
+-- No hay UNIQUE por usuario/fecha ni por entidad: un mismo elemento puede tener muchas acciones.
+
+CREATE TABLE auditoria (
+  auditoria_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_personal.usuarios_sistema.usuario_id (referencia logica, sin FK entre bases)',
+  accion VARCHAR(60) NOT NULL,
+  entidad VARCHAR(60) NULL,
+  entidad_id INT UNSIGNED NULL,
+  detalle_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL CHECK (json_valid(`detalle_json`)),
+  ip_origen VARCHAR(45) NULL,
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY ix_auditoria_usuario_fecha (usuario_id_ext, created_at),
+  KEY ix_auditoria_entidad (entidad, entidad_id)
+) ENGINE=InnoDB;
+
+-- =========================================================
 -- VISTAS DERIVADAS: NO DUPLICAN ALERTAS NI ESTADOS
 -- =========================================================
 
--- Estado vigente de cada asignacion segun cumplimiento y vencimiento.
+-- Estado vigente de cada asignacion:
+-- - Pendiente: usa fecha_limite_cumplimiento (plazo para realizar).
+-- - Realizada: usa cumplimientos.fecha_vencimiento (vigencia del curso tomado).
 CREATE OR REPLACE VIEW vw_estado_asignaciones AS
 SELECT
   a.asignacion_id,
   a.persona_id_ext,
   a.capacitacion_id,
   a.proyecto,
+  a.fecha_limite_cumplimiento,
   c.cumplimiento_id,
   c.fecha_realizacion,
   c.fecha_vencimiento,
   CASE
-    WHEN c.cumplimiento_id IS NULL THEN 'PENDIENTE'
-    WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE() THEN 'VENCIDA'
+    WHEN c.cumplimiento_id IS NULL
+         AND a.fecha_limite_cumplimiento < CURDATE()
+      THEN 'PENDIENTE_VENCIDA'
+    WHEN c.cumplimiento_id IS NULL
+         AND a.fecha_limite_cumplimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 10 DAY)
+      THEN 'PENDIENTE_PROXIMA_A_VENCER'
+    WHEN c.cumplimiento_id IS NULL
+      THEN 'PENDIENTE'
+    WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()
+      THEN 'VENCIDA'
     WHEN c.fecha_vencimiento IS NOT NULL
          AND c.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 10 DAY)
       THEN 'PROXIMA_A_VENCER'
@@ -254,21 +402,41 @@ SELECT
 FROM asignaciones_capacitacion a
 LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id;
 
+-- Alertas de:
+-- 1) capacitaciones pendientes proximas o pasadas de su fecha limite
+-- 2) capacitaciones realizadas proximas a vencer o ya vencidas (vigencia)
 CREATE OR REPLACE VIEW vw_alertas_vencimiento AS
-SELECT *
-FROM vw_estado_asignaciones
-WHERE estado_calculado IN ('PROXIMA_A_VENCER','VENCIDA');
+SELECT
+  v.*,
+  CASE
+    WHEN v.estado_calculado IN ('PENDIENTE_VENCIDA', 'PENDIENTE_PROXIMA_A_VENCER')
+      THEN 'LIMITE_CUMPLIMIENTO'
+    ELSE 'VIGENCIA_CUMPLIMIENTO'
+  END AS tipo_alerta,
+  CASE
+    WHEN v.estado_calculado IN ('PENDIENTE_VENCIDA', 'PENDIENTE_PROXIMA_A_VENCER')
+      THEN v.fecha_limite_cumplimiento
+    ELSE v.fecha_vencimiento
+  END AS fecha_alerta
+FROM vw_estado_asignaciones v
+WHERE v.estado_calculado IN (
+  'PENDIENTE_VENCIDA',
+  'PENDIENTE_PROXIMA_A_VENCER',
+  'VENCIDA',
+  'PROXIMA_A_VENCER'
+);
 
 -- =========================================================
--- RELACIONES EXTERNAS ESPERADAS (NO SE DUPLICAN DATOS)
+-- RELACIONES EXTERNAS ESPERADAS (REFERENCIAS LOGICAS, SIN FK ENTRE BASES)
 -- =========================================================
 -- asignaciones_capacitacion.persona_id_ext   -> meridian_personal.personas.persona_id
 -- asignaciones_capacitacion.contrato_id_ext  -> meridian_personal.contratos.contrato_id
 -- asignaciones_capacitacion.cargo_id_ext     -> meridian_personal.cargos.cargo_id
 -- matriz_aplicabilidad.cargo_id_ext           -> meridian_personal.cargos.cargo_id
+-- user_roles.usuario_id_ext                   -> meridian_personal.usuarios_sistema.usuario_id
+-- auditoria.usuario_id_ext                    -> meridian_personal.usuarios_sistema.usuario_id
 -- *_usuario_id_ext                            -> meridian_personal.usuarios_sistema.usuario_id
 -- proyecto                                    -> meridian_personal.contratos.proyecto (texto; pendiente normalizar)
--- auditoria de acciones HSEQ                  -> meridian_personal.auditoria
 --
 -- Para RF-005/RF-022, el sistema HSEQ debe consultar el estado del trabajador en meridian_personal,
 -- no crear/inactivar trabajadores localmente.
