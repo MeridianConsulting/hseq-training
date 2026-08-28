@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Core\Database;
+use Throwable;
 
 class AuthRepository
 {
@@ -85,19 +86,61 @@ class AuthRepository
         }, $filas);
     }
 
-    /** @return list<string> */
+    /**
+     * En esta etapa el unico rol operativo es Administrador HSEQ: recibe todos
+     * los codigos de config/permisos.php. Si existen tablas permisos/rol_permisos
+     * se leen, pero su ausencia no debe romper el login.
+     *
+     * @return list<string>
+     */
     public function permisos(int $usuarioId): array
     {
-        $filas = $this->db->fetchAll(
-            'SELECT DISTINCT p.codigo
-             FROM user_roles ur
-             INNER JOIN rol_permisos rp ON rp.role_id = ur.role_id
-             INNER JOIN permisos p ON p.permiso_id = rp.permiso_id
-             WHERE ur.usuario_id = ?
-             ORDER BY p.codigo ASC',
-            [$usuarioId]
-        );
+        $catalogo = config('permisos.codigos', []);
+        $catalogo = is_array($catalogo) ? array_values(array_map('strval', $catalogo)) : [];
 
-        return array_map(static fn (array $fila): string => (string)$fila['codigo'], $filas);
+        if ($this->esAdministrador($usuarioId)) {
+            return $catalogo;
+        }
+
+        return $this->permisosDesdeTablas($usuarioId);
+    }
+
+    public function esAdministrador(int $usuarioId): bool
+    {
+        $usuario = $this->buscarPorId($usuarioId);
+        $rolColumna = strtolower(trim((string)($usuario['rol'] ?? '')));
+
+        if (in_array($rolColumna, ['admin', 'administrador', 'administrador hseq'], true)) {
+            return true;
+        }
+
+        foreach ($this->rolesHseq($usuarioId) as $rol) {
+            $nombre = strtolower(trim((string)($rol['nombre'] ?? '')));
+            if ($nombre === 'administrador hseq' || $nombre === 'admin') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return list<string> */
+    private function permisosDesdeTablas(int $usuarioId): array
+    {
+        try {
+            $filas = $this->db->fetchAll(
+                'SELECT DISTINCT p.codigo
+                 FROM user_roles ur
+                 INNER JOIN rol_permisos rp ON rp.role_id = ur.role_id
+                 INNER JOIN permisos p ON p.permiso_id = rp.permiso_id
+                 WHERE ur.usuario_id = ?
+                 ORDER BY p.codigo ASC',
+                [$usuarioId]
+            );
+
+            return array_map(static fn (array $fila): string => (string)$fila['codigo'], $filas);
+        } catch (Throwable $e) {
+            return [];
+        }
     }
 }

@@ -24,10 +24,14 @@ class AuthMiddleware
         try {
             $secret = Env::get('JWT_SECRET', '');
             $decoded = JWT::decode($token, new Key($secret, 'HS256'));
-            $userData = (array)$decoded->data;
+            $userData = json_decode(json_encode($decoded->data), true);
+
+            if (!is_array($userData)) {
+                Response::unauthorized('Token inválido');
+            }
 
             $request->setAttribute('user', $userData);
-            $request->setAttribute('user_id', $userData['id'] ?? null);
+            $request->setAttribute('user_id', $userData['id'] ?? $userData['usuario_id'] ?? null);
         } catch (ExpiredException $e) {
             Response::unauthorized('Token expirado');
         } catch (\Exception $e) {

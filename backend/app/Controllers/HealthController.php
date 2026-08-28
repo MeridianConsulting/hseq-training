@@ -16,20 +16,24 @@ class HealthController extends Controller
         $this->success([
             'ok' => true,
             'app' => env('APP_NAME', 'HSEQ Capacitaciones'),
-            'base_capacitaciones' => $this->estadoBase(env('DB_DATABASE')),
-            'base_personal' => $this->estadoBase(config('database.personal_database')),
+            'base_capacitaciones' => $this->estadoBase(
+                (string)env('DB_DATABASE', 'meridian_capacitaciones'),
+                Database::getInstance()
+            ),
+            'base_personal' => $this->estadoBase(
+                Database::personalName(),
+                Database::personal()
+            ),
         ], 'API en linea');
     }
 
     /**
      * Confirma que la base responde y cuantas tablas tiene, sin exponer credenciales.
      */
-    private function estadoBase(mixed $nombre): array
+    private function estadoBase(string $nombre, Database $conexion): array
     {
-        $nombre = (string)$nombre;
-
         try {
-            $fila = Database::getInstance()->fetch(
+            $fila = $conexion->fetch(
                 'SELECT COUNT(*) AS tablas FROM information_schema.tables WHERE table_schema = ?',
                 [$nombre]
             );

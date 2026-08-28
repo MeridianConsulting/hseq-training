@@ -47,7 +47,8 @@ export default function LoginPage() {
             width={280}
             height={56}
             preload
-            className="h-14 w-auto max-w-[280px] object-contain object-left"
+            className="h-14 max-w-[280px] object-contain object-left"
+            style={{ width: "auto" }}
           />
           <h1 className="mt-10 max-w-md text-4xl font-semibold tracking-tight">
             Programa de capacitación y entrenamiento HSEQ
@@ -71,7 +72,8 @@ export default function LoginPage() {
                 alt="Meridian Consulting"
                 width={240}
                 height={48}
-                className="h-12 w-auto max-w-[240px] object-contain"
+                className="h-12 max-w-[240px] object-contain"
+                style={{ width: "auto" }}
               />
             </div>
             <h1 className="text-2xl font-semibold text-hseq-900">Iniciar sesión</h1>

@@ -7,5 +7,5 @@ return [
     'jwt_expiration' => (int)env('JWT_EXPIRATION', 3600),
     'jwt_algorithm' => 'HS256',
     'max_intentos' => 5,
-    'bloqueo_minutos' => 15,
+    'bloqueo_minutos' => 30,
 ];

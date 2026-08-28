@@ -4,30 +4,34 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use InvalidArgumentException;
 use PDO;
 use PDOException;
 
 class Database
 {
     private static ?Database $instance = null;
+    private static ?Database $personalInstance = null;
     private PDO $connection;
 
-    private function __construct()
+    /**
+     * @param array{host:string,port:string,database:string,username:string,password:string} $config
+     */
+    private function __construct(array $config)
     {
-        $host = Env::get('DB_HOST', '127.0.0.1');
-        $port = Env::get('DB_PORT', '3306');
-        $database = Env::get('DB_DATABASE', 'meridian_capacitaciones');
-        $username = Env::get('DB_USERNAME', 'root');
-        $password = Env::get('DB_PASSWORD', '');
-
-        $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
+        $dsn = sprintf(
+            'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+            $config['host'],
+            $config['port'],
+            $config['database']
+        );
 
         try {
-            $this->connection = new PDO($dsn, $username, $password, [
+            $this->connection = new PDO($dsn, $config['username'], $config['password'], [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
-                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+                PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
             ]);
         } catch (PDOException $e) {
             Logger::error('Database connection failed: ' . $e->getMessage());
@@ -38,10 +42,42 @@ class Database
     public static function getInstance(): self
     {
         if (self::$instance === null) {
-            self::$instance = new self();
+            self::$instance = new self(self::capacitacionesConfig());
         }
 
         return self::$instance;
+    }
+
+    /**
+     * Conexion para consultar meridian_personal. Si host/usuario/clave coinciden
+     * con capacitaciones (caso habitual en XAMPP y cPanel), se reutiliza PDO.
+     */
+    public static function personal(): self
+    {
+        if (self::mismasCredencialesPersonal()) {
+            return self::getInstance();
+        }
+
+        if (self::$personalInstance === null) {
+            self::$personalInstance = new self(self::personalConfig());
+        }
+
+        return self::$personalInstance;
+    }
+
+    public static function personalName(): string
+    {
+        $nombre = (string)Env::get(
+            'DB_PERSONAL_NAME',
+            Env::get('DB_PERSONAL_DATABASE', 'meridian_personal')
+        );
+
+        return self::identificadorSeguro($nombre);
+    }
+
+    public static function personalTable(string $tabla): string
+    {
+        return '`' . self::personalName() . '`.`' . self::identificadorSeguro($tabla) . '`';
     }
 
     public function getConnection(): PDO
@@ -111,5 +147,54 @@ class Database
     public function lastInsertId(): string
     {
         return $this->connection->lastInsertId();
+    }
+
+    /** @return array{host:string,port:string,database:string,username:string,password:string} */
+    private static function capacitacionesConfig(): array
+    {
+        return [
+            'host' => (string)Env::get('DB_HOST', '127.0.0.1'),
+            'port' => (string)Env::get('DB_PORT', '3306'),
+            'database' => (string)Env::get('DB_DATABASE', 'meridian_capacitaciones'),
+            'username' => (string)Env::get('DB_USERNAME', 'root'),
+            'password' => (string)Env::get('DB_PASSWORD', ''),
+        ];
+    }
+
+    /** @return array{host:string,port:string,database:string,username:string,password:string} */
+    private static function personalConfig(): array
+    {
+        $base = self::capacitacionesConfig();
+
+        return [
+            'host' => (string)Env::get('DB_PERSONAL_HOST', $base['host']),
+            'port' => (string)Env::get('DB_PERSONAL_PORT', $base['port']),
+            'database' => self::personalName(),
+            'username' => (string)Env::get(
+                'DB_PERSONAL_USER',
+                Env::get('DB_PERSONAL_USERNAME', $base['username'])
+            ),
+            'password' => (string)Env::get('DB_PERSONAL_PASSWORD', $base['password']),
+        ];
+    }
+
+    private static function mismasCredencialesPersonal(): bool
+    {
+        $cap = self::capacitacionesConfig();
+        $per = self::personalConfig();
+
+        return $cap['host'] === $per['host']
+            && $cap['port'] === $per['port']
+            && $cap['username'] === $per['username']
+            && $cap['password'] === $per['password'];
+    }
+
+    private static function identificadorSeguro(string $nombre): string
+    {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $nombre)) {
+            throw new InvalidArgumentException('Identificador de base o tabla invalido.');
+        }
+
+        return $nombre;
     }
 }

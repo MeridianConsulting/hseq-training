@@ -51,7 +51,7 @@ abstract class Controller
                 'total' => $total,
                 'per_page' => $perPage,
                 'current_page' => $page,
-                'last_page' => (int)ceil($total / $perPage),
+                'last_page' => max(1, (int)ceil($total / max(1, $perPage))),
             ],
         ]);
     }

@@ -6,15 +6,18 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Request;
+use App\Services\AuditoriaService;
 use App\Services\CatalogService;
 
 class CatalogController extends Controller
 {
     private CatalogService $service;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->service = new CatalogService();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function tipos(Request $request): void
@@ -51,7 +54,17 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
         $datos = $this->validate($request, $this->service->reglas($def));
 
-        $this->created($this->service->crear($def, $datos));
+        $creado = $this->service->crear($def, $datos);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'crear',
+            $def['tabla'],
+            (int)$creado[$def['pk']],
+            $creado
+        );
+
+        $this->created($creado);
     }
 
     public function update(Request $request, string $tipo, string $id): void
@@ -59,7 +72,17 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
         $datos = $this->validate($request, $this->service->reglas($def, true));
 
-        $this->success($this->service->actualizar($def, (int)$id, $datos), 'Registro actualizado');
+        $actualizado = $this->service->actualizar($def, (int)$id, $datos);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'actualizar',
+            $def['tabla'],
+            (int)$id,
+            $actualizado
+        );
+
+        $this->success($actualizado, 'Registro actualizado');
     }
 
     public function destroy(Request $request, string $tipo, string $id): void
@@ -67,6 +90,14 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
 
         $mensaje = $this->service->eliminar($def, (int)$id);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'eliminar',
+            $def['tabla'],
+            (int)$id,
+            ['mensaje' => $mensaje]
+        );
 
         $this->success(null, $mensaje);
     }

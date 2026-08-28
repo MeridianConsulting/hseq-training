@@ -94,8 +94,15 @@ class Router
             if (preg_match($route['pattern'], $uri, $matches)) {
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
 
-                foreach ($route['middleware'] as $middlewareClass) {
-                    $middlewareInstance = new $middlewareClass();
+                foreach ($route['middleware'] as $middleware) {
+                    if (is_array($middleware)) {
+                        $clase = $middleware[0];
+                        $argumentos = array_slice($middleware, 1);
+                        $middlewareInstance = new $clase(...$argumentos);
+                    } else {
+                        $middlewareInstance = new $middleware();
+                    }
+
                     $middlewareInstance->handle($request);
                 }
 

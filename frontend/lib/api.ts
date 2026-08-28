@@ -7,27 +7,16 @@ export type ApiResponse<T> = {
   errors: ApiErrorMap | null;
 };
 
-export type RolHseq = {
-  role_id: number;
-  nombre: string;
+export type Paginacion = {
+  total: number;
+  per_page: number;
+  current_page: number;
+  last_page: number;
 };
 
-export type UsuarioSesion = {
-  usuario_id: number;
-  nombre_usuario: string;
-  correo: string;
-  rol: string;
-  estado: string;
-  ultimo_acceso: string | null;
-  roles: RolHseq[];
-  permisos: string[];
-};
-
-export type LoginResponse = {
-  token: string;
-  token_type: string;
-  expires_in: number;
-  usuario: UsuarioSesion;
+export type ListaPaginada<T> = {
+  items: T[];
+  pagination: Paginacion;
 };
 
 const TOKEN_KEY = "hseq_token";
@@ -69,8 +58,25 @@ function notificarSesionExpirada(): void {
 }
 
 function apiBase(): string {
-  const raw = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost/hseq-training/backend/public";
+  const raw = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
   return raw.replace(/\/$/, "");
+}
+
+export function withQuery(
+  path: string,
+  params: Record<string, string | number | boolean | undefined | null> = {},
+): string {
+  const query = new URLSearchParams();
+
+  for (const [clave, valor] of Object.entries(params)) {
+    if (valor === undefined || valor === null || valor === "") {
+      continue;
+    }
+    query.set(clave, String(valor));
+  }
+
+  const cadena = query.toString();
+  return cadena ? `${path}?${cadena}` : path;
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
@@ -91,7 +97,11 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers,
   });
 
-  if (respuesta.status === 401 && !path.startsWith("/api/auth/login")) {
+  if (
+    respuesta.status === 401
+    && !path.startsWith("/api/auth/login")
+    && !path.startsWith("/api/ping")
+  ) {
     clearStoredToken();
     notificarSesionExpirada();
   }
@@ -110,4 +120,15 @@ export function apiPost<T>(path: string, body?: unknown): Promise<ApiResponse<T>
     method: "POST",
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+export function apiPut<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
+  return apiFetch<T>(path, {
+    method: "PUT",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+export function apiDelete<T>(path: string): Promise<ApiResponse<T>> {
+  return apiFetch<T>(path, { method: "DELETE" });
 }

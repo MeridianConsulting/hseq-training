@@ -121,9 +121,20 @@ class Request
     public function bearerToken(): ?string
     {
         $auth = $this->header('authorization', '');
-        if (str_starts_with($auth, 'Bearer ')) {
+
+        if (!is_string($auth) || $auth === '') {
+            $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        }
+
+        if ((!is_string($auth) || $auth === '') && function_exists('apache_request_headers')) {
+            $apache = apache_request_headers();
+            $auth = $apache['Authorization'] ?? $apache['authorization'] ?? '';
+        }
+
+        if (is_string($auth) && str_starts_with($auth, 'Bearer ')) {
             return substr($auth, 7);
         }
+
         return null;
     }
 
@@ -145,5 +156,23 @@ class Request
     public function user(): ?array
     {
         return $this->getAttribute('user');
+    }
+
+    public function userId(): int
+    {
+        return (int)$this->getAttribute('user_id', 0);
+    }
+
+    public function ip(): ?string
+    {
+        $reenviada = $this->header('x-forwarded-for', '');
+        if (is_string($reenviada) && $reenviada !== '') {
+            $primera = trim(explode(',', $reenviada)[0]);
+            return $primera !== '' ? $primera : null;
+        }
+
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+
+        return is_string($ip) && $ip !== '' ? $ip : null;
     }
 }
