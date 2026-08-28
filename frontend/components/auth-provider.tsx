@@ -9,19 +9,24 @@ import {
   useState,
 } from "react";
 import {
-  apiFetch,
+  apiGet,
+  apiPost,
   clearStoredToken,
   getStoredToken,
+  onSesionExpirada,
   setStoredToken,
-  type LoginResponse,
-  type UsuarioSesion,
 } from "@/lib/api";
+import type { LoginResponse, UsuarioSesion } from "@/lib/tipos";
 
 type AuthContextValue = {
   usuario: UsuarioSesion | null;
   listo: boolean;
+  autenticado: boolean;
+  /** Autorizacion de la interfaz. El backend vuelve a validar cada permiso. */
+  puede: (permiso: string) => boolean;
   login: (usuario: string, password: string) => Promise<string | null>;
   logout: () => Promise<void>;
+  cerrarSesionLocal: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -30,18 +35,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<UsuarioSesion | null>(null);
   const [listo, setListo] = useState(false);
 
+  const cerrarSesionLocal = useCallback(() => {
+    clearStoredToken();
+    setUsuario(null);
+  }, []);
+
   useEffect(() => {
-    const token = getStoredToken();
-
-    if (!token) {
-      setListo(true);
-      return;
-    }
-
     let cancelado = false;
 
-    apiFetch<UsuarioSesion>("/api/auth/me")
-      .then((respuesta) => {
+    const restaurarSesion = async () => {
+      if (getStoredToken()) {
+        const respuesta = await apiGet<UsuarioSesion>("/api/auth/me");
+
         if (cancelado) {
           return;
         }
@@ -52,65 +57,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           clearStoredToken();
           setUsuario(null);
         }
-      })
-      .catch(() => {
-        if (!cancelado) {
-          clearStoredToken();
-          setUsuario(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelado) {
-          setListo(true);
-        }
-      });
+      }
+
+      if (!cancelado) {
+        setListo(true);
+      }
+    };
+
+    void restaurarSesion();
 
     return () => {
       cancelado = true;
     };
   }, []);
 
+  // Cualquier 401 posterior (token expirado o revocado) cierra la sesion local.
+  useEffect(() => onSesionExpirada(cerrarSesionLocal), [cerrarSesionLocal]);
+
   const login = useCallback(async (identificador: string, password: string) => {
-    try {
-      const respuesta = await apiFetch<LoginResponse>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          usuario: identificador,
-          password,
-        }),
-      });
+    const respuesta = await apiPost<LoginResponse>("/api/auth/login", {
+      usuario: identificador,
+      password,
+    });
 
-      if (!respuesta.success || !respuesta.data) {
-        return respuesta.message || "No fue posible iniciar sesión";
-      }
-
-      setStoredToken(respuesta.data.token);
-      setUsuario(respuesta.data.usuario);
-      return null;
-    } catch {
-      return "No se pudo conectar con el servidor. Verifique que la API esté en línea.";
+    if (!respuesta.success || !respuesta.data) {
+      return respuesta.message || "No fue posible iniciar sesión.";
     }
+
+    setStoredToken(respuesta.data.token);
+    setUsuario(respuesta.data.usuario);
+
+    return null;
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await apiFetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // El cierre local aplica aunque el servidor no responda.
+      await apiPost("/api/auth/logout");
+    } finally {
+      cerrarSesionLocal();
     }
+  }, [cerrarSesionLocal]);
 
-    clearStoredToken();
-    setUsuario(null);
-  }, []);
+  const puede = useCallback(
+    (permiso: string) => usuario?.permisos?.includes(permiso) ?? false,
+    [usuario],
+  );
 
   const value = useMemo(
     () => ({
       usuario,
       listo,
+      autenticado: usuario !== null,
+      puede,
       login,
       logout,
+      cerrarSesionLocal,
     }),
-    [usuario, listo, login, logout],
+    [usuario, listo, puede, login, logout, cerrarSesionLocal],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

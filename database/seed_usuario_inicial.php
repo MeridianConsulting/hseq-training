@@ -32,21 +32,20 @@ if ($existe->fetch()) {
 $pdo->beginTransaction();
 
 $pdo->prepare(
-    'INSERT INTO usuarios (nombre_usuario, nombre_completo, correo, password_hash, rol, estado)
-     VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO usuarios (nombre_usuario, correo, password_hash, rol, estado)
+     VALUES (?, ?, ?, ?, ?)'
 )->execute([
     $nombreUsuario,
-    'Administrador HSEQ',
     $correo,
-    password_hash($password, PASSWORD_ARGON2ID),
+    password_hash($password, PASSWORD_DEFAULT),
     'admin',
     'Activo',
 ]);
 
 $usuarioId = (int)$pdo->lastInsertId();
 
-$pdo->exec("INSERT IGNORE INTO roles (nombre) VALUES ('Administrador')");
-$rol = $pdo->query("SELECT role_id FROM roles WHERE nombre = 'Administrador' LIMIT 1")->fetch();
+$pdo->exec("INSERT IGNORE INTO roles (nombre) VALUES ('Administrador HSEQ')");
+$rol = $pdo->query("SELECT role_id FROM roles WHERE nombre = 'Administrador HSEQ' LIMIT 1")->fetch();
 
 if ($rol) {
     $pdo->prepare('INSERT INTO user_roles (usuario_id, role_id) VALUES (?, ?)')

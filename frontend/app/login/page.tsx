@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 
@@ -40,10 +41,15 @@ export default function LoginPage() {
       <section className="relative hidden overflow-hidden bg-hseq-950 text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,212,191,0.22),transparent_36%),radial-gradient(circle_at_80%_80%,rgba(14,116,144,0.35),transparent_42%)]" />
         <div className="relative">
-          <p className="text-sm font-medium tracking-[0.2em] text-hseq-400 uppercase">
-            HSEQ Capacitaciones
-          </p>
-          <h1 className="mt-4 max-w-md text-4xl font-semibold tracking-tight">
+          <Image
+            src="/logo_principal.png"
+            alt="Meridian Consulting"
+            width={280}
+            height={56}
+            preload
+            className="h-14 w-auto max-w-[280px] object-contain object-left"
+          />
+          <h1 className="mt-10 max-w-md text-4xl font-semibold tracking-tight">
             Programa de capacitación y entrenamiento HSEQ
           </h1>
         </div>
@@ -59,12 +65,16 @@ export default function LoginPage() {
       <section className="flex items-center justify-center px-6 py-12 sm:px-10">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
-            <p className="text-sm font-medium tracking-[0.18em] text-hseq-600 uppercase">
-              HSEQ Capacitaciones
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold text-hseq-900">
-              Iniciar sesión
-            </h1>
+            <div className="mb-6 flex justify-center rounded-xl bg-hseq-950 px-6 py-5">
+              <Image
+                src="/logo_principal.png"
+                alt="Meridian Consulting"
+                width={240}
+                height={48}
+                className="h-12 w-auto max-w-[240px] object-contain"
+              />
+            </div>
+            <h1 className="text-2xl font-semibold text-hseq-900">Iniciar sesión</h1>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">

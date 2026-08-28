@@ -18,7 +18,7 @@ class AuthRepository
     public function buscarPorIdentificador(string $identificador): ?array
     {
         return $this->db->fetch(
-            'SELECT usuario_id, nombre_usuario, nombre_completo, correo, password_hash,
+            'SELECT usuario_id, nombre_usuario, correo, password_hash,
                     rol, estado, intentos_fallidos, bloqueado_hasta, ultimo_acceso
              FROM usuarios
              WHERE correo = ? OR nombre_usuario = ?
@@ -30,7 +30,7 @@ class AuthRepository
     public function buscarPorId(int $usuarioId): ?array
     {
         return $this->db->fetch(
-            'SELECT usuario_id, nombre_usuario, nombre_completo, correo,
+            'SELECT usuario_id, nombre_usuario, correo,
                     rol, estado, intentos_fallidos, bloqueado_hasta, ultimo_acceso
              FROM usuarios
              WHERE usuario_id = ?
@@ -83,5 +83,21 @@ class AuthRepository
                 'nombre' => $fila['nombre'],
             ];
         }, $filas);
+    }
+
+    /** @return list<string> */
+    public function permisos(int $usuarioId): array
+    {
+        $filas = $this->db->fetchAll(
+            'SELECT DISTINCT p.codigo
+             FROM user_roles ur
+             INNER JOIN rol_permisos rp ON rp.role_id = ur.role_id
+             INNER JOIN permisos p ON p.permiso_id = rp.permiso_id
+             WHERE ur.usuario_id = ?
+             ORDER BY p.codigo ASC',
+            [$usuarioId]
+        );
+
+        return array_map(static fn (array $fila): string => (string)$fila['codigo'], $filas);
     }
 }

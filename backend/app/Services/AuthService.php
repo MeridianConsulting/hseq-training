@@ -84,10 +84,10 @@ class AuthService
                 'id' => $usuario['usuario_id'],
                 'usuario_id' => $usuario['usuario_id'],
                 'nombre_usuario' => $usuario['nombre_usuario'],
-                'nombre_completo' => $usuario['nombre_completo'],
                 'correo' => $usuario['correo'],
                 'rol' => $usuario['rol'],
                 'roles' => $usuario['roles'],
+                'permisos' => $usuario['permisos'],
             ],
         ];
 
@@ -101,12 +101,12 @@ class AuthService
         return [
             'usuario_id' => $usuarioId,
             'nombre_usuario' => $usuario['nombre_usuario'],
-            'nombre_completo' => $usuario['nombre_completo'],
             'correo' => $usuario['correo'],
             'rol' => $usuario['rol'],
             'estado' => $usuario['estado'],
             'ultimo_acceso' => $usuario['ultimo_acceso'] ?? null,
             'roles' => $this->repo->rolesHseq($usuarioId),
+            'permisos' => $this->repo->permisos($usuarioId),
         ];
     }
 
