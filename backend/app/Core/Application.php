@@ -29,6 +29,10 @@ class Application
     private function bootstrap(): void
     {
         Env::load(BASE_PATH);
+        $zona = (string)config('app.timezone', 'America/Bogota');
+        if ($zona !== '') {
+            date_default_timezone_set($zona);
+        }
         $this->setupErrorHandling();
         $this->router = new Router();
         $this->loadRoutes();

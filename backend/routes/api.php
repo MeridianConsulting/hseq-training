@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\AsignacionController;
 use App\Controllers\AuditoriaController;
 use App\Controllers\AuthController;
 use App\Controllers\CapacitacionController;
@@ -47,6 +48,15 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->get('/cargos', [PersonalController::class, 'cargos']);
         $router->get('', [PersonalController::class, 'index']);
         $router->get('/{id}', [PersonalController::class, 'show']);
+    });
+
+    $router->group(['prefix' => '/asignaciones'], function ($router) {
+        $router->get('/proximas', [AsignacionController::class, 'proximas'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
+        $router->get('', [AsignacionController::class, 'index'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
+        $router->get('/{id}', [AsignacionController::class, 'show'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
+        $router->post('', [AsignacionController::class, 'store'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
+        $router->put('/{id}', [AsignacionController::class, 'update'], [[PermisoMiddleware::class, 'asignaciones.editar']]);
+        $router->delete('/{id}', [AsignacionController::class, 'destroy'], [[PermisoMiddleware::class, 'asignaciones.eliminar']]);
     });
 
     $router->group(['prefix' => '/capacitaciones'], function ($router) {

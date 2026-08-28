@@ -85,8 +85,8 @@ function Contenido() {
   return (
     <>
       <PageHeader
-        titulo="Tablero de cronograma"
-        descripcion="Capacitaciones programadas en el plan anual, agrupadas por mes. Administración y proyectos se consultan juntos."
+        titulo="Tablero de Cronograma"
+        descripcion="Capacitaciones programadas en el plan anual, agrupadas por mes."
       />
 
       <FiltroCronograma valor={filtro} procesos={procesos} onChange={setFiltro} />
@@ -109,10 +109,12 @@ function Contenido() {
             {cargando ? " · Actualizando…" : null}
           </p>
 
-          {tablero.total === 0 && filtro.tipo === "mensual" ? (
+          {tablero.total === 0 ? (
             <Alert tono="info">No hay capacitaciones programadas para este período.</Alert>
-          ) : (
-            <div className="space-y-4">
+          ) : null}
+
+          {tablero.total > 0 || filtro.tipo !== "mensual" ? (
+            <div className={`space-y-4 ${tablero.total === 0 ? "mt-4" : ""}`}>
               {tablero.meses.map((bloque) => (
                 <BloqueMesCronograma
                   key={`${tablero.periodo.tipo}-${tablero.periodo.anio}-${tablero.proceso_id ?? "todos"}-${bloque.mes}`}
@@ -125,7 +127,7 @@ function Contenido() {
                 />
               ))}
             </div>
-          )}
+          ) : null}
         </>
       ) : null}
     </>

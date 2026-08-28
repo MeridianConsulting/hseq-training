@@ -40,6 +40,10 @@ export function TarjetaCronograma({ item }: { item: ItemCronograma }) {
       <h3 className="text-base font-semibold text-hseq-900">{item.tema}</h3>
       <p className="mt-1 text-xs text-slate-500">{item.codigo}</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-slate-700">{item.mes_nombre}</span>
+        <span className="text-sm text-slate-400" aria-hidden="true">
+          ·
+        </span>
         <span className="text-sm text-slate-700">{formatoHoras(item.horas)}</span>
         <Badge tono={tonoMetodologia(item.metodologia)}>
           {item.metodologia ?? "Sin metodología"}

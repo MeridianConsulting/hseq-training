@@ -135,6 +135,32 @@ export type AlertaVencimiento = {
   fecha_alerta: string | null;
 };
 
+export type Asignacion = {
+  asignacion_id: number;
+  persona_id_ext: number;
+  persona_nombre: string | null;
+  numero_documento: string | null;
+  contrato_id_ext: number | null;
+  capacitacion_id: number;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  fecha_asignacion: string;
+  fecha_limite_cumplimiento: string;
+  origen: string;
+  cargo_id_ext: number | null;
+  ambito: "ADMINISTRACION" | "PROYECTO" | null;
+  proyecto: string | null;
+  estado_calculado: string;
+  tiene_cumplimiento: boolean;
+  dias_restantes: number | null;
+  etiqueta_dias: string | null;
+};
+
+export type ProximasAsignaciones = {
+  total: number;
+  items: Asignacion[];
+};
+
 export type PersonaCorporativa = {
   persona_id: number;
   numero_documento: string;

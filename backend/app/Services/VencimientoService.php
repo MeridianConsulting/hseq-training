@@ -100,4 +100,25 @@ class VencimientoService
             'alertas' => $this->alertas(15),
         ];
     }
+
+    public static function etiquetaDias(?int $dias): ?string
+    {
+        if ($dias === null) {
+            return null;
+        }
+
+        if ($dias < 0) {
+            return 'Vencida';
+        }
+
+        if ($dias === 0) {
+            return 'Vence hoy';
+        }
+
+        if ($dias === 1) {
+            return 'Falta 1 día';
+        }
+
+        return "Faltan {$dias} días";
+    }
 }

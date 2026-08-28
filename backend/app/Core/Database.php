@@ -33,6 +33,7 @@ class Database
                 PDO::ATTR_EMULATE_PREPARES => false,
                 PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci',
             ]);
+            $this->connection->exec("SET time_zone = '-05:00'");
         } catch (PDOException $e) {
             Logger::error('Database connection failed: ' . $e->getMessage());
             throw new PDOException('Database connection failed.');
