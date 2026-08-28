@@ -32,6 +32,7 @@ export const MENU: GrupoMenu[] = [
       { ruta: "/capacitaciones", etiqueta: "Capacitaciones", permiso: "capacitaciones.ver" },
       { ruta: "/matriz", etiqueta: "Matriz de aplicabilidad", permiso: "matriz.ver" },
       { ruta: "/plan-anual", etiqueta: "Plan anual", permiso: "planes.ver", preparado: true },
+      { ruta: "/cronograma", etiqueta: "Tablero de cronograma", permiso: "planes.ver" },
       { ruta: "/sesiones", etiqueta: "Sesiones y asistencia", permiso: "sesiones.ver", preparado: true },
     ],
   },

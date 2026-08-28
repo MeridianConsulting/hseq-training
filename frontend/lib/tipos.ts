@@ -86,6 +86,42 @@ export type ResumenDashboard = {
   alertas: AlertaVencimiento[];
 };
 
+export type ProcesoCronograma = {
+  proceso_id: number;
+  nombre: string;
+};
+
+export type ItemCronograma = {
+  plan_detalle_id: number;
+  capacitacion_id: number;
+  codigo: string;
+  tema: string;
+  objetivo: string;
+  horas: number | null;
+  metodologia: string | null;
+  mes: number;
+  mes_nombre: string;
+  anio: number;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
+};
+
+export type MesCronograma = {
+  mes: number;
+  nombre: string;
+  total: number;
+  items: ItemCronograma[];
+};
+
+export type TableroCronograma = {
+  periodo: PeriodoDashboard;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
+  total: number;
+  procesos: ProcesoCronograma[];
+  meses: MesCronograma[];
+};
+
 export type AlertaVencimiento = {
   asignacion_id: number;
   persona_id_ext: number;

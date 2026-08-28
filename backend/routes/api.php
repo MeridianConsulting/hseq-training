@@ -6,6 +6,7 @@ use App\Controllers\AuditoriaController;
 use App\Controllers\AuthController;
 use App\Controllers\CapacitacionController;
 use App\Controllers\CatalogController;
+use App\Controllers\CronogramaController;
 use App\Controllers\DashboardController;
 use App\Controllers\HealthController;
 use App\Controllers\MatrizController;
@@ -37,6 +38,8 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     });
 
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);
+
+    $router->get('/cronograma', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
 
     $router->get('/auditoria', [AuditoriaController::class, 'index'], [[PermisoMiddleware::class, 'auditoria.ver']]);
 
