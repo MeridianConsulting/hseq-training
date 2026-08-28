@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { PageHeader } from "@/components/ui/page-header";
@@ -54,15 +53,22 @@ function Contenido() {
   }
 
   useEffect(() => {
-    void cargar(1);
     void (async () => {
       const r = await apiGet<CargoCorporativo[]>("/api/personal/cargos");
       if (r.success && r.data) {
         setCargos(r.data);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void cargar(1);
+    }, 300);
+
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscar, estado, cargoId]);
 
   return (
     <>
@@ -99,11 +105,6 @@ function Contenido() {
             ))}
           </select>
         </Field>
-        <div className="flex items-end">
-          <Button type="button" variante="secondary" onClick={() => void cargar(1)}>
-            Filtrar
-          </Button>
-        </div>
       </Filters>
 
       <Table
