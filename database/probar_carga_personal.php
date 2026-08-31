@@ -73,6 +73,26 @@ $creado = $servicio->crear([
 assertTrue(($creado['persona_id'] ?? 0) > 0, 'Trabajador individual creado');
 assertTrue($creado['numero_documento'] === '9000999999', 'Documento individual persistido');
 
+echo "\n== Edicion solo correo, cargo y proyecto ==\n";
+$nombreAntes = $creado['nombre_completo'];
+$fechaAntes = $creado['contrato_fecha_inicio'];
+$editado = $servicio->editar((int)$creado['persona_id'], [
+    'correo' => 'ana.editada@hseq.test',
+    'cargo_id' => $creado['cargo_id'],
+    'proyecto' => 'HSEQ EDIT',
+    'numero_documento' => '1111111111',
+    'nombre_completo' => 'Nombre Falso Editado',
+    'fecha_ingreso' => '2010-01-01',
+]);
+assertTrue($editado['correo_corporativo'] === 'ana.editada@hseq.test', 'Correo actualizado');
+assertTrue($editado['proyecto'] === 'HSEQ EDIT', 'Proyecto actualizado');
+assertTrue($editado['numero_documento'] === '9000999999', 'Documento no cambia en edicion');
+assertTrue($editado['nombre_completo'] === $nombreAntes, 'Nombre no cambia en edicion');
+assertTrue(
+    substr((string)$editado['contrato_fecha_inicio'], 0, 10) === substr((string)$fechaAntes, 0, 10),
+    'Fecha de ingreso no cambia en edicion'
+);
+
 echo "\n== Documento duplicado en formulario ==\n";
 try {
     $servicio->crear([

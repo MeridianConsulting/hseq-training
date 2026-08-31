@@ -71,7 +71,7 @@ class PersonalController extends Controller
 
     public function update(Request $request, string $id): void
     {
-        $datos = $this->validate($request, $this->reglas(), $this->mensajes());
+        $datos = $this->validate($request, $this->reglas(true), $this->mensajes());
         $actualizado = $this->service->editar((int)$id, $datos);
 
         $this->auditoria->dePeticion(
@@ -124,8 +124,17 @@ class PersonalController extends Controller
     }
 
     /** @return array<string, string> */
-    private function reglas(): array
+    private function reglas(bool $esActualizacion = false): array
     {
+        if ($esActualizacion) {
+            return [
+                'correo' => 'nullable|email|max:100',
+                'correo_corporativo' => 'nullable|email|max:100',
+                'cargo_id' => 'required|integer',
+                'proyecto' => 'nullable|string|max:120',
+            ];
+        }
+
         return [
             'numero_documento' => 'required|string|max:15',
             'nombre_completo' => 'required|string|max:210',

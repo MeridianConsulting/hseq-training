@@ -245,16 +245,7 @@ class PersonalRepository
     }
 
     /**
-     * @param array{
-     *   numero_documento:string,
-     *   tipo_documento_id:int,
-     *   primer_nombre:string,
-     *   segundo_nombre:?string,
-     *   primer_apellido:string,
-     *   segundo_apellido:?string,
-     *   correo_corporativo:?string,
-     *   cargo_id:int
-     * } $datos
+     * @param array{correo_corporativo:?string, cargo_id:int} $datos
      */
     public function actualizarPersona(int $personaId, array $datos): void
     {
@@ -263,12 +254,6 @@ class PersonalRepository
         $this->db->update(
             $tabla,
             [
-                'numero_documento' => $datos['numero_documento'],
-                'tipo_documento_id' => $datos['tipo_documento_id'],
-                'primer_nombre' => $datos['primer_nombre'],
-                'segundo_nombre' => $datos['segundo_nombre'],
-                'primer_apellido' => $datos['primer_apellido'],
-                'segundo_apellido' => $datos['segundo_apellido'],
                 'correo_corporativo' => $datos['correo_corporativo'],
                 'cargo_id' => $datos['cargo_id'],
             ],
@@ -278,18 +263,20 @@ class PersonalRepository
     }
 
     /**
-     * @param array{fecha_inicio:string, proyecto:?string} $datos
+     * @param array{fecha_inicio?:string, proyecto?:?string} $datos
      */
     public function actualizarContrato(int $contratoId, array $datos): void
     {
+        $campos = array_intersect_key($datos, array_flip(['fecha_inicio', 'proyecto']));
+        if ($campos === []) {
+            return;
+        }
+
         $tabla = Database::personalTable('contratos');
 
         $this->db->update(
             $tabla,
-            [
-                'fecha_inicio' => $datos['fecha_inicio'],
-                'proyecto' => $datos['proyecto'],
-            ],
+            $campos,
             'contrato_id = ?',
             [$contratoId]
         );

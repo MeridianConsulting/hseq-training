@@ -134,38 +134,45 @@ class PersonalService
     public function editar(int $personaId, array $entrada): array
     {
         $actual = $this->ver($personaId);
-        $preparado = $this->prepararEntrada($entrada, $personaId);
 
-        if (!$preparado['ok']) {
-            throw new HttpException((string)$preparado['motivo'], $this->codigoHttp((string)$preparado['motivo']));
+        $correo = $this->normalizarTexto($entrada['correo'] ?? $entrada['correo_corporativo'] ?? '');
+        if ($correo !== '' && filter_var($correo, FILTER_VALIDATE_EMAIL) === false) {
+            throw new HttpException('El correo no tiene un formato válido.', 422);
         }
 
+        $cargoId = $this->resolverCargoId($entrada, null);
+        if ($cargoId === null) {
+            $cargoBruto = $this->normalizarTexto($entrada['cargo'] ?? $entrada['cargo_id'] ?? '');
+            throw new HttpException(
+                $cargoBruto === '' ? 'El cargo es obligatorio.' : 'El cargo no existe en el catálogo.',
+                422
+            );
+        }
+
+        $proyecto = $this->normalizarTexto($entrada['proyecto'] ?? '');
+        $proyecto = $proyecto === '' ? null : $proyecto;
+
         try {
-            $this->repo->transaccion(function () use ($personaId, $actual, $preparado): int {
+            $this->repo->transaccion(function () use ($personaId, $actual, $correo, $cargoId, $proyecto): int {
                 $this->repo->actualizarPersona($personaId, [
-                    'numero_documento' => $preparado['datos']['numero_documento'],
-                    'tipo_documento_id' => $preparado['datos']['tipo_documento_id'],
-                    'primer_nombre' => $preparado['datos']['primer_nombre'],
-                    'segundo_nombre' => $preparado['datos']['segundo_nombre'],
-                    'primer_apellido' => $preparado['datos']['primer_apellido'],
-                    'segundo_apellido' => $preparado['datos']['segundo_apellido'],
-                    'correo_corporativo' => $preparado['datos']['correo_corporativo'],
-                    'cargo_id' => $preparado['datos']['cargo_id'],
+                    'correo_corporativo' => $correo !== '' ? $correo : null,
+                    'cargo_id' => $cargoId,
                 ]);
 
                 $contratoId = $actual['contrato_id'];
-                $contrato = [
-                    'fecha_inicio' => $preparado['datos']['fecha_ingreso'],
-                    'proyecto' => $preparado['datos']['proyecto'],
-                ];
-
                 if ($contratoId) {
-                    $this->repo->actualizarContrato($contratoId, $contrato);
+                    $this->repo->actualizarContrato($contratoId, [
+                        'proyecto' => $proyecto,
+                    ]);
                 } else {
+                    $fechaInicio = is_string($actual['contrato_fecha_inicio'] ?? null)
+                        && $actual['contrato_fecha_inicio'] !== ''
+                        ? $actual['contrato_fecha_inicio']
+                        : date('Y-m-d');
                     $this->repo->insertarContrato([
                         'persona_id' => $personaId,
-                        'fecha_inicio' => $contrato['fecha_inicio'],
-                        'proyecto' => $contrato['proyecto'],
+                        'fecha_inicio' => $fechaInicio,
+                        'proyecto' => $proyecto,
                     ]);
                 }
 

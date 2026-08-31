@@ -42,20 +42,27 @@ function desdeItem(item: PersonaCorporativa): DatosTrabajador {
   };
 }
 
-export function validarDatosTrabajador(datos: DatosTrabajador): ErroresTrabajador {
+export function validarDatosTrabajador(datos: DatosTrabajador, esEdicion = false): ErroresTrabajador {
   const errores: ErroresTrabajador = {};
-  const documento = datos.numero_documento.trim();
-  const nombre = datos.nombre_completo.trim();
   const correo = datos.correo.trim();
 
-  if (!documento) {
-    errores.numero_documento = "El documento es obligatorio.";
-  }
+  if (!esEdicion) {
+    const documento = datos.numero_documento.trim();
+    const nombre = datos.nombre_completo.trim();
 
-  if (!nombre) {
-    errores.nombre_completo = "El nombre es obligatorio.";
-  } else if (nombre.split(/\s+/).length < 2) {
-    errores.nombre_completo = "El nombre debe incluir al menos un nombre y un apellido.";
+    if (!documento) {
+      errores.numero_documento = "El documento es obligatorio.";
+    }
+
+    if (!nombre) {
+      errores.nombre_completo = "El nombre es obligatorio.";
+    } else if (nombre.split(/\s+/).length < 2) {
+      errores.nombre_completo = "El nombre debe incluir al menos un nombre y un apellido.";
+    }
+
+    if (!datos.fecha_ingreso) {
+      errores.fecha_ingreso = "La fecha de ingreso es obligatoria.";
+    }
   }
 
   if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
@@ -64,10 +71,6 @@ export function validarDatosTrabajador(datos: DatosTrabajador): ErroresTrabajado
 
   if (!datos.cargo_id) {
     errores.cargo_id = "El cargo es obligatorio.";
-  }
-
-  if (!datos.fecha_ingreso) {
-    errores.fecha_ingreso = "La fecha de ingreso es obligatoria.";
   }
 
   return errores;
@@ -105,8 +108,10 @@ export function FormularioTrabajador({
     setDatos((prev) => ({ ...prev, [campo]: valor }));
   }
 
+  const esEdicion = inicial !== null;
+
   function enviar(evento: FormEvent) {
-    const locales = validarDatosTrabajador(datos);
+    const locales = validarDatosTrabajador(datos, esEdicion);
     setErrores(locales);
     if (Object.keys(locales).length > 0) {
       evento.preventDefault();
@@ -117,6 +122,11 @@ export function FormularioTrabajador({
 
   return (
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={enviar}>
+      {esEdicion ? (
+        <p className="sm:col-span-2 text-sm text-slate-600">
+          En edición solo se pueden modificar correo, cargo y proyecto.
+        </p>
+      ) : null}
       <Field
         etiqueta="Documento"
         error={errores.numero_documento ?? primerError(erroresApi, "numero_documento")}
@@ -126,7 +136,8 @@ export function FormularioTrabajador({
           value={datos.numero_documento}
           onChange={(e) => set("numero_documento", e.target.value)}
           maxLength={15}
-          required
+          required={!esEdicion}
+          disabled={esEdicion}
         />
       </Field>
       <Field etiqueta="Tipo de documento">
@@ -134,6 +145,7 @@ export function FormularioTrabajador({
           className={inputClass}
           value={datos.tipo_documento_id}
           onChange={(e) => set("tipo_documento_id", e.target.value)}
+          disabled={esEdicion}
         >
           {tiposDocumento.length === 0 ? <option value="1">CC</option> : null}
           {tiposDocumento.map((tipo) => (
@@ -151,7 +163,8 @@ export function FormularioTrabajador({
           className={inputClass}
           value={datos.nombre_completo}
           onChange={(e) => set("nombre_completo", e.target.value)}
-          required
+          required={!esEdicion}
+          disabled={esEdicion}
         />
       </Field>
       <Field etiqueta="Correo" error={errores.correo ?? primerError(erroresApi, "correo")}>
@@ -193,7 +206,8 @@ export function FormularioTrabajador({
           type="date"
           value={datos.fecha_ingreso}
           onChange={(e) => set("fecha_ingreso", e.target.value)}
-          required
+          required={!esEdicion}
+          disabled={esEdicion}
         />
       </Field>
       <div className="flex justify-end gap-2 sm:col-span-2">

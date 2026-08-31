@@ -129,19 +129,21 @@ function Contenido() {
     evento.preventDefault();
     setErroresApi(null);
 
-    const cuerpo = {
-      numero_documento: datos.numero_documento.trim(),
-      nombre_completo: datos.nombre_completo.trim(),
-      correo: datos.correo.trim() || null,
-      cargo_id: Number(datos.cargo_id),
-      proyecto: datos.proyecto.trim() || null,
-      fecha_ingreso: datos.fecha_ingreso,
-      tipo_documento_id: Number(datos.tipo_documento_id || 1),
-    };
-
     const respuesta = editando
-      ? await apiPut<PersonaCorporativa>(`/api/personal/${editando.persona_id}`, cuerpo)
-      : await apiPost<PersonaCorporativa>("/api/personal", cuerpo);
+      ? await apiPut<PersonaCorporativa>(`/api/personal/${editando.persona_id}`, {
+          correo: datos.correo.trim() || null,
+          cargo_id: Number(datos.cargo_id),
+          proyecto: datos.proyecto.trim() || null,
+        })
+      : await apiPost<PersonaCorporativa>("/api/personal", {
+          numero_documento: datos.numero_documento.trim(),
+          nombre_completo: datos.nombre_completo.trim(),
+          correo: datos.correo.trim() || null,
+          cargo_id: Number(datos.cargo_id),
+          proyecto: datos.proyecto.trim() || null,
+          fecha_ingreso: datos.fecha_ingreso,
+          tipo_documento_id: Number(datos.tipo_documento_id || 1),
+        });
 
     if (!respuesta.success) {
       if (respuesta.errors) {
