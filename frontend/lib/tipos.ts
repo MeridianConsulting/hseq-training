@@ -91,6 +91,73 @@ export type ProcesoCronograma = {
   nombre: string;
 };
 
+export type SesionCronograma = {
+  sesion_id: number;
+  plan_detalle_id: number | null;
+  capacitacion_id: number;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  fecha_hora: string;
+  fecha: string | null;
+  hora: string | null;
+  modalidad_id: number;
+  modalidad_nombre: string | null;
+  ubicacion_id: number | null;
+  ubicacion_nombre: string | null;
+  enlace_virtual: string | null;
+  proveedor_id: number | null;
+  proveedor_nombre: string | null;
+  cupo_maximo: number;
+  convocados: number;
+  disponibles: number;
+  cupo_completo: boolean;
+  estado: string;
+};
+
+export type ParticipanteSesion = {
+  sesion_participante_id: number;
+  asignacion_id: number;
+  persona_id_ext: number;
+  persona_nombre: string;
+  numero_documento: string;
+  persona_estado: string | null;
+  estado_asistencia: string;
+};
+
+export type ConvocableSesion = {
+  asignacion_id: number;
+  persona_id_ext: number;
+  persona_nombre: string;
+  numero_documento: string;
+  origen: string;
+  en_plan: boolean;
+};
+
+export type ContextoSesion = {
+  plan_detalle_id: number;
+  plan_anual_id: number;
+  anio: number;
+  plan_estado: string;
+  mes_programado: number;
+  capacitacion_id: number;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  modalidad_default_id: number | null;
+  proveedor_default_id: number | null;
+  modalidades: ItemCatalogo[];
+  ubicaciones: ItemCatalogo[];
+  proveedores: ItemCatalogo[];
+  items: ConvocableSesion[];
+};
+
+export type DetalleSesion = SesionCronograma & {
+  plan_anual_id: number | null;
+  plan_estado: string | null;
+  anio: number | null;
+  observaciones: string | null;
+  participantes: ParticipanteSesion[];
+};
+
 export type ItemCronograma = {
   plan_detalle_id: number;
   capacitacion_id: number;
@@ -105,6 +172,7 @@ export type ItemCronograma = {
   anio: number;
   proceso_id: number | null;
   proceso_nombre: string | null;
+  sesiones: SesionCronograma[];
 };
 
 export type MesCronograma = {

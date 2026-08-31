@@ -23,6 +23,8 @@ return [
         'planes.editar',
         'planes.aprobar',
         'sesiones.ver',
+        'sesiones.crear',
+        'sesiones.editar',
         'personal.ver',
         'personal.crear',
         'personal.editar',

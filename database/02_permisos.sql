@@ -40,6 +40,8 @@ INSERT IGNORE INTO permisos (codigo, descripcion) VALUES
 ('planes.editar', 'Editar plan anual y enviar a revisión'),
 ('planes.aprobar', 'Aprobar plan anual'),
 ('sesiones.ver', 'Ver sesiones'),
+('sesiones.crear', 'Crear sesiones de capacitacion'),
+('sesiones.editar', 'Editar sesiones y gestionar convocados'),
 ('personal.ver', 'Consultar personal corporativo'),
 ('personal.crear', 'Registrar personal corporativo'),
 ('personal.editar', 'Editar personal corporativo'),

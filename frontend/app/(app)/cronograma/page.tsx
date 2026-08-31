@@ -34,6 +34,7 @@ function Contenido() {
   const [mesAbierto, setMesAbierto] = useState<number | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     const abortado = { actual: false };
@@ -77,7 +78,7 @@ function Contenido() {
     return () => {
       abortado.actual = true;
     };
-  }, [filtro]);
+  }, [filtro, recarga]);
 
   const desplegable = filtro.tipo !== "mensual";
   const procesos = tablero?.procesos ?? [];
@@ -86,7 +87,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Tablero de Cronograma"
-        descripcion="Capacitaciones del plan anual aprobado, agrupadas por mes."
+        descripcion="Capacitaciones del plan anual aprobado, con sus sesiones programadas."
       />
 
       <FiltroCronograma valor={filtro} procesos={procesos} onChange={setFiltro} />
@@ -125,6 +126,7 @@ function Contenido() {
                   onToggle={() =>
                     setMesAbierto((actual) => (actual === bloque.mes ? null : bloque.mes))
                   }
+                  onCambio={() => setRecarga((n) => n + 1)}
                 />
               ))}
             </div>

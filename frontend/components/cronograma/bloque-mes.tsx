@@ -13,11 +13,13 @@ export function BloqueMesCronograma({
   desplegable,
   abierto,
   onToggle,
+  onCambio,
 }: {
   bloque: MesCronograma;
   desplegable: boolean;
   abierto: boolean;
   onToggle?: () => void;
+  onCambio?: () => void;
 }) {
   const [visibles, setVisibles] = useState(PAGINA);
   const mostrarLista = !desplegable || abierto;
@@ -64,7 +66,7 @@ export function BloqueMesCronograma({
         ) : (
           <div className="mt-4 space-y-3">
             {items.map((item) => (
-              <TarjetaCronograma key={item.plan_detalle_id} item={item} />
+              <TarjetaCronograma key={item.plan_detalle_id} item={item} onCambio={onCambio} />
             ))}
             <p className="text-xs text-slate-500">
               Mostrando {items.length} de {bloque.total} capacitación

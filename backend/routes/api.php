@@ -13,6 +13,7 @@ use App\Controllers\HealthController;
 use App\Controllers\MatrizController;
 use App\Controllers\PersonalController;
 use App\Controllers\PlanAnualController;
+use App\Controllers\SesionController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\PermisoMiddleware;
 
@@ -42,6 +43,17 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);
 
     $router->get('/cronograma', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
+
+    $router->group(['prefix' => '/sesiones'], function ($router) {
+        $router->get('/convocables', [SesionController::class, 'convocables'], [[PermisoMiddleware::class, 'sesiones.ver']]);
+        $router->get('', [SesionController::class, 'index'], [[PermisoMiddleware::class, 'sesiones.ver']]);
+        $router->post('', [SesionController::class, 'store'], [[PermisoMiddleware::class, 'sesiones.crear']]);
+        $router->get('/{id}/convocables', [SesionController::class, 'convocablesDeSesion'], [[PermisoMiddleware::class, 'sesiones.ver']]);
+        $router->post('/{id}/participantes', [SesionController::class, 'convocar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
+        $router->delete('/{id}/participantes/{asignacionId}', [SesionController::class, 'retirar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
+        $router->get('/{id}', [SesionController::class, 'show'], [[PermisoMiddleware::class, 'sesiones.ver']]);
+        $router->put('/{id}', [SesionController::class, 'update'], [[PermisoMiddleware::class, 'sesiones.editar']]);
+    });
 
     $router->group(['prefix' => '/planes-anuales'], function ($router) {
         $router->get('', [PlanAnualController::class, 'index'], [[PermisoMiddleware::class, 'planes.ver']]);

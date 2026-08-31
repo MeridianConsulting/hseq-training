@@ -8,7 +8,7 @@ use App\Core\Database;
 
 /**
  * Consulta del cronograma: una fila de plan_anual_detalle = una capacitación programada.
- * No une matriz ni sesiones (evitar duplicados).
+ * No une matriz ni participantes (evitar duplicados). Las sesiones se cargan aparte.
  */
 class CronogramaRepository
 {

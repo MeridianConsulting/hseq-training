@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\CronogramaRepository;
+use App\Repositories\SesionRepository;
 
 class CronogramaService
 {
     private CronogramaRepository $repo;
     private DashboardService $periodos;
+    private SesionRepository $sesiones;
+    private SesionService $sesionService;
 
     public function __construct()
     {
         $this->repo = new CronogramaRepository();
         $this->periodos = new DashboardService();
+        $this->sesiones = new SesionRepository();
+        $this->sesionService = new SesionService();
     }
 
     /**
@@ -30,10 +35,12 @@ class CronogramaService
 
         $filas = $this->repo->programadas($periodo, $procesoId);
         $procesos = $this->repo->procesos();
+        $detalleIds = array_map(static fn (array $fila): int => (int)$fila['plan_detalle_id'], $filas);
+        $sesionesPorDetalle = $this->sesionesPorDetalle($detalleIds);
         $porMes = [];
         foreach ($filas as $fila) {
             $mes = (int)$fila['mes_programado'];
-            $porMes[$mes][] = $this->item($fila, $periodo['anio']);
+            $porMes[$mes][] = $this->item($fila, $periodo['anio'], $sesionesPorDetalle);
         }
 
         $meses = [];
@@ -81,16 +88,18 @@ class CronogramaService
 
     /**
      * @param array<string,mixed> $fila
+     * @param array<int, list<array<string,mixed>>> $sesionesPorDetalle
      * @return array<string,mixed>
      */
-    private function item(array $fila, int $anio): array
+    private function item(array $fila, int $anio, array $sesionesPorDetalle): array
     {
         $mes = (int)$fila['mes_programado'];
         $horas = $fila['duracion_estimada_horas'];
         $metodologia = $fila['metodologia'] ?? null;
+        $detalleId = (int)$fila['plan_detalle_id'];
 
         return [
-            'plan_detalle_id' => (int)$fila['plan_detalle_id'],
+            'plan_detalle_id' => $detalleId,
             'capacitacion_id' => (int)$fila['capacitacion_id'],
             'codigo' => (string)$fila['codigo'],
             'tema' => (string)$fila['nombre'],
@@ -105,7 +114,26 @@ class CronogramaService
             'proceso_nombre' => $fila['proceso_nombre'] !== null && $fila['proceso_nombre'] !== ''
                 ? (string)$fila['proceso_nombre']
                 : null,
+            'sesiones' => $sesionesPorDetalle[$detalleId] ?? [],
         ];
+    }
+
+    /**
+     * @param list<int> $detalleIds
+     * @return array<int, list<array<string,mixed>>>
+     */
+    private function sesionesPorDetalle(array $detalleIds): array
+    {
+        $mapa = [];
+        foreach ($this->sesionService->resumir($this->sesiones->listarPorDetalles($detalleIds)) as $sesion) {
+            $detalleId = (int)($sesion['plan_detalle_id'] ?? 0);
+            if ($detalleId < 1) {
+                continue;
+            }
+            $mapa[$detalleId][] = $sesion;
+        }
+
+        return $mapa;
     }
 
     private function nombreMes(int $mes): string
