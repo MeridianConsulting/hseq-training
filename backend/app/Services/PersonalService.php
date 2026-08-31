@@ -136,8 +136,10 @@ class PersonalService
         }
 
         $personaId = $this->persistirAlta($preparado['datos']);
+        $persona = $this->ver($personaId);
+        $persona['sincronizacion'] = $this->sincronizarAsignaciones($persona);
 
-        return $this->ver($personaId);
+        return $persona;
     }
 
     /**
@@ -196,7 +198,15 @@ class PersonalService
             $this->falloPersonal($e, 'No fue posible actualizar el trabajador');
         }
 
-        return $this->ver($personaId);
+        $actualizado = $this->ver($personaId);
+        $cargoCambio = (int)($actual['cargo_id'] ?? 0) !== $cargoId;
+        $proyectoAntes = $this->normalizarTexto($actual['proyecto'] ?? '');
+        $proyectoAhora = $proyecto ?? '';
+        if ($cargoCambio || strcasecmp($proyectoAntes, $proyectoAhora) !== 0) {
+            $actualizado['sincronizacion'] = $this->sincronizarAsignaciones($actualizado);
+        }
+
+        return $actualizado;
     }
 
     /**
@@ -353,6 +363,36 @@ class PersonalService
         }
 
         throw new HttpException('No fue posible registrar el trabajador', 500);
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     * @return array{creadas:int, omitidas:int, error:?string}
+     */
+    public function sincronizarAsignaciones(array $persona): array
+    {
+        try {
+            $resultado = (new MotorAsignacionService())->sincronizarPersona($persona, null);
+
+            return [
+                'creadas' => (int)$resultado['creadas'],
+                'omitidas' => (int)$resultado['omitidas'],
+                'error' => null,
+            ];
+        } catch (Throwable $e) {
+            Logger::error('RF-008 no pudo sincronizar al trabajador', [
+                'persona_id' => $persona['persona_id'] ?? null,
+                'cargo_id' => $persona['cargo_id'] ?? null,
+                'proyecto' => $persona['proyecto'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'creadas' => 0,
+                'omitidas' => 0,
+                'error' => 'No fue posible generar las asignaciones automáticas.',
+            ];
+        }
     }
 
     public function repositorio(): PersonalRepository

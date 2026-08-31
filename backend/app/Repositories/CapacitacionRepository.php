@@ -107,6 +107,8 @@ class CapacitacionRepository
                     cat.nombre AS categoria_nombre,
                     tip.nombre AS tipo_nombre,
                     per.nombre AS periodicidad_nombre,
+                    per.cantidad AS periodicidad_cantidad,
+                    per.unidad AS periodicidad_unidad,
                     vig.nombre AS vigencia_nombre,
                     md.nombre AS modalidad_nombre,
                     prv.nombre AS proveedor_nombre,

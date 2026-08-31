@@ -58,6 +58,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     $router->group(['prefix' => '/asignaciones'], function ($router) {
         $router->get('/proximas', [AsignacionController::class, 'proximas'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
         $router->post('/generar-automaticas', [AsignacionController::class, 'generarAutomaticas'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
+        $router->post('/masivo', [AsignacionController::class, 'storeMasivo'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
         $router->get('', [AsignacionController::class, 'index'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
         $router->get('/{id}', [AsignacionController::class, 'show'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
         $router->post('', [AsignacionController::class, 'store'], [[PermisoMiddleware::class, 'asignaciones.crear']]);

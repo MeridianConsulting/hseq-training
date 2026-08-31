@@ -5,6 +5,10 @@ import {
   FormularioAsignacion,
   type DatosAsignacion,
 } from "@/app/(app)/asignaciones/formulario";
+import {
+  FormularioAsignacionMasiva,
+  type DatosAsignacionMasiva,
+} from "@/app/(app)/asignaciones/formulario-masivo";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -43,6 +47,12 @@ function formatoFecha(valor: string | null): string {
   return `${dia}/${mes}/${anio}`;
 }
 
+function etiquetaOrigen(origen: string): string {
+  if (origen === "AUTOMATICA") return "Automática";
+  if (origen === "MANUAL") return "Manual";
+  return origen;
+}
+
 export default function AsignacionesPage() {
   return (
     <RequierePermiso permiso="asignaciones.ver">
@@ -50,6 +60,13 @@ export default function AsignacionesPage() {
     </RequierePermiso>
   );
 }
+
+type ResultadoMasivo = {
+  seleccionados: number;
+  creadas: number;
+  omitidas: number;
+  errores: number;
+};
 
 function Contenido() {
   const { puede } = useAuth();
@@ -61,9 +78,16 @@ function Contenido() {
   const [buscar, setBuscar] = useState("");
   const [capacitacionId, setCapacitacionId] = useState("");
   const [estado, setEstado] = useState("");
+  const [origen, setOrigen] = useState("");
+  const [personaHistorial, setPersonaHistorial] = useState<{
+    id: number;
+    nombre: string;
+    documento: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
+  const [masivoAbierto, setMasivoAbierto] = useState(false);
   const [editando, setEditando] = useState<Asignacion | null>(null);
 
   async function cargarListado(paginaActual = 1) {
@@ -71,9 +95,11 @@ function Contenido() {
       withQuery("/api/asignaciones", {
         page: paginaActual,
         per_page: 15,
-        buscar: buscar.trim() || undefined,
+        buscar: personaHistorial ? undefined : buscar.trim() || undefined,
+        persona_id: personaHistorial?.id,
         capacitacion_id: capacitacionId || undefined,
         estado: estado || undefined,
+        origen: origen || undefined,
       }),
     );
 
@@ -105,7 +131,7 @@ function Contenido() {
     }, 300);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar, capacitacionId, estado]);
+  }, [buscar, capacitacionId, estado, origen, personaHistorial]);
 
   useEffect(() => {
     void cargarProximas();
@@ -153,6 +179,34 @@ function Contenido() {
     await refrescar(1);
   }
 
+  async function guardarMasivo(evento: FormEvent, datos: DatosAsignacionMasiva) {
+    evento.preventDefault();
+    const n = datos.persona_ids_ext.length;
+    if (
+      !confirm(
+        `¿Desea asignar esta capacitación a los ${n} trabajador${n === 1 ? "" : "es"} seleccionado${n === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+
+    const respuesta = await apiPost<ResultadoMasivo>("/api/asignaciones/masivo", {
+      capacitacion_id: Number(datos.capacitacion_id),
+      persona_ids_ext: datos.persona_ids_ext.map(Number),
+      fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento || undefined,
+    });
+
+    if (!respuesta.success) {
+      setError(respuesta.message || "No se pudo completar la asignación masiva.");
+      return;
+    }
+
+    setMensaje(respuesta.message);
+    setError(null);
+    setMasivoAbierto(false);
+    await refrescar(1);
+  }
+
   async function eliminar(item: Asignacion) {
     if (!confirm("¿Eliminar esta asignación?")) {
       return;
@@ -166,6 +220,15 @@ function Contenido() {
     await refrescar();
   }
 
+  function verHistorial(item: Asignacion) {
+    setPersonaHistorial({
+      id: item.persona_id_ext,
+      nombre: item.persona_nombre ?? `Persona ${item.persona_id_ext}`,
+      documento: item.numero_documento,
+    });
+    setBuscar("");
+  }
+
   return (
     <>
       <PageHeader
@@ -173,21 +236,44 @@ function Contenido() {
         descripcion="Asigne capacitaciones a trabajadores y consulte el plazo de cumplimiento. La alerta de 10 días se calcula sola."
         acciones={
           puede("asignaciones.crear") ? (
-            <Button
-              type="button"
-              onClick={() => {
-                setEditando(null);
-                setAbierto(true);
-              }}
-            >
-              Asignar capacitación
-            </Button>
+            <span className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variante="secondary"
+                onClick={() => setMasivoAbierto(true)}
+              >
+                Asignación masiva
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditando(null);
+                  setAbierto(true);
+                }}
+              >
+                Asignar capacitación
+              </Button>
+            </span>
           ) : null
         }
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
+
+      {personaHistorial ? (
+        <Alert tono="aviso">
+          Historial de {personaHistorial.nombre}
+          {personaHistorial.documento ? ` · ${personaHistorial.documento}` : ""}.{" "}
+          <button
+            type="button"
+            className="font-medium underline"
+            onClick={() => setPersonaHistorial(null)}
+          >
+            Quitar filtro
+          </button>
+        </Alert>
+      ) : null}
 
       <Card className="mb-6">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -234,8 +320,12 @@ function Contenido() {
           <input
             className={inputClass}
             value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
+            onChange={(e) => {
+              setPersonaHistorial(null);
+              setBuscar(e.target.value);
+            }}
             placeholder="Nombre o documento"
+            disabled={personaHistorial !== null}
           />
         </Field>
         <Field etiqueta="Capacitación">
@@ -250,6 +340,13 @@ function Contenido() {
                 {cap.codigo} — {cap.nombre}
               </option>
             ))}
+          </select>
+        </Field>
+        <Field etiqueta="Origen">
+          <select className={inputClass} value={origen} onChange={(e) => setOrigen(e.target.value)}>
+            <option value="">Todos</option>
+            <option value="AUTOMATICA">Automática</option>
+            <option value="MANUAL">Manual</option>
           </select>
         </Field>
         <Field etiqueta="Estado">
@@ -267,16 +364,31 @@ function Contenido() {
 
       <Table
         columnas={[
+          { clave: "documento", etiqueta: "Documento" },
           { clave: "persona", etiqueta: "Trabajador" },
           { clave: "cap", etiqueta: "Capacitación" },
+          { clave: "origen", etiqueta: "Origen" },
+          { clave: "periodicidad", etiqueta: "Periodicidad" },
+          { clave: "obligatoria", etiqueta: "Obligatoria" },
           { clave: "limite", etiqueta: "Fecha límite" },
           { clave: "estado", etiqueta: "Estado" },
           { clave: "dias", etiqueta: "Días" },
           { clave: "acciones", etiqueta: "" },
         ]}
         filas={items.map((item) => [
-          item.persona_nombre ?? `Persona ${item.persona_id_ext}`,
+          item.numero_documento ?? "—",
+          <button
+            key="p"
+            type="button"
+            className="text-left font-medium text-hseq-800 underline-offset-2 hover:underline"
+            onClick={() => verHistorial(item)}
+          >
+            {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
+          </button>,
           `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`,
+          etiquetaOrigen(item.origen),
+          item.periodicidad_nombre ?? "—",
+          item.obligatoria === null ? "—" : item.obligatoria ? "Sí" : "No",
           formatoFecha(item.fecha_limite_cumplimiento),
           <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
             {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
@@ -326,6 +438,19 @@ function Contenido() {
             setAbierto(false);
             setEditando(null);
           }}
+        />
+      </Modal>
+
+      <Modal
+        abierto={masivoAbierto}
+        titulo="Asignación masiva"
+        onCerrar={() => setMasivoAbierto(false)}
+      >
+        <FormularioAsignacionMasiva
+          key={masivoAbierto ? "masivo-abierto" : "masivo-cerrado"}
+          capacitaciones={capacitaciones}
+          onCancelar={() => setMasivoAbierto(false)}
+          onGuardar={guardarMasivo}
         />
       </Modal>
     </>

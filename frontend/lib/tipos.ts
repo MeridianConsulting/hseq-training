@@ -147,6 +147,8 @@ export type Asignacion = {
   fecha_asignacion: string;
   fecha_limite_cumplimiento: string;
   origen: string;
+  periodicidad_nombre: string | null;
+  obligatoria: boolean | null;
   cargo_id_ext: number | null;
   ambito: "ADMINISTRACION" | "PROYECTO" | null;
   proyecto: string | null;
@@ -177,6 +179,11 @@ export type PersonaCorporativa = {
   proyecto: string | null;
   contrato_fecha_inicio: string | null;
   contrato_fecha_terminacion: string | null;
+  sincronizacion?: {
+    creadas: number;
+    omitidas: number;
+    error: string | null;
+  };
 };
 
 export type CargoCorporativo = {

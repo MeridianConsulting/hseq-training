@@ -35,7 +35,8 @@ class AsignacionController extends Controller
             ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
             nullable_trimmed_string($request->query('estado')),
             nullable_trimmed_string($request->query('alerta')),
-            nullable_trimmed_string($request->query('buscar'))
+            nullable_trimmed_string($request->query('buscar')),
+            nullable_trimmed_string($request->query('origen'))
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
@@ -90,6 +91,22 @@ class AsignacionController extends Controller
         );
 
         $this->created($creado, 'Capacitación asignada');
+    }
+
+    public function storeMasivo(Request $request): void
+    {
+        $datos = $this->validate($request, $this->service->reglasMasiva());
+        $resultado = $this->service->crearMasivo($datos, $request->userId());
+
+        $this->auditoria->dePeticion(
+            $request,
+            'asignar_masivo',
+            'asignaciones_capacitacion',
+            null,
+            $resultado
+        );
+
+        $this->success($resultado, $this->service->mensajeMasivo($resultado));
     }
 
     public function update(Request $request, string $id): void

@@ -157,9 +157,18 @@ class PersonalImportacionService
             }
 
             try {
-                $this->personal->persistirAlta($preparado['datos']);
+                $personaId = $this->personal->persistirAlta($preparado['datos']);
                 $documentosEnBd[$preparado['datos']['numero_documento']] = true;
                 $importados++;
+                try {
+                    $this->personal->sincronizarAsignaciones($this->personal->ver($personaId));
+                } catch (Throwable $e) {
+                    Logger::error('RF-008 no pudo sincronizar fila importada', [
+                        'fila' => $fila['fila'],
+                        'persona_id' => $personaId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             } catch (HttpException $e) {
                 if ($e->getStatusCode() >= 500) {
                     Logger::error('Error al importar fila de personal: ' . $e->getMessage(), ['fila' => $fila['fila']]);

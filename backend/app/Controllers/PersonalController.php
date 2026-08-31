@@ -66,7 +66,7 @@ class PersonalController extends Controller
             $creado
         );
 
-        $this->created($creado, 'Trabajador registrado');
+        $this->created($creado, $this->mensajeSincronizacion('Trabajador registrado', $creado));
     }
 
     public function update(Request $request, string $id): void
@@ -82,7 +82,7 @@ class PersonalController extends Controller
             $actualizado
         );
 
-        $this->success($actualizado, 'Trabajador actualizado');
+        $this->success($actualizado, $this->mensajeSincronizacion('Trabajador actualizado', $actualizado));
     }
 
     public function plantilla(Request $request): void
@@ -176,5 +176,25 @@ class PersonalController extends Controller
         }
 
         return 'Carga finalizada parcialmente. Se importaron los registros válidos y se rechazaron los inválidos.';
+    }
+
+    /** @param array<string,mixed> $persona */
+    private function mensajeSincronizacion(string $base, array $persona): string
+    {
+        $sync = $persona['sincronizacion'] ?? null;
+        if (!is_array($sync)) {
+            return $base;
+        }
+
+        if (!empty($sync['error'])) {
+            return $base . '. ' . (string)$sync['error'];
+        }
+
+        $creadas = (int)($sync['creadas'] ?? 0);
+        if ($creadas > 0) {
+            return $base . ". {$creadas} asignaciones automáticas creadas.";
+        }
+
+        return $base . '. No se encontraron capacitaciones aplicables nuevas para este trabajador.';
     }
 }

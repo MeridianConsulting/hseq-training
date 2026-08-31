@@ -31,14 +31,12 @@ class MotorAsignacionService
      */
     public function generar(?int $usuarioId = null, array $filtro = []): array
     {
-        $reglas = $this->matriz->reglasActivasParaMotor();
-        $reglas = $this->filtrarReglas($reglas, $filtro);
+        $reglas = $this->filtrarReglas($this->matriz->reglasActivasParaMotor(), $filtro);
         $personas = $this->personal->listarActivosParaMotor();
         $pendientes = $this->asignaciones->paresPendientes();
 
         $creadas = 0;
         $omitidas = 0;
-        $hoy = (new DateTimeImmutable('today'))->format('Y-m-d');
 
         $this->asignaciones->transaccion(function () use (
             $reglas,
@@ -46,52 +44,54 @@ class MotorAsignacionService
             &$pendientes,
             &$creadas,
             &$omitidas,
-            $hoy,
             $usuarioId
         ): int {
-                foreach ($personas as $persona) {
-                    $personaId = (int)$persona['persona_id'];
-                    $cargoId = (int)$persona['cargo_id'];
-                    $proyectoPersona = is_string($persona['proyecto'] ?? null)
-                        ? trim((string)$persona['proyecto'])
-                        : '';
+            foreach ($personas as $persona) {
+                $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
+                $creadas += $r['creadas'];
+                $omitidas += $r['omitidas'];
+            }
 
-                    foreach ($reglas as $regla) {
-                        if (!$this->coincide($regla, $cargoId, $proyectoPersona)) {
-                            continue;
-                        }
+            return $creadas;
+        });
 
-                        $capacitacionId = (int)$regla['capacitacion_id'];
-                        $clave = $personaId . ':' . $capacitacionId;
+        return [
+            'creadas' => $creadas,
+            'omitidas' => $omitidas,
+        ];
+    }
 
-                        if (isset($pendientes[$clave])) {
-                            $omitidas++;
-                            continue;
-                        }
+    /**
+     * Sincroniza un solo trabajador con las reglas activas. Idempotente.
+     *
+     * @param array<string,mixed> $persona
+     * @return array{creadas:int, omitidas:int}
+     */
+    public function sincronizarPersona(array $persona, ?int $usuarioId = null): array
+    {
+        if (empty($persona['cargo_id']) && empty($persona['persona_id'])) {
+            return ['creadas' => 0, 'omitidas' => 0];
+        }
 
-                        $this->asignaciones->crear([
-                            'persona_id_ext' => $personaId,
-                            'contrato_id_ext' => $persona['contrato_id'] !== null ? (int)$persona['contrato_id'] : null,
-                            'capacitacion_id' => $capacitacionId,
-                            'matriz_aplicabilidad_id' => (int)$regla['matriz_aplicabilidad_id'],
-                            'fecha_asignacion' => $hoy,
-                            'fecha_limite_cumplimiento' => $this->fechaLimite($regla),
-                            'origen' => 'AUTOMATICA',
-                            'cargo_id_ext' => $cargoId,
-                            'area_id' => $regla['area_id'] !== null ? (int)$regla['area_id'] : null,
-                            'proceso_id' => $regla['proceso_id'] !== null ? (int)$regla['proceso_id'] : null,
-                            'ambito' => $regla['ambito'] !== null && $regla['ambito'] !== '' ? $regla['ambito'] : null,
-                            'proyecto' => $proyectoPersona !== '' ? $proyectoPersona : null,
-                            'creada_por_usuario_id_ext' => $usuarioId,
-                        ]);
+        $reglas = $this->matriz->reglasActivasParaMotor();
+        $pendientes = $this->asignaciones->paresPendientes();
+        $creadas = 0;
+        $omitidas = 0;
 
-                        $pendientes[$clave] = true;
-                        $creadas++;
-                    }
-                }
+        $this->asignaciones->transaccion(function () use (
+            $persona,
+            $reglas,
+            &$pendientes,
+            &$creadas,
+            &$omitidas,
+            $usuarioId
+        ): int {
+            $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
+            $creadas = $r['creadas'];
+            $omitidas = $r['omitidas'];
 
-                return $creadas;
-            });
+            return $creadas;
+        });
 
         return [
             'creadas' => $creadas,
@@ -143,6 +143,62 @@ class MotorAsignacionService
     }
 
     /**
+     * @param array<string,mixed> $persona
+     * @param list<array<string,mixed>> $reglas
+     * @param array<string,true> $pendientes
+     * @return array{creadas:int, omitidas:int}
+     */
+    private function aplicarReglas(array $persona, array $reglas, array &$pendientes, ?int $usuarioId): array
+    {
+        $personaId = (int)($persona['persona_id'] ?? 0);
+        $cargoId = (int)($persona['cargo_id'] ?? 0);
+        if ($personaId <= 0 || $cargoId <= 0) {
+            return ['creadas' => 0, 'omitidas' => 0];
+        }
+
+        $proyectoPersona = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
+        $hoy = (new DateTimeImmutable('today'))->format('Y-m-d');
+        $creadas = 0;
+        $omitidas = 0;
+        $contratoId = $persona['contrato_id'] ?? null;
+
+        foreach ($reglas as $regla) {
+            if (!$this->coincide($regla, $cargoId, $proyectoPersona)) {
+                continue;
+            }
+
+            $capacitacionId = (int)$regla['capacitacion_id'];
+            $clave = $personaId . ':' . $capacitacionId;
+
+            if (isset($pendientes[$clave])) {
+                $omitidas++;
+                continue;
+            }
+
+            $this->asignaciones->crear([
+                'persona_id_ext' => $personaId,
+                'contrato_id_ext' => $contratoId !== null ? (int)$contratoId : null,
+                'capacitacion_id' => $capacitacionId,
+                'matriz_aplicabilidad_id' => (int)$regla['matriz_aplicabilidad_id'],
+                'fecha_asignacion' => $hoy,
+                'fecha_limite_cumplimiento' => $this->fechaLimite($regla),
+                'origen' => 'AUTOMATICA',
+                'cargo_id_ext' => $cargoId,
+                'area_id' => $regla['area_id'] !== null ? (int)$regla['area_id'] : null,
+                'proceso_id' => $regla['proceso_id'] !== null ? (int)$regla['proceso_id'] : null,
+                'ambito' => $regla['ambito'] !== null && $regla['ambito'] !== '' ? $regla['ambito'] : null,
+                'proyecto' => $proyectoPersona !== '' ? $proyectoPersona : null,
+                'creada_por_usuario_id_ext' => $usuarioId,
+            ]);
+
+            $pendientes[$clave] = true;
+            $creadas++;
+        }
+
+        return ['creadas' => $creadas, 'omitidas' => $omitidas];
+    }
+
+    /**
      * @param array<string,mixed> $regla
      */
     private function coincide(array $regla, int $cargoId, string $proyectoPersona): bool
@@ -163,11 +219,11 @@ class MotorAsignacionService
     /**
      * @param array<string,mixed> $regla
      */
-    private function fechaLimite(array $regla): string
+    public function fechaLimiteDesdePeriodicidad(?int $cantidad, ?string $unidad): string
     {
         $hoy = new DateTimeImmutable('today');
-        $cantidad = isset($regla['per_cantidad']) ? (int)$regla['per_cantidad'] : 0;
-        $unidad = isset($regla['per_unidad']) ? strtoupper((string)$regla['per_unidad']) : '';
+        $cantidad = (int)$cantidad;
+        $unidad = strtoupper((string)$unidad);
 
         if ($cantidad <= 0) {
             return $hoy->format('Y-m-d');
@@ -181,5 +237,16 @@ class MotorAsignacionService
         }
 
         return $hoy->modify('+' . $cantidad . ' ' . $mod)->format('Y-m-d');
+    }
+
+    /**
+     * @param array<string,mixed> $regla
+     */
+    private function fechaLimite(array $regla): string
+    {
+        return $this->fechaLimiteDesdePeriodicidad(
+            isset($regla['per_cantidad']) ? (int)$regla['per_cantidad'] : 0,
+            isset($regla['per_unidad']) ? (string)$regla['per_unidad'] : ''
+        );
     }
 }

@@ -25,9 +25,10 @@ class AsignacionRepository
         ?int $capacitacionId,
         ?string $estado,
         ?string $alerta,
-        ?string $buscar
+        ?string $buscar,
+        ?string $origen = null
     ): array {
-        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar);
+        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);
 
         return $this->db->fetchAll(
             $this->selectBase() . " {$where}
@@ -42,9 +43,10 @@ class AsignacionRepository
         ?int $capacitacionId,
         ?string $estado,
         ?string $alerta,
-        ?string $buscar
+        ?string $buscar,
+        ?string $origen = null
     ): int {
-        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar);
+        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);
         $personas = Database::personalTable('personas');
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total
@@ -186,11 +188,16 @@ class AsignacionRepository
                        DATEDIFF(a.fecha_limite_cumplimiento, CURDATE()) AS dias_restantes,
                        cap.codigo AS capacitacion_codigo,
                        cap.nombre AS capacitacion_nombre,
+                       COALESCE(per_mat.nombre, per_cap.nombre) AS periodicidad_nombre,
+                       mat.obligatoria AS obligatoria,
                        per.numero_documento,
                        per.nombre_completo_nombres_primero AS persona_nombre
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+                LEFT JOIN matriz_aplicabilidad mat ON mat.matriz_aplicabilidad_id = a.matriz_aplicabilidad_id
+                LEFT JOIN periodicidades per_mat ON per_mat.periodicidad_id = mat.periodicidad_id
+                LEFT JOIN periodicidades per_cap ON per_cap.periodicidad_id = cap.periodicidad_default_id
                 LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext";
     }
 
@@ -202,7 +209,8 @@ class AsignacionRepository
         ?int $capacitacionId,
         ?string $estado,
         ?string $alerta,
-        ?string $buscar
+        ?string $buscar,
+        ?string $origen = null
     ): array {
         $condiciones = [];
         $params = [];
@@ -223,6 +231,11 @@ class AsignacionRepository
         if ($capacitacionId !== null && $capacitacionId > 0) {
             $condiciones[] = 'a.capacitacion_id = ?';
             $params[] = $capacitacionId;
+        }
+
+        if ($origen !== null && $origen !== '') {
+            $condiciones[] = 'a.origen = ?';
+            $params[] = $origen;
         }
 
         if ($alerta === 'proximas') {

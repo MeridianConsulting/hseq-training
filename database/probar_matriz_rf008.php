@@ -175,9 +175,10 @@ $creado = $personal->crear([
 ]);
 $personaId = (int)$creado['persona_id'];
 ok($personaId > 0, 'Trabajador de prueba listo persona_id=' . $personaId);
+ok((int)($creado['sincronizacion']['creadas'] ?? 0) >= 1, 'El alta disparo el motor sin generar-automaticas');
 
 $gen = $motor->generar(null, ['capacitacion_id' => $capId, 'proyecto' => $proyecto]);
-ok($gen['creadas'] >= 1, 'Motor creo asignaciones creadas=' . $gen['creadas']);
+ok($gen['creadas'] === 0, 'Reintento masivo no duplica lo ya creado en el alta creadas=' . $gen['creadas']);
 
 $asig = $db->fetch(
     'SELECT asignacion_id, origen, matriz_aplicabilidad_id, capacitacion_id
