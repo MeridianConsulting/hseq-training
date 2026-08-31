@@ -57,6 +57,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->group(['prefix' => '/asignaciones'], function ($router) {
         $router->get('/proximas', [AsignacionController::class, 'proximas'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
+        $router->post('/generar-automaticas', [AsignacionController::class, 'generarAutomaticas'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
         $router->get('', [AsignacionController::class, 'index'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
         $router->get('/{id}', [AsignacionController::class, 'show'], [[PermisoMiddleware::class, 'asignaciones.ver']]);
         $router->post('', [AsignacionController::class, 'store'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
@@ -74,6 +75,8 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->group(['prefix' => '/matriz'], function ($router) {
         $router->get('', [MatrizController::class, 'index'], [[PermisoMiddleware::class, 'matriz.ver']]);
+        $router->get('/aplicables', [MatrizController::class, 'aplicables'], [[PermisoMiddleware::class, 'matriz.ver']]);
+        $router->post('/asociar-masivo', [MatrizController::class, 'asociarMasivo'], [[PermisoMiddleware::class, 'matriz.crear']]);
         $router->get('/{id}', [MatrizController::class, 'show'], [[PermisoMiddleware::class, 'matriz.ver']]);
         $router->post('', [MatrizController::class, 'store'], [[PermisoMiddleware::class, 'matriz.crear']]);
         $router->put('/{id}', [MatrizController::class, 'update'], [[PermisoMiddleware::class, 'matriz.editar']]);

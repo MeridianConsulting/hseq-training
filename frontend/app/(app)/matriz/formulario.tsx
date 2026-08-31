@@ -68,6 +68,21 @@ export function FormularioMatriz({
   const base = useMemo(() => (inicial ? desdeItem(inicial) : vacio()), [inicial]);
   const [datos, setDatos] = useState<DatosMatriz>(base);
 
+  const capacitacionesVisibles = useMemo(
+    () =>
+      conValorHistorico(
+        capacitaciones.map((c) => ({
+          capacitacion_id: c.capacitacion_id,
+          nombre: `${c.codigo} — ${c.nombre}`,
+        })),
+        "capacitacion_id",
+        inicial?.capacitacion_id,
+        inicial?.capacitacion_codigo && inicial?.capacitacion_nombre
+          ? `${inicial.capacitacion_codigo} — ${inicial.capacitacion_nombre}`
+          : inicial?.capacitacion_nombre,
+      ),
+    [capacitaciones, inicial],
+  );
   const areasVisibles = useMemo(
     () => conValorHistorico(areas, "area_id", inicial?.area_id, inicial?.area_nombre),
     [areas, inicial],
@@ -101,9 +116,9 @@ export function FormularioMatriz({
           onChange={(e) => set("capacitacion_id", e.target.value)}
         >
           <option value="">Seleccione</option>
-          {capacitaciones.map((c) => (
-            <option key={c.capacitacion_id} value={c.capacitacion_id}>
-              {c.codigo} — {c.nombre}
+          {capacitacionesVisibles.map((c) => (
+            <option key={String(c.capacitacion_id)} value={String(c.capacitacion_id)}>
+              {String(c.nombre)}
             </option>
           ))}
         </select>

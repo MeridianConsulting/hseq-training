@@ -22,17 +22,28 @@ class MatrizController extends Controller
 
     public function index(Request $request): void
     {
-        $capRaw = $request->query('capacitacion_id');
-        $cargoRaw = $request->query('cargo_id_ext');
-
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
             (int)$request->query('per_page', 20),
-            ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
-            ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null
+            $this->filtrosListado($request)
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+    }
+
+    public function aplicables(Request $request): void
+    {
+        $cargoRaw = $request->query('cargo_id');
+        $procesoRaw = $request->query('proceso_id');
+        $proyecto = nullable_trimmed_string($request->query('proyecto'));
+
+        $resultado = $this->service->aplicables(
+            ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
+            ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+            $proyecto
+        );
+
+        $this->success($resultado, 'Reglas activas de aplicabilidad');
     }
 
     public function show(Request $request, string $id): void
@@ -56,20 +67,55 @@ class MatrizController extends Controller
         $this->created($creado, 'Fila de matriz creada');
     }
 
-    public function update(Request $request, string $id): void
+    public function asociarMasivo(Request $request): void
     {
-        $datos = $this->validate($request, $this->service->reglas(true));
-        $actualizado = $this->service->actualizar((int)$id, $datos);
+        $datos = $this->validate($request, $this->service->reglasMasiva());
+        $resultado = $this->service->asociarMasivo($datos, $request->userId());
+        $mensaje = $this->service->mensajeMasivo($resultado);
 
         $this->auditoria->dePeticion(
             $request,
-            'actualizar',
+            'asociar_masivo',
             'matriz_aplicabilidad',
-            (int)$id,
-            $actualizado
+            null,
+            $resultado
         );
 
-        $this->success($actualizado, 'Fila de matriz actualizada');
+        $this->success($resultado, $mensaje, $resultado['creadas'] > 0 ? 201 : 200);
+    }
+
+    public function update(Request $request, string $id): void
+    {
+        $datos = $this->validate($request, $this->service->reglas(true));
+        $anterior = $this->service->ver((int)$id);
+        $actualizado = $this->service->actualizar((int)$id, $datos);
+
+        $accion = 'actualizar';
+        if (array_key_exists('activa', $datos)) {
+            $antes = $anterior['activa'] ? 1 : 0;
+            $despues = $actualizado['activa'] ? 1 : 0;
+            if ($antes === 1 && $despues === 0) {
+                $accion = 'inactivar';
+            } elseif ($antes === 0 && $despues === 1) {
+                $accion = 'reactivar';
+            }
+        }
+
+        $this->auditoria->dePeticion(
+            $request,
+            $accion,
+            'matriz_aplicabilidad',
+            (int)$id,
+            $actualizado,
+            $anterior
+        );
+
+        $this->success(
+            $actualizado,
+            $accion === 'reactivar'
+                ? 'Registro reactivado'
+                : ($accion === 'inactivar' ? 'El registro fue inactivado correctamente.' : 'Fila de matriz actualizada')
+        );
     }
 
     public function destroy(Request $request, string $id): void
@@ -78,12 +124,41 @@ class MatrizController extends Controller
 
         $this->auditoria->dePeticion(
             $request,
-            'eliminar',
+            'inactivar',
             'matriz_aplicabilidad',
             (int)$id,
             ['mensaje' => $mensaje]
         );
 
         $this->success(null, $mensaje);
+    }
+
+    /**
+     * @return array{capacitacion_id:?int, cargo_id_ext:?int, proceso_id:?int, proyecto:?string, activa:?int}
+     */
+    private function filtrosListado(Request $request): array
+    {
+        $capRaw = $request->query('capacitacion_id');
+        $cargoRaw = $request->query('cargo_id_ext');
+        $procesoRaw = $request->query('proceso_id');
+        $activaRaw = $request->query('activa');
+        $estado = strtolower(trim((string)$request->query('estado', '')));
+
+        $activa = null;
+        if ($estado === 'activas') {
+            $activa = 1;
+        } elseif ($estado === 'inactivas') {
+            $activa = 0;
+        } elseif ($activaRaw === '1' || $activaRaw === '0') {
+            $activa = (int)$activaRaw;
+        }
+
+        return [
+            'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
+            'cargo_id_ext' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
+            'proceso_id' => ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+            'proyecto' => nullable_trimmed_string($request->query('proyecto')),
+            'activa' => $activa,
+        ];
     }
 }

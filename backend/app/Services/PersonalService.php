@@ -49,6 +49,18 @@ class PersonalService
         }
     }
 
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function listarActivosParaMotor(): array
+    {
+        try {
+            return $this->repo->listarActivosParaMotor();
+        } catch (Throwable $e) {
+            $this->falloPersonal($e);
+        }
+    }
+
     public function ver(int $personaId): array
     {
         try {

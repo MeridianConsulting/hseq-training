@@ -8,15 +8,18 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Services\AsignacionService;
 use App\Services\AuditoriaService;
+use App\Services\MotorAsignacionService;
 
 class AsignacionController extends Controller
 {
     private AsignacionService $service;
+    private MotorAsignacionService $motor;
     private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->service = new AsignacionService();
+        $this->motor = new MotorAsignacionService();
         $this->auditoria = new AuditoriaService();
     }
 
@@ -41,6 +44,31 @@ class AsignacionController extends Controller
     public function proximas(Request $request): void
     {
         $this->success($this->service->proximas(), 'Capacitaciones próximas a vencer');
+    }
+
+    public function generarAutomaticas(Request $request): void
+    {
+        $capRaw = $request->input('capacitacion_id');
+        $proyecto = nullable_trimmed_string($request->input('proyecto'));
+        $filtro = [];
+        if ($capRaw !== null && $capRaw !== '') {
+            $filtro['capacitacion_id'] = (int)$capRaw;
+        }
+        if ($proyecto !== null) {
+            $filtro['proyecto'] = $proyecto;
+        }
+
+        $resultado = $this->motor->generar($request->userId() ?: null, $filtro);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'generar_automaticas',
+            'asignaciones_capacitacion',
+            null,
+            $resultado
+        );
+
+        $this->success($resultado, $this->motor->mensaje($resultado));
     }
 
     public function show(Request $request, string $id): void

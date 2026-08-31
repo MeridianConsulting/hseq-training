@@ -128,6 +128,18 @@ class PersonalRepository
     }
 
     /** @return array<int,string> */
+    /**
+     * Trabajadores activos con cargo, para el motor RF-008.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listarActivosParaMotor(): array
+    {
+        return $this->db->fetchAll(
+            $this->selectPersona() . " WHERE p.estado = 'Activo' AND p.cargo_id IS NOT NULL"
+        );
+    }
+
     public function nombresCargosPorIds(array $ids): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));

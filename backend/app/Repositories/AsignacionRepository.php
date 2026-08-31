@@ -106,6 +106,49 @@ class AsignacionRepository
         return $fila !== null;
     }
 
+    /**
+     * Mapa "personaId:capacitacionId" de asignaciones pendientes (sin cumplimiento).
+     *
+     * @return array<string, true>
+     */
+    public function paresPendientes(): array
+    {
+        $filas = $this->db->fetchAll(
+            'SELECT a.persona_id_ext, a.capacitacion_id
+             FROM asignaciones_capacitacion a
+             LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
+             WHERE c.cumplimiento_id IS NULL'
+        );
+
+        $mapa = [];
+        foreach ($filas as $fila) {
+            $mapa[(int)$fila['persona_id_ext'] . ':' . (int)$fila['capacitacion_id']] = true;
+        }
+
+        return $mapa;
+    }
+
+    /**
+     * @param callable():mixed $operacion
+     */
+    public function transaccion(callable $operacion): mixed
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $resultado = $operacion();
+            $this->db->commit();
+
+            return $resultado;
+        } catch (\PDOException $e) {
+            $this->db->rollBack();
+            throw $e;
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     public function crear(array $datos): int
     {
         return (int)$this->db->insert('asignaciones_capacitacion', $datos);

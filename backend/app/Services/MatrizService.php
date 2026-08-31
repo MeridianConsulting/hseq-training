@@ -7,11 +7,10 @@ namespace App\Services;
 use App\Core\Exceptions\HttpException;
 use App\Repositories\CapacitacionRepository;
 use App\Repositories\MatrizRepository;
-use PDOException;
 
 class MatrizService
 {
-    private const SQLSTATE_INTEGRIDAD = '23000';
+    private const MENSAJE_DUPLICADO = 'La capacitación ya está asociada a este cargo, proceso y proyecto.';
 
     private MatrizRepository $repo;
     private CapacitacionRepository $capacitaciones;
@@ -39,13 +38,30 @@ class MatrizService
         ];
     }
 
-    public function listar(int $pagina, int $porPagina, ?int $capacitacionId, ?int $cargoId): array
+    public function reglasMasiva(): array
+    {
+        return [
+            'capacitacion_id' => 'required|integer',
+            'cargo_ids_ext' => 'required|array',
+            'area_id' => 'nullable|integer',
+            'proceso_id' => 'nullable|integer',
+            'ambito' => 'nullable|in:ADMINISTRACION,PROYECTO',
+            'proyecto' => 'nullable|string|max:120',
+            'periodicidad_id' => 'nullable|integer',
+            'obligatoria' => 'nullable|integer|min:0|max:1',
+        ];
+    }
+
+    /**
+     * @param array{capacitacion_id?:?int, cargo_id_ext?:?int, proceso_id?:?int, proyecto?:?string, activa?:?int} $filtros
+     */
+    public function listar(int $pagina, int $porPagina, array $filtros): array
     {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
 
-        $filas = $this->repo->listar($porPagina, $offset, $capacitacionId, $cargoId);
+        $filas = $this->repo->listar($porPagina, $offset, $filtros);
         $nombresCargo = $this->personal->nombresCargosPorIds(array_column($filas, 'cargo_id_ext'));
 
         $items = [];
@@ -55,7 +71,7 @@ class MatrizService
 
         return [
             'items' => $items,
-            'total' => $this->repo->contar($capacitacionId, $cargoId),
+            'total' => $this->repo->contar($filtros),
             'page' => $pagina,
             'per_page' => $porPagina,
         ];
@@ -74,22 +90,91 @@ class MatrizService
         return $this->normalizar($fila, $nombres);
     }
 
+    public function aplicables(?int $cargoId, ?int $procesoId, ?string $proyecto): array
+    {
+        $filas = $this->repo->aplicables($cargoId, $procesoId, $proyecto);
+        $nombresCargo = $this->personal->nombresCargosPorIds(array_column($filas, 'cargo_id_ext'));
+
+        $items = [];
+        foreach ($filas as $fila) {
+            $items[] = $this->normalizar($fila, $nombresCargo);
+        }
+
+        return [
+            'total' => count($items),
+            'items' => $items,
+        ];
+    }
+
     public function crear(array $datos, int $usuarioId): array
     {
         $datos = $this->preparar($datos);
-        $this->validarReferencias($datos);
+        $this->validarReferencias($datos, false);
 
         if ($this->repo->duplicado($datos)) {
-            throw new HttpException(
-                'Ya existe una fila de matriz con la misma capacitación, cargo, área, proceso, ámbito y proyecto',
-                409
-            );
+            throw new HttpException(self::MENSAJE_DUPLICADO, 409);
         }
 
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
         $id = $this->repo->crear($datos);
 
         return $this->ver($id);
+    }
+
+    /**
+     * @return array{creadas:int, omitidas:int, items:list<array<string,mixed>>, omitidas_detalle:list<array<string,mixed>>}
+     */
+    public function asociarMasivo(array $entrada, int $usuarioId): array
+    {
+        $base = $this->preparar([
+            'capacitacion_id' => $entrada['capacitacion_id'] ?? null,
+            'area_id' => $entrada['area_id'] ?? null,
+            'proceso_id' => $entrada['proceso_id'] ?? null,
+            'ambito' => $entrada['ambito'] ?? null,
+            'proyecto' => $entrada['proyecto'] ?? null,
+            'periodicidad_id' => $entrada['periodicidad_id'] ?? null,
+            'obligatoria' => $entrada['obligatoria'] ?? 1,
+            'activa' => 1,
+        ]);
+
+        $this->validarReferencias($base, true);
+
+        $cargos = $this->normalizarCargosMasivos($entrada['cargo_ids_ext'] ?? []);
+
+        $creadasIds = [];
+        $omitidas = [];
+
+        $this->repo->transaccion(function () use ($base, $cargos, $usuarioId, &$creadasIds, &$omitidas): int {
+            foreach ($cargos as $cargoId) {
+                $fila = $base;
+                $fila['cargo_id_ext'] = $cargoId;
+                $fila['creado_por_usuario_id_ext'] = $usuarioId;
+
+                if ($this->repo->duplicado($fila)) {
+                    $omitidas[] = [
+                        'cargo_id_ext' => $cargoId,
+                        'motivo' => self::MENSAJE_DUPLICADO,
+                    ];
+                    continue;
+                }
+
+                $creadasIds[] = $this->repo->crear($fila);
+            }
+
+            return count($creadasIds);
+        });
+
+        $items = [];
+        foreach ($creadasIds as $id) {
+            $items[] = $this->ver($id);
+        }
+
+        return [
+            'creadas' => count($items),
+            'omitidas' => count($omitidas),
+            'items' => $items,
+            'omitidas_detalle' => $omitidas,
+        ];
     }
 
     public function actualizar(int $id, array $datos): array
@@ -106,13 +191,10 @@ class MatrizService
             'proyecto' => $actual['proyecto'],
         ], $datos);
 
-        $this->validarReferencias($combinado);
+        $this->validarReferencias($combinado, false);
 
         if ($this->repo->duplicado($combinado, $id)) {
-            throw new HttpException(
-                'Ya existe una fila de matriz con la misma capacitación, cargo, área, proceso, ámbito y proyecto',
-                409
-            );
+            throw new HttpException(self::MENSAJE_DUPLICADO, 409);
         }
 
         if ($datos !== []) {
@@ -124,22 +206,64 @@ class MatrizService
 
     public function eliminar(int $id): string
     {
-        $this->ver($id);
+        $actual = $this->ver($id);
 
-        try {
-            $this->repo->eliminar($id);
-
-            return 'Fila de matriz eliminada';
-        } catch (PDOException $e) {
-            if ($e->getCode() === self::SQLSTATE_INTEGRIDAD) {
-                throw new HttpException(
-                    'No se puede eliminar porque hay asignaciones históricas que la referencian',
-                    409
-                );
-            }
-
-            throw $e;
+        if ((int)$actual['activa'] === 0 || $actual['activa'] === false) {
+            return 'El registro ya está inactivo.';
         }
+
+        $this->repo->inactivar($id);
+
+        return 'El registro fue inactivado correctamente.';
+    }
+
+    public function mensajeMasivo(array $resultado): string
+    {
+        $creadas = (int)$resultado['creadas'];
+        $omitidas = (int)$resultado['omitidas'];
+
+        if ($creadas > 0 && $omitidas > 0) {
+            return "{$creadas} asociaciones creadas, {$omitidas} omitida(s) porque ya existía(n).";
+        }
+
+        if ($creadas > 0) {
+            return $creadas === 1 ? '1 asociación creada.' : "{$creadas} asociaciones creadas.";
+        }
+
+        if ($omitidas > 0) {
+            return self::MENSAJE_DUPLICADO;
+        }
+
+        return 'No se crearon asociaciones.';
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function normalizarCargosMasivos(mixed $bruto): array
+    {
+        if (!is_array($bruto) || $bruto === []) {
+            throw new HttpException('Debe seleccionar al menos un cargo.', 422);
+        }
+
+        $ids = [];
+        foreach ($bruto as $valor) {
+            $id = (int)$valor;
+            if ($id <= 0) {
+                throw new HttpException('El cargo no existe en el maestro de personal corporativo', 422);
+            }
+            $ids[$id] = $id;
+        }
+
+        $ids = array_values($ids);
+
+        foreach ($ids as $id) {
+            if (!$this->personal->cargoExiste($id)) {
+                throw new HttpException('El cargo no existe en el maestro de personal corporativo', 422);
+            }
+        }
+
+        return $ids;
     }
 
     private function preparar(array $datos, bool $parcial = false): array
@@ -173,13 +297,21 @@ class MatrizService
             $datos['activa'] = 1;
         }
 
+        unset($datos['cargo_ids_ext']);
+
         return $datos;
     }
 
-    private function validarReferencias(array $datos): void
+    private function validarReferencias(array $datos, bool $altaNueva): void
     {
-        if (!empty($datos['capacitacion_id']) && $this->capacitaciones->buscarPorId((int)$datos['capacitacion_id']) === null) {
-            throw new HttpException('La capacitación no existe', 422);
+        if (!empty($datos['capacitacion_id'])) {
+            $cap = $this->capacitaciones->buscarPorId((int)$datos['capacitacion_id']);
+            if ($cap === null) {
+                throw new HttpException('La capacitación no existe', 422);
+            }
+            if ($altaNueva && strtoupper((string)($cap['estado'] ?? '')) !== 'ACTIVA') {
+                throw new HttpException('Solo se pueden asociar capacitaciones activas.', 422);
+            }
         }
 
         if (!empty($datos['cargo_id_ext']) && !$this->personal->cargoExiste((int)$datos['cargo_id_ext'])) {
@@ -190,12 +322,22 @@ class MatrizService
             throw new HttpException('El área seleccionada no existe', 422);
         }
 
-        if (!empty($datos['proceso_id']) && !$this->capacitaciones->catalogoExiste('procesos', 'proceso_id', (int)$datos['proceso_id'])) {
-            throw new HttpException('El proceso seleccionado no existe', 422);
+        if (!empty($datos['proceso_id'])) {
+            if (!$this->capacitaciones->catalogoExiste('procesos', 'proceso_id', (int)$datos['proceso_id'])) {
+                throw new HttpException('El proceso seleccionado no existe', 422);
+            }
+            if ($altaNueva && !$this->capacitaciones->catalogoActivo('procesos', 'proceso_id', (int)$datos['proceso_id'])) {
+                throw new HttpException('El proceso seleccionado está inactivo.', 422);
+            }
         }
 
-        if (!empty($datos['periodicidad_id']) && !$this->capacitaciones->catalogoExiste('periodicidades', 'periodicidad_id', (int)$datos['periodicidad_id'])) {
-            throw new HttpException('La periodicidad seleccionada no existe', 422);
+        if (!empty($datos['periodicidad_id'])) {
+            if (!$this->capacitaciones->catalogoExiste('periodicidades', 'periodicidad_id', (int)$datos['periodicidad_id'])) {
+                throw new HttpException('La periodicidad seleccionada no existe', 422);
+            }
+            if ($altaNueva && !$this->capacitaciones->catalogoActivo('periodicidades', 'periodicidad_id', (int)$datos['periodicidad_id'])) {
+                throw new HttpException('La periodicidad seleccionada está inactiva.', 422);
+            }
         }
     }
 

@@ -62,6 +62,20 @@ class CapacitacionRepository
         return $this->db->fetch("SELECT {$pk} FROM {$tabla} WHERE {$pk} = ? LIMIT 1", [$id]) !== null;
     }
 
+    public function catalogoActivo(string $tabla, string $pk, int $id): bool
+    {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla) || !preg_match('/^[A-Za-z0-9_]+$/', $pk)) {
+            return false;
+        }
+
+        $fila = $this->db->fetch(
+            "SELECT activo FROM {$tabla} WHERE {$pk} = ? LIMIT 1",
+            [$id]
+        );
+
+        return $fila !== null && (int)($fila['activo'] ?? 0) === 1;
+    }
+
     public function crear(array $datos): int
     {
         return (int)$this->db->insert('capacitaciones', $datos);
