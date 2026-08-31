@@ -417,7 +417,7 @@ SELECT
          AND c.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 10 DAY)
       THEN 'PROXIMA_A_VENCER'
     ELSE 'COMPLETADA'
-  END AS estado_calculado
+  END COLLATE utf8mb4_unicode_ci AS estado_calculado
 FROM asignaciones_capacitacion a
 LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id;
 
@@ -431,7 +431,7 @@ SELECT
     WHEN v.estado_calculado IN ('PENDIENTE_VENCIDA', 'PENDIENTE_PROXIMA_A_VENCER')
       THEN 'LIMITE_CUMPLIMIENTO'
     ELSE 'VIGENCIA_CUMPLIMIENTO'
-  END AS tipo_alerta,
+  END COLLATE utf8mb4_unicode_ci AS tipo_alerta,
   CASE
     WHEN v.estado_calculado IN ('PENDIENTE_VENCIDA', 'PENDIENTE_PROXIMA_A_VENCER')
       THEN v.fecha_limite_cumplimiento

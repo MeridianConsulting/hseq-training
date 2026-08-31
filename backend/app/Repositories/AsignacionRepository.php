@@ -65,7 +65,7 @@ class AsignacionRepository
     {
         return $this->db->fetchAll(
             $this->selectBase() . "
-             WHERE e.estado_calculado = 'PENDIENTE_PROXIMA_A_VENCER'
+             WHERE e.estado_calculado COLLATE utf8mb4_unicode_ci = 'PENDIENTE_PROXIMA_A_VENCER'
              ORDER BY a.fecha_limite_cumplimiento ASC, a.asignacion_id ASC"
         );
     }
@@ -239,11 +239,11 @@ class AsignacionRepository
         }
 
         if ($alerta === 'proximas') {
-            $condiciones[] = "e.estado_calculado = 'PENDIENTE_PROXIMA_A_VENCER'";
+            $condiciones[] = "e.estado_calculado COLLATE utf8mb4_unicode_ci = 'PENDIENTE_PROXIMA_A_VENCER'";
         } elseif ($alerta === 'vencidas') {
-            $condiciones[] = "e.estado_calculado = 'PENDIENTE_VENCIDA'";
+            $condiciones[] = "e.estado_calculado COLLATE utf8mb4_unicode_ci = 'PENDIENTE_VENCIDA'";
         } elseif ($estado !== null && $estado !== '') {
-            $condiciones[] = 'e.estado_calculado = ?';
+            $condiciones[] = 'e.estado_calculado COLLATE utf8mb4_unicode_ci = ?';
             $params[] = $estado;
         }
 
