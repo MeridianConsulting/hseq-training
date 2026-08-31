@@ -12,6 +12,7 @@ require BASE_PATH . '/vendor/autoload.php';
 
 use App\Core\Database;
 use App\Core\Env;
+use App\Core\Exceptions\HttpException;
 use App\Services\AsignacionService;
 use App\Services\MatrizService;
 use App\Services\MotorAsignacionService;
@@ -114,6 +115,7 @@ $capMasivaId = (int)$db->insert('capacitaciones', [
     'periodicidad_default_id' => $periodoId,
 ]);
 ok($capMasivaId > 0, 'Capacitacion de masiva creada id=' . $capMasivaId);
+$capIndivInact = 0;
 
 $proyecto = 'HSEQ-RF008A-' . date('YmdHis');
 $proyectoAlt = 'HSEQ-RF008B-' . date('YmdHis');
@@ -319,7 +321,45 @@ ok($matrizAntes === $matrizDespues, 'Masiva no altero filas de matriz');
 $filtroManual = $asignaciones->listar(1, 50, $personaId, $capMasivaId, null, null, null, 'MANUAL');
 ok($filtroManual['total'] >= 1, 'Filtro origen MANUAL funciona');
 
-echo "\n== 7. Integracion ==\n";
+echo "\n== 7. Alta individual rechaza capacitacion inactiva ==\n";
+$codigoInact = 'RF008-INACT-' . date('YmdHis');
+$capIndivInact = (int)$db->insert('capacitaciones', [
+    'codigo' => $codigoInact,
+    'nombre' => 'Capacitacion inactiva RF-008',
+    'objetivo' => 'Prueba de rechazo ACTIVA en alta individual',
+    'duracion_estimada_horas' => 1,
+    'criticidad' => 'BAJA',
+    'estado' => 'INACTIVA',
+    'periodicidad_default_id' => $periodoId,
+]);
+ok($capIndivInact > 0, 'Capacitacion inactiva de prueba creada');
+
+$msgRechazo = null;
+try {
+    $asignaciones->crear([
+        'persona_id_ext' => $personaId,
+        'capacitacion_id' => $capIndivInact,
+        'fecha_limite_cumplimiento' => '2026-12-31',
+    ], 0);
+} catch (HttpException $e) {
+    $msgRechazo = $e->getMessage();
+    ok($e->getStatusCode() === 422, 'HTTP 422 en cap inactiva');
+}
+ok(
+    $msgRechazo === 'Solo se puede asignar una capacitación activa.',
+    'Rechazo individual: ' . ($msgRechazo ?? 'no lanzo')
+);
+$asigInactIndiv = $db->fetch(
+    'SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ? AND capacitacion_id = ? LIMIT 1',
+    [$personaId, $capIndivInact]
+);
+ok($asigInactIndiv === null, 'No se inserto asignacion de cap inactiva');
+
+$lockPrueba = $db->fetch('SELECT GET_LOCK(?, 1) AS tomado', ['hseq-asig-' . $personaId]);
+ok((int)($lockPrueba['tomado'] ?? -1) === 1, 'GET_LOCK nominado por persona disponible');
+$db->fetch('SELECT RELEASE_LOCK(?) AS liberado', ['hseq-asig-' . $personaId]);
+
+echo "\n== 8. Integracion ==\n";
 $db->fetchAll('SELECT capacitacion_id FROM capacitaciones LIMIT 1');
 $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion LIMIT 1');
 $db->fetchAll('SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad LIMIT 1');
@@ -335,6 +375,9 @@ foreach ($idsMatriz as $idMatriz) {
     $db->query('UPDATE matriz_aplicabilidad SET activa = 0 WHERE matriz_aplicabilidad_id = ?', [$idMatriz]);
 }
 $db->query('DELETE FROM capacitaciones WHERE capacitacion_id = ?', [$capMasivaId]);
+if ($capIndivInact > 0) {
+    $db->query('DELETE FROM capacitaciones WHERE capacitacion_id = ?', [$capIndivInact]);
+}
 foreach ($capsCreadas as $cid) {
     $ref = $db->fetch(
         'SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad WHERE capacitacion_id = ? LIMIT 1',

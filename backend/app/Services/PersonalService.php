@@ -390,7 +390,7 @@ class PersonalService
             return [
                 'creadas' => 0,
                 'omitidas' => 0,
-                'error' => 'No fue posible generar las asignaciones automáticas.',
+                'error' => 'El trabajador fue registrado, pero ocurrió un problema al generar sus asignaciones de capacitación. Consulte el historial o contacte al administrador.',
             ];
         }
     }

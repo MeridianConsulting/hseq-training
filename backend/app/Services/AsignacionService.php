@@ -110,8 +110,13 @@ class AsignacionService
         $capacitacionId = (int)$datos['capacitacion_id'];
         $persona = $this->personal->ver($personaId);
 
-        if ($this->capacitaciones->buscarPorId($capacitacionId) === null) {
+        $cap = $this->capacitaciones->buscarPorId($capacitacionId);
+        if ($cap === null) {
             throw new HttpException('La capacitación no existe', 422);
+        }
+
+        if (($cap['estado'] ?? '') !== 'ACTIVA') {
+            throw new HttpException('Solo se puede asignar una capacitación activa.', 422);
         }
 
         if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {

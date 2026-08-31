@@ -187,7 +187,9 @@ class PersonalController extends Controller
         }
 
         if (!empty($sync['error'])) {
-            return $base . '. ' . (string)$sync['error'];
+            $verbo = str_contains($base, 'actualizado') ? 'actualizado' : 'registrado';
+
+            return "El trabajador fue {$verbo}, pero ocurrió un problema al generar sus asignaciones de capacitación. Consulte el historial o contacte al administrador.";
         }
 
         $creadas = (int)($sync['creadas'] ?? 0);

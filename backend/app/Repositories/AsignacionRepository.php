@@ -113,14 +113,19 @@ class AsignacionRepository
      *
      * @return array<string, true>
      */
-    public function paresPendientes(): array
+    public function paresPendientes(?int $personaId = null): array
     {
-        $filas = $this->db->fetchAll(
-            'SELECT a.persona_id_ext, a.capacitacion_id
-             FROM asignaciones_capacitacion a
-             LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
-             WHERE c.cumplimiento_id IS NULL'
-        );
+        $sql = 'SELECT a.persona_id_ext, a.capacitacion_id
+                FROM asignaciones_capacitacion a
+                LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
+                WHERE c.cumplimiento_id IS NULL';
+        $params = [];
+        if ($personaId !== null && $personaId > 0) {
+            $sql .= ' AND a.persona_id_ext = ?';
+            $params[] = $personaId;
+        }
+
+        $filas = $this->db->fetchAll($sql, $params);
 
         $mapa = [];
         foreach ($filas as $fila) {
@@ -128,6 +133,27 @@ class AsignacionRepository
         }
 
         return $mapa;
+    }
+
+    /**
+     * Bloqueo nominado por trabajador para que dos sincronizaciones no dupliquen pendientes.
+     *
+     * @param callable():mixed $operacion
+     */
+    public function conLockPersona(int $personaId, callable $operacion): mixed
+    {
+        if ($personaId < 1) {
+            return $operacion();
+        }
+
+        $nombre = 'hseq-asig-' . $personaId;
+        $this->db->fetch('SELECT GET_LOCK(?, 10) AS tomado', [$nombre]);
+
+        try {
+            return $operacion();
+        } finally {
+            $this->db->fetch('SELECT RELEASE_LOCK(?) AS liberado', [$nombre]);
+        }
     }
 
     /**

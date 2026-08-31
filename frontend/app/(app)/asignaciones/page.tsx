@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   FormularioAsignacion,
   type DatosAsignacion,
@@ -53,6 +54,41 @@ function etiquetaOrigen(origen: string): string {
   return origen;
 }
 
+type PersonaHistorial = {
+  id: number;
+  nombre: string;
+  documento: string | null;
+};
+
+function leerHistorialUrl(): PersonaHistorial | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const id = Number(params.get("persona_id") || 0);
+  if (!Number.isFinite(id) || id < 1) {
+    return null;
+  }
+
+  const nombre = (params.get("nombre") ?? "").trim();
+  const documento = (params.get("documento") ?? "").trim();
+
+  return {
+    id,
+    nombre: nombre || `Persona ${id}`,
+    documento: documento || null,
+  };
+}
+
+function rutaHistorial(persona: PersonaHistorial): string {
+  return withQuery("/asignaciones", {
+    persona_id: persona.id,
+    nombre: persona.nombre,
+    documento: persona.documento,
+  });
+}
+
 export default function AsignacionesPage() {
   return (
     <RequierePermiso permiso="asignaciones.ver">
@@ -70,6 +106,7 @@ type ResultadoMasivo = {
 
 function Contenido() {
   const { puede } = useAuth();
+  const router = useRouter();
   const [items, setItems] = useState<Asignacion[]>([]);
   const [proximas, setProximas] = useState<ProximasAsignaciones>({ total: 0, items: [] });
   const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
@@ -79,11 +116,8 @@ function Contenido() {
   const [capacitacionId, setCapacitacionId] = useState("");
   const [estado, setEstado] = useState("");
   const [origen, setOrigen] = useState("");
-  const [personaHistorial, setPersonaHistorial] = useState<{
-    id: number;
-    nombre: string;
-    documento: string | null;
-  } | null>(null);
+  const [personaHistorial, setPersonaHistorial] = useState<PersonaHistorial | null>(null);
+  const [historialListo, setHistorialListo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -126,12 +160,20 @@ function Contenido() {
   }
 
   useEffect(() => {
+    setPersonaHistorial(leerHistorialUrl());
+    setHistorialListo(true);
+  }, []);
+
+  useEffect(() => {
+    if (!historialListo) {
+      return;
+    }
     const id = window.setTimeout(() => {
       void cargarListado(1);
     }, 300);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar, capacitacionId, estado, origen, personaHistorial]);
+  }, [buscar, capacitacionId, estado, origen, personaHistorial, historialListo]);
 
   useEffect(() => {
     void cargarProximas();
@@ -221,12 +263,19 @@ function Contenido() {
   }
 
   function verHistorial(item: Asignacion) {
-    setPersonaHistorial({
+    const filtro: PersonaHistorial = {
       id: item.persona_id_ext,
       nombre: item.persona_nombre ?? `Persona ${item.persona_id_ext}`,
       documento: item.numero_documento,
-    });
+    };
+    setPersonaHistorial(filtro);
     setBuscar("");
+    router.replace(rutaHistorial(filtro));
+  }
+
+  function quitarFiltroHistorial() {
+    setPersonaHistorial(null);
+    router.replace("/asignaciones");
   }
 
   return (
@@ -268,7 +317,7 @@ function Contenido() {
           <button
             type="button"
             className="font-medium underline"
-            onClick={() => setPersonaHistorial(null)}
+            onClick={quitarFiltroHistorial}
           >
             Quitar filtro
           </button>
@@ -321,7 +370,9 @@ function Contenido() {
             className={inputClass}
             value={buscar}
             onChange={(e) => {
-              setPersonaHistorial(null);
+              if (personaHistorial !== null) {
+                quitarFiltroHistorial();
+              }
               setBuscar(e.target.value);
             }}
             placeholder="Nombre o documento"

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -57,6 +58,7 @@ function Contenido() {
   const [archivo, setArchivo] = useState<File | null>(null);
   const [resultadoCarga, setResultadoCarga] = useState<ResultadoCargaPersonal | null>(null);
   const [cargandoImportacion, setCargandoImportacion] = useState(false);
+  const [personaHistorial, setPersonaHistorial] = useState<PersonaCorporativa | null>(null);
 
   async function cargar(paginaActual = 1) {
     const respuesta = await apiGet<ListaPaginada<PersonaCorporativa>>(
@@ -156,6 +158,7 @@ function Contenido() {
     }
 
     setMensaje(respuesta.message);
+    setPersonaHistorial(respuesta.data ?? null);
     setError(null);
     setErroresApi(null);
     setAbierto(false);
@@ -193,6 +196,7 @@ function Contenido() {
     }
 
     setResultadoCarga(respuesta.data);
+    setPersonaHistorial(null);
     setMensaje(respuesta.message);
     await cargar(1);
   }
@@ -248,7 +252,19 @@ function Contenido() {
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
-      {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
+      {mensaje ? (
+        <Alert tono={personaHistorial?.sincronizacion?.error ? "aviso" : "ok"}>
+          {mensaje}
+          {personaHistorial && puede("asignaciones.ver") ? (
+            <>
+              {" "}
+              <Link href={rutaHistorial(personaHistorial)} className="font-medium underline underline-offset-2">
+                Ver historial
+              </Link>
+            </>
+          ) : null}
+        </Alert>
+      ) : null}
 
       <Filters>
         <Field etiqueta="Buscar">
@@ -299,7 +315,15 @@ function Contenido() {
           <Badge key="e" tono={item.estado === "Activo" ? "ok" : "neutral"}>
             {item.estado}
           </Badge>,
-          <div key="a" className="flex justify-end">
+          <div key="a" className="flex justify-end gap-1">
+            {puede("asignaciones.ver") ? (
+              <Link
+                href={rutaHistorial(item)}
+                className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
+              >
+                Historial
+              </Link>
+            ) : null}
             {puede("personal.editar") ? (
               <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
                 Editar
@@ -390,6 +414,18 @@ function Contenido() {
       </Modal>
     </>
   );
+}
+
+function rutaHistorial(persona: {
+  persona_id: number;
+  nombre_completo: string;
+  numero_documento: string;
+}): string {
+  return withQuery("/asignaciones", {
+    persona_id: persona.persona_id,
+    nombre: persona.nombre_completo,
+    documento: persona.numero_documento,
+  });
 }
 
 function escaparCsv(valor: string): string {

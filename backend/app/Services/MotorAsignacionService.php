@@ -33,27 +33,42 @@ class MotorAsignacionService
     {
         $reglas = $this->filtrarReglas($this->matriz->reglasActivasParaMotor(), $filtro);
         $personas = $this->personal->listarActivosParaMotor();
-        $pendientes = $this->asignaciones->paresPendientes();
+        $pendientes = [];
 
         $creadas = 0;
         $omitidas = 0;
 
-        $this->asignaciones->transaccion(function () use (
-            $reglas,
-            $personas,
-            &$pendientes,
-            &$creadas,
-            &$omitidas,
-            $usuarioId
-        ): int {
-            foreach ($personas as $persona) {
-                $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
-                $creadas += $r['creadas'];
-                $omitidas += $r['omitidas'];
-            }
+        foreach ($personas as $persona) {
+            $personaId = (int)($persona['persona_id'] ?? 0);
+            $this->asignaciones->conLockPersona($personaId, function () use (
+                $persona,
+                $personaId,
+                $reglas,
+                &$pendientes,
+                &$creadas,
+                &$omitidas,
+                $usuarioId
+            ): void {
+                $this->asignaciones->transaccion(function () use (
+                    $persona,
+                    $personaId,
+                    $reglas,
+                    &$pendientes,
+                    &$creadas,
+                    &$omitidas,
+                    $usuarioId
+                ): int {
+                    foreach ($this->asignaciones->paresPendientes($personaId > 0 ? $personaId : null) as $clave => $valor) {
+                        $pendientes[$clave] = $valor;
+                    }
+                    $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
+                    $creadas += $r['creadas'];
+                    $omitidas += $r['omitidas'];
 
-            return $creadas;
-        });
+                    return $r['creadas'];
+                });
+            });
+        }
 
         return [
             'creadas' => $creadas,
@@ -73,24 +88,34 @@ class MotorAsignacionService
             return ['creadas' => 0, 'omitidas' => 0];
         }
 
+        $personaId = (int)($persona['persona_id'] ?? 0);
         $reglas = $this->matriz->reglasActivasParaMotor();
-        $pendientes = $this->asignaciones->paresPendientes();
         $creadas = 0;
         $omitidas = 0;
 
-        $this->asignaciones->transaccion(function () use (
+        $this->asignaciones->conLockPersona($personaId, function () use (
             $persona,
+            $personaId,
             $reglas,
-            &$pendientes,
             &$creadas,
             &$omitidas,
             $usuarioId
         ): int {
-            $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
-            $creadas = $r['creadas'];
-            $omitidas = $r['omitidas'];
+            return $this->asignaciones->transaccion(function () use (
+                $persona,
+                $personaId,
+                $reglas,
+                &$creadas,
+                &$omitidas,
+                $usuarioId
+            ): int {
+                $pendientes = $this->asignaciones->paresPendientes($personaId > 0 ? $personaId : null);
+                $r = $this->aplicarReglas($persona, $reglas, $pendientes, $usuarioId);
+                $creadas = $r['creadas'];
+                $omitidas = $r['omitidas'];
 
-            return $creadas;
+                return $creadas;
+            });
         });
 
         return [
