@@ -45,6 +45,12 @@ export function TarjetaCronograma({ item }: { item: ItemCronograma }) {
           ·
         </span>
         <span className="text-sm text-slate-700">{formatoHoras(item.horas)}</span>
+        {item.cantidad_programada > 0 ? (
+          <Badge tono="neutral">
+            {item.cantidad_programada}{" "}
+            {item.cantidad_programada === 1 ? "programada" : "programadas"}
+          </Badge>
+        ) : null}
         <Badge tono={tonoMetodologia(item.metodologia)}>
           {item.metodologia ?? "Sin metodología"}
         </Badge>

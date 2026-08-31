@@ -73,6 +73,7 @@ class CronogramaService
             'proceso_id' => $procesoId,
             'proceso_nombre' => $procesoNombre,
             'total' => $total,
+            'estado_plan' => 'APROBADO',
             'procesos' => $procesos,
             'meses' => $meses,
         ];
@@ -98,6 +99,7 @@ class CronogramaService
             'metodologia' => is_string($metodologia) && $metodologia !== '' ? $metodologia : null,
             'mes' => $mes,
             'mes_nombre' => $this->nombreMes($mes),
+            'cantidad_programada' => (int)$fila['cantidad_programada'],
             'anio' => $anio,
             'proceso_id' => $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null,
             'proceso_nombre' => $fila['proceso_nombre'] !== null && $fila['proceso_nombre'] !== ''

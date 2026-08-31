@@ -101,6 +101,7 @@ export type ItemCronograma = {
   metodologia: string | null;
   mes: number;
   mes_nombre: string;
+  cantidad_programada: number;
   anio: number;
   proceso_id: number | null;
   proceso_nombre: string | null;
@@ -118,6 +119,7 @@ export type TableroCronograma = {
   proceso_id: number | null;
   proceso_nombre: string | null;
   total: number;
+  estado_plan: string;
   procesos: ProcesoCronograma[];
   meses: MesCronograma[];
 };
@@ -260,6 +262,46 @@ export type FilaMatriz = {
   periodicidad_nombre: string | null;
   obligatoria: boolean;
   activa: boolean;
+};
+
+export type AsignacionEnPlan = {
+  asignacion_id: number;
+  persona_id_ext: number | null;
+  persona_nombre: string | null;
+  numero_documento: string | null;
+  capacitacion_id: number;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  origen: string;
+  proyecto: string | null;
+};
+
+export type DetallePlanAnual = {
+  plan_detalle_id: number;
+  capacitacion_id: number;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  mes_programado: number;
+  mes_nombre: string;
+  trimestre: number;
+  cantidad_programada: number;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
+  ambito: string | null;
+  proyecto: string | null;
+  asignaciones: AsignacionEnPlan[];
+};
+
+export type PlanAnual = {
+  plan_anual_id: number;
+  anio: number;
+  estado: "BORRADOR" | "EN_REVISION" | "APROBADO" | string;
+  total_programadas: number;
+  aprobado_por_usuario_id_ext: number | null;
+  fecha_aprobacion: string | null;
+  creado_por_usuario_id_ext: number | null;
+  created_at: string | null;
+  detalles?: DetallePlanAnual[];
 };
 
 export type TipoCatalogo = {

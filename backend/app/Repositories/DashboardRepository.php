@@ -7,7 +7,7 @@ namespace App\Repositories;
 use App\Core\Database;
 
 /**
- * Agregados del dashboard. Programado = plan anual; ejecutado = cumplimientos.
+ * Agregados del dashboard. Programado = plan anual APROBADO; ejecutado = cumplimientos.
  * No une sesion_participantes (evitar duplicar personas).
  */
 class DashboardRepository
@@ -33,6 +33,7 @@ class DashboardRepository
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = d.capacitacion_id
                 {$extraJoin}
                 WHERE p.anio = ?
+                  AND p.estado = 'APROBADO'
                   AND d.mes_programado IN ({$inMeses})
                   AND (d.ambito IN ('ADMINISTRACION', 'PROYECTO') OR d.ambito IS NULL)
                   {$extraWhere}";

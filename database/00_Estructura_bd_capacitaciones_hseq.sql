@@ -321,6 +321,17 @@ CREATE TABLE asignaciones_capacitacion (
   CONSTRAINT fk_asig_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE plan_detalle_asignaciones (
+  plan_detalle_asignacion_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  plan_detalle_id INT UNSIGNED NOT NULL,
+  asignacion_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_plan_det_asig (plan_detalle_id, asignacion_id),
+  KEY ix_plan_det_asig_asignacion (asignacion_id),
+  CONSTRAINT fk_pda_detalle FOREIGN KEY (plan_detalle_id) REFERENCES plan_anual_detalle(plan_detalle_id),
+  CONSTRAINT fk_pda_asignacion FOREIGN KEY (asignacion_id) REFERENCES asignaciones_capacitacion(asignacion_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE sesion_participantes (
   sesion_participante_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   sesion_id INT UNSIGNED NOT NULL,

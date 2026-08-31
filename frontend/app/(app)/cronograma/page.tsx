@@ -86,7 +86,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Tablero de Cronograma"
-        descripcion="Capacitaciones programadas en el plan anual, agrupadas por mes."
+        descripcion="Capacitaciones del plan anual aprobado, agrupadas por mes."
       />
 
       <FiltroCronograma valor={filtro} procesos={procesos} onChange={setFiltro} />
@@ -106,6 +106,7 @@ function Contenido() {
             {tablero.total === 0
               ? "0 capacitaciones programadas"
               : `${tablero.total} capacitación${tablero.total === 1 ? "" : "es"} programada${tablero.total === 1 ? "" : "s"}`}
+            {tablero.estado_plan ? ` · Plan ${tablero.estado_plan === "APROBADO" ? "aprobado" : tablero.estado_plan}` : ""}
             {cargando ? " · Actualizando…" : null}
           </p>
 

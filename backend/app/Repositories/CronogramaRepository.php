@@ -42,6 +42,7 @@ class CronogramaRepository
         return $this->db->fetchAll(
             "SELECT d.plan_detalle_id,
                     d.mes_programado,
+                    d.cantidad_programada,
                     c.capacitacion_id,
                     c.codigo,
                     c.nombre,
@@ -56,6 +57,7 @@ class CronogramaRepository
              LEFT JOIN modalidades mo ON mo.modalidad_id = c.modalidad_default_id
              LEFT JOIN procesos pr ON pr.proceso_id = d.proceso_id
              WHERE p.anio = ?
+               AND p.estado = 'APROBADO'
                AND d.mes_programado IN ({$inMeses})
                {$filtroProceso}
              ORDER BY d.mes_programado ASC, c.nombre ASC",
