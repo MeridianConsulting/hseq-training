@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import type { Capacitacion, CargoCorporativo, FilaMatriz, ItemCatalogo } from "@/lib/tipos";
+import { conValorHistorico } from "@/lib/catalogos";
 
 export type DatosMatriz = {
   capacitacion_id: string;
@@ -67,6 +68,25 @@ export function FormularioMatriz({
   const base = useMemo(() => (inicial ? desdeItem(inicial) : vacio()), [inicial]);
   const [datos, setDatos] = useState<DatosMatriz>(base);
 
+  const areasVisibles = useMemo(
+    () => conValorHistorico(areas, "area_id", inicial?.area_id, inicial?.area_nombre),
+    [areas, inicial],
+  );
+  const procesosVisibles = useMemo(
+    () => conValorHistorico(procesos, "proceso_id", inicial?.proceso_id, inicial?.proceso_nombre),
+    [procesos, inicial],
+  );
+  const periodicidadesVisibles = useMemo(
+    () =>
+      conValorHistorico(
+        periodicidades,
+        "periodicidad_id",
+        inicial?.periodicidad_id,
+        inicial?.periodicidad_nombre,
+      ),
+    [periodicidades, inicial],
+  );
+
   function set<K extends keyof DatosMatriz>(clave: K, valor: DatosMatriz[K]) {
     setDatos((prev) => ({ ...prev, [clave]: valor }));
   }
@@ -101,7 +121,7 @@ export function FormularioMatriz({
       <Field etiqueta="Área">
         <select className={inputClass} value={datos.area_id} onChange={(e) => set("area_id", e.target.value)}>
           <option value="">Sin área</option>
-          {areas.map((a) => (
+          {areasVisibles.map((a) => (
             <option key={String(a.area_id)} value={String(a.area_id)}>
               {String(a.nombre)}
             </option>
@@ -111,7 +131,7 @@ export function FormularioMatriz({
       <Field etiqueta="Proceso">
         <select className={inputClass} value={datos.proceso_id} onChange={(e) => set("proceso_id", e.target.value)}>
           <option value="">Sin proceso</option>
-          {procesos.map((p) => (
+          {procesosVisibles.map((p) => (
             <option key={String(p.proceso_id)} value={String(p.proceso_id)}>
               {String(p.nombre)}
             </option>
@@ -131,7 +151,7 @@ export function FormularioMatriz({
       <Field etiqueta="Periodicidad (override)">
         <select className={inputClass} value={datos.periodicidad_id} onChange={(e) => set("periodicidad_id", e.target.value)}>
           <option value="">Usar la de la capacitación</option>
-          {periodicidades.map((p) => (
+          {periodicidadesVisibles.map((p) => (
             <option key={String(p.periodicidad_id)} value={String(p.periodicidad_id)}>
               {String(p.nombre)}
             </option>

@@ -66,8 +66,8 @@ function Contenido() {
       const [caps, car, ar, pr, pe] = await Promise.all([
         apiGet<ListaPaginada<Capacitacion>>(withQuery("/api/capacitaciones", { per_page: 100, estado: "ACTIVA" })),
         apiGet<CargoCorporativo[]>("/api/personal/cargos"),
-        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/areas"),
-        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/procesos"),
+        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/areas?activos=1"),
+        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/procesos?activos=1"),
         apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/periodicidades?activos=1"),
       ]);
       setCapacitaciones(caps.data?.items ?? []);

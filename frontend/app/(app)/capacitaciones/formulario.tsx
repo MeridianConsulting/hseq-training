@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import type { ApiErrorMap } from "@/lib/api";
 import type { Capacitacion, ItemCatalogo } from "@/lib/tipos";
+import { conValorHistorico } from "@/lib/catalogos";
 
 export type DatosCapacitacion = {
   codigo: string;
@@ -138,6 +139,58 @@ export function FormularioCapacitacion({
 }) {
   const base = useMemo(() => (inicial ? desdeItem(inicial) : vacio()), [inicial]);
   const [datos, setDatos] = useState<DatosCapacitacion>(base);
+
+  const catalogosVisibles = useMemo(() => {
+    if (!inicial) {
+      return catalogos;
+    }
+
+    return {
+      ...catalogos,
+      categorias: conValorHistorico(
+        catalogos.categorias ?? [],
+        "categoria_id",
+        inicial.categoria_id,
+        inicial.categoria_nombre,
+      ),
+      "tipos-capacitacion": conValorHistorico(
+        catalogos["tipos-capacitacion"] ?? [],
+        "tipo_capacitacion_id",
+        inicial.tipo_capacitacion_id,
+        inicial.tipo_nombre,
+      ),
+      periodicidades: conValorHistorico(
+        catalogos.periodicidades ?? [],
+        "periodicidad_id",
+        inicial.periodicidad_default_id,
+        inicial.periodicidad_nombre,
+      ),
+      vigencias: conValorHistorico(
+        catalogos.vigencias ?? [],
+        "vigencia_id",
+        inicial.vigencia_id,
+        inicial.vigencia_nombre,
+      ),
+      modalidades: conValorHistorico(
+        catalogos.modalidades ?? [],
+        "modalidad_id",
+        inicial.modalidad_default_id,
+        inicial.modalidad_nombre,
+      ),
+      proveedores: conValorHistorico(
+        catalogos.proveedores ?? [],
+        "proveedor_id",
+        inicial.proveedor_default_id,
+        inicial.proveedor_nombre,
+      ),
+      "fuentes-normativas": conValorHistorico(
+        catalogos["fuentes-normativas"] ?? [],
+        "fuente_normativa_id",
+        inicial.fuente_normativa_id,
+        inicial.fuente_normativa_nombre,
+      ),
+    };
+  }, [catalogos, inicial]);
   const [errores, setErrores] = useState<ErroresCapacitacion>({});
 
   useEffect(() => {
@@ -200,7 +253,7 @@ export function FormularioCapacitacion({
       <Field etiqueta="Clasificación / categoría">
         <select className={inputClass} value={datos.categoria_id} onChange={(e) => set("categoria_id", e.target.value)}>
           <option value="">Sin categoría</option>
-          {opciones(catalogos.categorias ?? [], "categoria_id")}
+          {opciones(catalogosVisibles.categorias ?? [], "categoria_id")}
         </select>
       </Field>
       <Field etiqueta="Criticidad" error={errores.criticidad}>
@@ -234,37 +287,37 @@ export function FormularioCapacitacion({
       <Field etiqueta="Tipo">
         <select className={inputClass} value={datos.tipo_capacitacion_id} onChange={(e) => set("tipo_capacitacion_id", e.target.value)}>
           <option value="">Sin tipo</option>
-          {opciones(catalogos["tipos-capacitacion"] ?? [], "tipo_capacitacion_id")}
+          {opciones(catalogosVisibles["tipos-capacitacion"] ?? [], "tipo_capacitacion_id")}
         </select>
       </Field>
       <Field etiqueta="Periodicidad (ciclo de repetición)">
         <select className={inputClass} value={datos.periodicidad_default_id} onChange={(e) => set("periodicidad_default_id", e.target.value)}>
           <option value="">No periódica</option>
-          {opciones(catalogos.periodicidades ?? [], "periodicidad_id")}
+          {opciones(catalogosVisibles.periodicidades ?? [], "periodicidad_id")}
         </select>
       </Field>
       <Field etiqueta="Vigencia (validez una vez tomada)">
         <select className={inputClass} value={datos.vigencia_id} onChange={(e) => set("vigencia_id", e.target.value)}>
           <option value="">No vence</option>
-          {opciones(catalogos.vigencias ?? [], "vigencia_id")}
+          {opciones(catalogosVisibles.vigencias ?? [], "vigencia_id")}
         </select>
       </Field>
       <Field etiqueta="Modalidad">
         <select className={inputClass} value={datos.modalidad_default_id} onChange={(e) => set("modalidad_default_id", e.target.value)}>
           <option value="">Sin modalidad</option>
-          {opciones(catalogos.modalidades ?? [], "modalidad_id")}
+          {opciones(catalogosVisibles.modalidades ?? [], "modalidad_id")}
         </select>
       </Field>
       <Field etiqueta="Proveedor">
         <select className={inputClass} value={datos.proveedor_default_id} onChange={(e) => set("proveedor_default_id", e.target.value)}>
           <option value="">Sin proveedor</option>
-          {opciones(catalogos.proveedores ?? [], "proveedor_id")}
+          {opciones(catalogosVisibles.proveedores ?? [], "proveedor_id")}
         </select>
       </Field>
       <Field etiqueta="Fuente normativa">
         <select className={inputClass} value={datos.fuente_normativa_id} onChange={(e) => set("fuente_normativa_id", e.target.value)}>
           <option value="">Sin fuente</option>
-          {opciones(catalogos["fuentes-normativas"] ?? [], "fuente_normativa_id")}
+          {opciones(catalogosVisibles["fuentes-normativas"] ?? [], "fuente_normativa_id")}
         </select>
       </Field>
       <Field etiqueta="Responsable">

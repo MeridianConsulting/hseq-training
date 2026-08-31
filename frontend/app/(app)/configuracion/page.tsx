@@ -6,12 +6,16 @@ import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, inputClass } from "@/components/ui/field";
+import { Filters } from "@/components/ui/filters";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
+
+type FiltroEstado = "todos" | "activos" | "inactivos";
 
 export default function ConfiguracionPage() {
   return (
@@ -26,6 +30,7 @@ function Contenido() {
   const [tipos, setTipos] = useState<TipoCatalogo[]>([]);
   const [tipo, setTipo] = useState<TipoCatalogo | null>(null);
   const [items, setItems] = useState<ItemCatalogo[]>([]);
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("todos");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -47,11 +52,13 @@ function Contenido() {
     if (!tipo) {
       return;
     }
-    void cargar(tipo.tipo);
-  }, [tipo]);
+    void cargar(tipo.tipo, filtroEstado);
+  }, [tipo, filtroEstado]);
 
-  async function cargar(tipoActual: string) {
-    const r = await apiGet<{ items: ItemCatalogo[] }>(`/api/catalogs/${tipoActual}`);
+  async function cargar(tipoActual: string, estado: FiltroEstado = filtroEstado) {
+    const r = await apiGet<{ items: ItemCatalogo[] }>(
+      withQuery(`/api/catalogs/${tipoActual}`, { estado }),
+    );
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible cargar el catálogo.");
       return;
@@ -64,6 +71,13 @@ function Contenido() {
     const clave = Object.keys(item).find((k) => k.endsWith("_id")) ?? "";
     const valor = item[clave];
     return typeof valor === "number" ? valor : valor != null ? Number(valor) : null;
+  }
+
+  function formatoFecha(valor: unknown): string {
+    if (typeof valor !== "string" || valor === "") {
+      return "—";
+    }
+    return valor.slice(0, 19).replace("T", " ");
   }
 
   async function guardar(evento: FormEvent, datos: Record<string, unknown>) {
@@ -83,13 +97,14 @@ function Contenido() {
     }
 
     setMensaje(respuesta.message);
+    setError(null);
     setAbierto(false);
     setEditando(null);
     await cargar(tipo.tipo);
   }
 
-  async function eliminar(item: ItemCatalogo) {
-    if (!tipo || !confirm("¿Eliminar o inactivar este registro?")) {
+  async function inactivar(item: ItemCatalogo) {
+    if (!tipo || !confirm("¿Está seguro de inactivar este registro?")) {
       return;
     }
     const id = pkDe(tipo, item);
@@ -98,10 +113,29 @@ function Contenido() {
     }
     const r = await apiDelete(`/api/catalogs/${tipo.tipo}/${id}`);
     if (!r.success) {
-      setError(r.message || "No se pudo eliminar.");
+      setError(r.message || "No se pudo inactivar.");
       return;
     }
     setMensaje(r.message);
+    setError(null);
+    await cargar(tipo.tipo);
+  }
+
+  async function reactivar(item: ItemCatalogo) {
+    if (!tipo) {
+      return;
+    }
+    const id = pkDe(tipo, item);
+    if (!id) {
+      return;
+    }
+    const r = await apiPut<ItemCatalogo>(`/api/catalogs/${tipo.tipo}/${id}`, { activo: 1 });
+    if (!r.success) {
+      setError(r.message || "No se pudo reactivar.");
+      return;
+    }
+    setMensaje(r.message || "Registro reactivado");
+    setError(null);
     await cargar(tipo.tipo);
   }
 
@@ -109,7 +143,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Catálogos"
-        descripcion="Parámetros propios del módulo HSEQ. Los cargos y el personal viven en meridian_personal."
+        descripcion="Parámetros del módulo HSEQ. Los inactivos se conservan en históricos y no aparecen en altas nuevas. Cargos y personal viven en meridian_personal."
         acciones={
           puede("catalogos.gestionar") && tipo ? (
             <Button
@@ -143,16 +177,32 @@ function Contenido() {
         ))}
       </div>
 
+      <Filters>
+        <Field etiqueta="Estado">
+          <select
+            className={inputClass}
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value as FiltroEstado)}
+          >
+            <option value="todos">Todos</option>
+            <option value="activos">Activos</option>
+            <option value="inactivos">Inactivos</option>
+          </select>
+        </Field>
+      </Filters>
+
       <Table
         columnas={[
           { clave: "nombre", etiqueta: "Nombre" },
           { clave: "extra", etiqueta: "Detalle" },
           { clave: "estado", etiqueta: "Estado" },
+          { clave: "creado", etiqueta: "Creado" },
+          { clave: "actualizado", etiqueta: "Actualizado" },
           { clave: "acciones", etiqueta: "" },
         ]}
         filas={items.map((item) => [
           String(item.nombre ?? ""),
-          String(item.descripcion ?? item.unidad ?? ""),
+          String(item.descripcion ?? item.unidad ?? "—"),
           item.activo === undefined ? (
             "—"
           ) : (
@@ -160,6 +210,8 @@ function Contenido() {
               {Number(item.activo) === 1 ? "Activo" : "Inactivo"}
             </Badge>
           ),
+          formatoFecha(item.created_at),
+          formatoFecha(item.updated_at),
           <div key="a" className="flex justify-end gap-2">
             {puede("catalogos.gestionar") ? (
               <>
@@ -173,9 +225,15 @@ function Contenido() {
                 >
                   Editar
                 </Button>
-                <Button type="button" variante="ghost" onClick={() => void eliminar(item)}>
-                  Eliminar
-                </Button>
+                {Number(item.activo) === 0 ? (
+                  <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
+                    Reactivar
+                  </Button>
+                ) : (
+                  <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
+                    Inactivar
+                  </Button>
+                )}
               </>
             ) : null}
           </div>,
