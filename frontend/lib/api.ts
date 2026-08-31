@@ -132,3 +132,69 @@ export function apiPut<T>(path: string, body?: unknown): Promise<ApiResponse<T>>
 export function apiDelete<T>(path: string): Promise<ApiResponse<T>> {
   return apiFetch<T>(path, { method: "DELETE" });
 }
+
+export async function apiPostForm<T>(path: string, form: FormData): Promise<ApiResponse<T>> {
+  const token = getStoredToken();
+  const headers = new Headers();
+  headers.set("Accept", "application/json");
+
+  if (token && !path.startsWith("/api/auth/login")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const respuesta = await fetch(`${apiBase()}${path}`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+
+  if (respuesta.status === 401 && !path.startsWith("/api/auth/login")) {
+    clearStoredToken();
+    notificarSesionExpirada();
+  }
+
+  const payload = (await respuesta.json()) as ApiResponse<T>;
+
+  return payload;
+}
+
+export async function apiDownload(path: string, nombreFallback: string): Promise<void> {
+  const token = getStoredToken();
+  const headers = new Headers();
+  headers.set("Accept", "*/*");
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const respuesta = await fetch(`${apiBase()}${path}`, { headers });
+
+  if (respuesta.status === 401) {
+    clearStoredToken();
+    notificarSesionExpirada();
+    throw new Error("Sesión expirada");
+  }
+
+  if (!respuesta.ok) {
+    let mensaje = "No fue posible descargar el archivo.";
+    try {
+      const payload = (await respuesta.json()) as ApiResponse<unknown>;
+      if (payload.message) {
+        mensaje = payload.message;
+      }
+    } catch {
+      // El cuerpo no es JSON.
+    }
+    throw new Error(mensaje);
+  }
+
+  const blob = await respuesta.blob();
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombreFallback;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
+}

@@ -164,6 +164,7 @@ export type ProximasAsignaciones = {
 export type PersonaCorporativa = {
   persona_id: number;
   numero_documento: string;
+  tipo_documento_id: number | null;
   nombre_completo: string;
   estado: string;
   cargo_id: number | null;
@@ -181,6 +182,27 @@ export type PersonaCorporativa = {
 export type CargoCorporativo = {
   cargo_id: number;
   nombre_cargo: string;
+};
+
+export type TipoDocumentoCorporativo = {
+  tipo_documento_id: number;
+  descripcion: string;
+  abreviatura: string;
+};
+
+export type RechazoCargaPersonal = {
+  fila: number;
+  documento: string;
+  nombre: string;
+  estado: string;
+  motivo: string;
+};
+
+export type ResultadoCargaPersonal = {
+  total_procesados: number;
+  total_importados: number;
+  total_rechazados: number;
+  rechazados: RechazoCargaPersonal[];
 };
 
 export type Capacitacion = {

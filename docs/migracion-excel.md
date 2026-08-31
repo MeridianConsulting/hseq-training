@@ -1,27 +1,38 @@
-# Estrategia de migración Excel (no ejecutar en esta etapa)
+# Personal corporativo y Excel
 
-Fuente operativa actual: cronograma y matriz por cargo en `docs/02_HSEQ_PRG_10_Capacitacion_entrenamiento_Frontera.xlsx` y el formato de levantamiento.
+## Fuente única
 
-## Principio
+El maestro de trabajadores es `meridian_personal.personas` (con `cargos` y `contratos`). HSEQ **escribe** altas individuales y cargas masivas en ese maestro. No se duplican personas en `meridian_capacitaciones`.
 
-El maestro de personas es `meridian_personal`. HSEQ **no crea ni inactiva trabajadores**. Cada fila del Excel se resuelve a un `persona_id` existente.
+Las asignaciones siguen usando `persona_id_ext`. Un trabajador creado en `/personal` queda disponible de inmediato para asignar capacitaciones.
 
-## Pasos previstos (etapa posterior)
+## Alta individual y carga masiva (módulo `/personal`)
 
-1. Normalizar documento de identidad del Excel (quitar puntos, espacios y ceros a la izquierda de forma controlada).
+- Formulario: documento, nombre, correo (opcional), cargo (catálogo), proyecto (opcional), fecha de ingreso.
+- Carga masiva: Excel `.xlsx` / `.xls` y CSV. Plantilla en `GET /api/personal/plantilla`.
+- Cada fila se valida e inserta por separado. Un error no hace rollback de las filas válidas.
+- Duplicados: documento ya en BD, o repetido dentro del mismo archivo.
+- El cargo debe existir en `meridian_personal.cargos`. **No se crean cargos automáticamente.**
+- Fecha de ingreso se guarda en `contratos.fecha_inicio`.
+- Área/proceso **no** se persisten en el trabajador (son catálogos de matriz/asignaciones). Pendiente de decisión HSEQ.
+
+## Migración del cronograma Excel (asignaciones)
+
+Sigue aplicando para el Excel operativo de capacitaciones (`docs/02_HSEQ_PRG_10_Capacitacion_entrenamiento_Frontera.xlsx`):
+
+1. Normalizar documento (quitar espacios y puntos de miles; **no** quitar ceros a la izquierda).
 2. Buscar en `meridian_personal.personas.numero_documento`.
-3. Si hay coincidencia única: usar ese `persona_id` (y el contrato vigente si aplica) al crear asignaciones o cumplimientos.
-4. Si no hay coincidencia, hay varias, o el estado laboral no cuadra: **no crear persona**. Registrar la fila en un reporte de inconsistencias.
-5. Cargos del Excel se cruzan con `meridian_personal.cargos` por nombre; si no existen, van al mismo reporte.
-6. Capacitaciones se cruzan por código/nombre con `meridian_capacitaciones.capacitaciones`; las faltantes se crean en el catálogo HSEQ, no en personal.
+3. Si hay coincidencia única: usar ese `persona_id` al crear asignaciones.
+4. Si no hay coincidencia: el personal puede registrarse primero en `/personal` (individual o carga masiva). No se crea la persona desde el importador de asignaciones (aún no implementado).
+5. Cargos del Excel se cruzan con `meridian_personal.cargos` por nombre.
 
-## Inconsistencias típicas a reportar
+## Inconsistencias típicas
 
-- Documento ausente en personal
-- Nombre que no coincide con el documento
-- Cargo del Excel distinto al cargo actual (el snapshot de asignación se tomará al asignar, no se sobrescribe después)
-- Fechas ilegibles o límite de cumplimiento confundido con vigencia
+- Documento ya registrado
+- Documento duplicado dentro del archivo
+- Cargo que no existe en el catálogo
+- Fechas ilegibles (`DD/MM/YYYY` en la plantilla)
 
-## Fuera de alcance ahora
+## Fixture de prueba
 
-No hay importador, ni job, ni carga masiva. Este documento solo deja la regla de negocio acordada.
+`docs/fixtures/carga_personal_50.csv`: 45 filas válidas y 5 inválidas (duplicado en archivo, documento vacío, nombre vacío, cargo vacío, fecha vacía). Documentos de prueba con prefijo `9000`.

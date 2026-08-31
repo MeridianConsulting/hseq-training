@@ -45,6 +45,11 @@ async function proxy(request: NextRequest, segmentos: string[]): Promise<NextRes
     respuesta.headers.set("content-type", contentType);
   }
 
+  const disposicion = upstream.headers.get("content-disposition");
+  if (disposicion) {
+    respuesta.headers.set("content-disposition", disposicion);
+  }
+
   return respuesta;
 }
 

@@ -62,4 +62,17 @@ class Response
     {
         self::json(null, $message, 422, false, $errors);
     }
+
+    public static function download(string $contenido, string $nombreArchivo, string $contentType): void
+    {
+        $seguro = preg_replace('/[^A-Za-z0-9._-]/', '_', $nombreArchivo) ?: 'archivo';
+
+        http_response_code(200);
+        header('Content-Type: ' . $contentType);
+        header('Content-Disposition: attachment; filename="' . $seguro . '"');
+        header('Content-Length: ' . (string)strlen($contenido));
+        header('Cache-Control: no-store');
+        echo $contenido;
+        exit;
+    }
 }

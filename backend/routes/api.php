@@ -44,10 +44,15 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->get('/auditoria', [AuditoriaController::class, 'index'], [[PermisoMiddleware::class, 'auditoria.ver']]);
 
-    $router->group(['prefix' => '/personal', 'middleware' => [[PermisoMiddleware::class, 'personal.ver']]], function ($router) {
-        $router->get('/cargos', [PersonalController::class, 'cargos']);
-        $router->get('', [PersonalController::class, 'index']);
-        $router->get('/{id}', [PersonalController::class, 'show']);
+    $router->group(['prefix' => '/personal'], function ($router) {
+        $router->get('/cargos', [PersonalController::class, 'cargos'], [[PermisoMiddleware::class, 'personal.ver']]);
+        $router->get('/tipos-documento', [PersonalController::class, 'tiposDocumento'], [[PermisoMiddleware::class, 'personal.ver']]);
+        $router->get('/plantilla', [PersonalController::class, 'plantilla'], [[PermisoMiddleware::class, 'personal.importar']]);
+        $router->post('/importar', [PersonalController::class, 'importar'], [[PermisoMiddleware::class, 'personal.importar']]);
+        $router->get('', [PersonalController::class, 'index'], [[PermisoMiddleware::class, 'personal.ver']]);
+        $router->post('', [PersonalController::class, 'store'], [[PermisoMiddleware::class, 'personal.crear']]);
+        $router->get('/{id}', [PersonalController::class, 'show'], [[PermisoMiddleware::class, 'personal.ver']]);
+        $router->put('/{id}', [PersonalController::class, 'update'], [[PermisoMiddleware::class, 'personal.editar']]);
     });
 
     $router->group(['prefix' => '/asignaciones'], function ($router) {

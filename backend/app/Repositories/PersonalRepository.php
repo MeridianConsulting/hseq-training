@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Core\Database;
+use PDOException;
 
 /**
- * Solo lectura sobre meridian_personal. No copia filas a capacitaciones.
+ * Maestro de trabajadores en meridian_personal (personas + contratos + cargos).
  */
 class PersonalRepository
 {
+    private const SQLSTATE_INTEGRIDAD = '23000';
+
     private Database $db;
 
     public function __construct()
@@ -54,6 +57,52 @@ class PersonalRepository
             $this->selectPersona() . ' WHERE p.persona_id = ? LIMIT 1',
             [$personaId]
         );
+    }
+
+    public function existeDocumento(string $numeroDocumento, ?int $exceptoPersonaId = null): bool
+    {
+        $personas = Database::personalTable('personas');
+        $sql = "SELECT persona_id FROM {$personas} WHERE numero_documento = ?";
+        $params = [$numeroDocumento];
+
+        if ($exceptoPersonaId !== null && $exceptoPersonaId > 0) {
+            $sql .= ' AND persona_id <> ?';
+            $params[] = $exceptoPersonaId;
+        }
+
+        $sql .= ' LIMIT 1';
+
+        return $this->db->fetch($sql, $params) !== null;
+    }
+
+    /**
+     * @param list<string> $numeros
+     * @return array<string, true>
+     */
+    public function documentosExistentes(array $numeros): array
+    {
+        $numeros = array_values(array_unique(array_filter($numeros, static fn ($n) => $n !== '')));
+
+        if ($numeros === []) {
+            return [];
+        }
+
+        $personas = Database::personalTable('personas');
+        $encontrados = [];
+
+        foreach (array_chunk($numeros, 500) as $lote) {
+            $placeholders = implode(',', array_fill(0, count($lote), '?'));
+            $filas = $this->db->fetchAll(
+                "SELECT numero_documento FROM {$personas} WHERE numero_documento IN ({$placeholders})",
+                $lote
+            );
+
+            foreach ($filas as $fila) {
+                $encontrados[(string)$fila['numero_documento']] = true;
+            }
+        }
+
+        return $encontrados;
     }
 
     public function cargos(): array
@@ -102,6 +151,188 @@ class PersonalRepository
         return $mapa;
     }
 
+    /**
+     * @return array{por_nombre: array<string,int>, por_id: array<int,string>}
+     */
+    public function mapaCargos(): array
+    {
+        $porNombre = [];
+        $porId = [];
+
+        foreach ($this->cargos() as $fila) {
+            $id = (int)$fila['cargo_id'];
+            $nombre = (string)$fila['nombre_cargo'];
+            $porId[$id] = $nombre;
+            $porNombre[$this->claveCargo($nombre)] = $id;
+        }
+
+        return [
+            'por_nombre' => $porNombre,
+            'por_id' => $porId,
+        ];
+    }
+
+    public function tiposDocumento(): array
+    {
+        $tabla = Database::personalTable('tipos_documento');
+
+        return $this->db->fetchAll(
+            "SELECT tipo_documento_id, descripcion, abreviatura
+             FROM {$tabla}
+             ORDER BY tipo_documento_id ASC"
+        );
+    }
+
+    public function tipoDocumentoExiste(int $tipoDocumentoId): bool
+    {
+        $tabla = Database::personalTable('tipos_documento');
+        $fila = $this->db->fetch(
+            "SELECT tipo_documento_id FROM {$tabla} WHERE tipo_documento_id = ? LIMIT 1",
+            [$tipoDocumentoId]
+        );
+
+        return $fila !== null;
+    }
+
+    /**
+     * @param array{
+     *   numero_documento:string,
+     *   tipo_documento_id:int,
+     *   primer_nombre:string,
+     *   segundo_nombre:?string,
+     *   primer_apellido:string,
+     *   segundo_apellido:?string,
+     *   fecha_nacimiento_texto:string,
+     *   correo_corporativo:?string,
+     *   cargo_id:int,
+     *   estado:string
+     * } $datos
+     */
+    public function insertarPersona(array $datos): int
+    {
+        $tabla = Database::personalTable('personas');
+
+        return (int)$this->db->insert($tabla, [
+            'numero_documento' => $datos['numero_documento'],
+            'tipo_documento_id' => $datos['tipo_documento_id'],
+            'primer_nombre' => $datos['primer_nombre'],
+            'segundo_nombre' => $datos['segundo_nombre'],
+            'primer_apellido' => $datos['primer_apellido'],
+            'segundo_apellido' => $datos['segundo_apellido'],
+            'fecha_nacimiento_texto' => $datos['fecha_nacimiento_texto'],
+            'correo_corporativo' => $datos['correo_corporativo'],
+            'cargo_id' => $datos['cargo_id'],
+            'estado' => $datos['estado'],
+        ]);
+    }
+
+    /**
+     * @param array{
+     *   persona_id:int,
+     *   fecha_inicio:string,
+     *   proyecto:?string
+     * } $datos
+     */
+    public function insertarContrato(array $datos): int
+    {
+        $tabla = Database::personalTable('contratos');
+
+        return (int)$this->db->insert($tabla, [
+            'persona_id' => $datos['persona_id'],
+            'fecha_inicio' => $datos['fecha_inicio'],
+            'proyecto' => $datos['proyecto'],
+        ]);
+    }
+
+    /**
+     * @param array{
+     *   numero_documento:string,
+     *   tipo_documento_id:int,
+     *   primer_nombre:string,
+     *   segundo_nombre:?string,
+     *   primer_apellido:string,
+     *   segundo_apellido:?string,
+     *   correo_corporativo:?string,
+     *   cargo_id:int
+     * } $datos
+     */
+    public function actualizarPersona(int $personaId, array $datos): void
+    {
+        $tabla = Database::personalTable('personas');
+
+        $this->db->update(
+            $tabla,
+            [
+                'numero_documento' => $datos['numero_documento'],
+                'tipo_documento_id' => $datos['tipo_documento_id'],
+                'primer_nombre' => $datos['primer_nombre'],
+                'segundo_nombre' => $datos['segundo_nombre'],
+                'primer_apellido' => $datos['primer_apellido'],
+                'segundo_apellido' => $datos['segundo_apellido'],
+                'correo_corporativo' => $datos['correo_corporativo'],
+                'cargo_id' => $datos['cargo_id'],
+            ],
+            'persona_id = ?',
+            [$personaId]
+        );
+    }
+
+    /**
+     * @param array{fecha_inicio:string, proyecto:?string} $datos
+     */
+    public function actualizarContrato(int $contratoId, array $datos): void
+    {
+        $tabla = Database::personalTable('contratos');
+
+        $this->db->update(
+            $tabla,
+            [
+                'fecha_inicio' => $datos['fecha_inicio'],
+                'proyecto' => $datos['proyecto'],
+            ],
+            'contrato_id = ?',
+            [$contratoId]
+        );
+    }
+
+    /**
+     * @param callable():int $operacion
+     */
+    public function transaccion(callable $operacion): int
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $resultado = $operacion();
+            $this->db->commit();
+
+            return $resultado;
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            throw $e;
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    public static function esConflictoUnico(PDOException $e): bool
+    {
+        $sqlState = (string)($e->errorInfo[0] ?? $e->getCode());
+
+        return $sqlState === self::SQLSTATE_INTEGRIDAD;
+    }
+
+    public function claveCargo(string $nombre): string
+    {
+        $normalizado = trim($nombre);
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($normalizado, 'UTF-8');
+        }
+
+        return strtolower($normalizado);
+    }
+
     private function selectPersona(): string
     {
         $personas = Database::personalTable('personas');
@@ -111,6 +342,7 @@ class PersonalRepository
         return "SELECT
                     p.persona_id,
                     p.numero_documento,
+                    p.tipo_documento_id,
                     p.nombre_completo_nombres_primero AS nombre_completo,
                     p.primer_nombre,
                     p.primer_apellido,
