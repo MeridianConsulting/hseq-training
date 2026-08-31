@@ -11,16 +11,18 @@ class Validator
     private array $errors = [];
     private array $data;
     private array $rules;
+    private array $messages;
 
-    public function __construct(array $data, array $rules)
+    public function __construct(array $data, array $rules, array $messages = [])
     {
         $this->data = $data;
         $this->rules = $rules;
+        $this->messages = $messages;
     }
 
-    public static function make(array $data, array $rules): self
+    public static function make(array $data, array $rules, array $messages = []): self
     {
-        $validator = new self($data, $rules);
+        $validator = new self($data, $rules, $messages);
         $validator->validate();
         return $validator;
     }
@@ -90,36 +92,40 @@ class Validator
         return $validated;
     }
 
-    private function addError(string $field, string $message): void
+    private function addError(string $field, string $rule, string $defaultMessage): void
     {
-        $this->errors[$field][] = $message;
+        $this->errors[$field][] = $this->messages["{$field}.{$rule}"] ?? $defaultMessage;
     }
 
     private function validateRequired(string $field, mixed $value, array $params): void
     {
         if ($value === null || $value === '' || (is_array($value) && empty($value))) {
-            $this->addError($field, "El campo {$field} es obligatorio.");
+            $this->addError($field, 'required', "El campo {$field} es obligatorio.");
         }
     }
 
     private function validateString(string $field, mixed $value, array $params): void
     {
         if ($value !== null && !is_string($value)) {
-            $this->addError($field, "El campo {$field} debe ser texto.");
+            $this->addError($field, 'string', "El campo {$field} debe ser texto.");
         }
     }
 
     private function validateNumeric(string $field, mixed $value, array $params): void
     {
-        if ($value !== null && !is_numeric($value)) {
-            $this->addError($field, "El campo {$field} debe ser numérico.");
+        if ($value === null || $value === '') {
+            return;
+        }
+
+        if (!is_numeric($value)) {
+            $this->addError($field, 'numeric', "El campo {$field} debe ser numérico.");
         }
     }
 
     private function validateEmail(string $field, mixed $value, array $params): void
     {
         if ($value !== null && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            $this->addError($field, "El campo {$field} debe ser un correo válido.");
+            $this->addError($field, 'email', "El campo {$field} debe ser un correo válido.");
         }
     }
 
@@ -127,9 +133,9 @@ class Validator
     {
         $min = (int)($params[0] ?? 0);
         if (is_string($value) && strlen($value) < $min) {
-            $this->addError($field, "El campo {$field} debe tener al menos {$min} caracteres.");
+            $this->addError($field, 'min', "El campo {$field} debe tener al menos {$min} caracteres.");
         } elseif (!is_string($value) && is_numeric($value) && $value < $min) {
-            $this->addError($field, "El campo {$field} debe ser al menos {$min}.");
+            $this->addError($field, 'min', "El campo {$field} debe ser al menos {$min}.");
         }
     }
 
@@ -137,31 +143,47 @@ class Validator
     {
         $max = (int)($params[0] ?? 0);
         if (is_string($value) && strlen($value) > $max) {
-            $this->addError($field, "El campo {$field} no debe exceder {$max} caracteres.");
+            $this->addError($field, 'max', "El campo {$field} no debe exceder {$max} caracteres.");
         } elseif (!is_string($value) && is_numeric($value) && $value > $max) {
-            $this->addError($field, "El campo {$field} no debe exceder {$max}.");
+            $this->addError($field, 'max', "El campo {$field} no debe exceder {$max}.");
+        }
+    }
+
+    private function validateGt(string $field, mixed $value, array $params): void
+    {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            return;
+        }
+
+        $minimo = (float)($params[0] ?? 0);
+        if ((float)$value <= $minimo) {
+            $this->addError($field, 'gt', "El campo {$field} debe ser mayor que {$minimo}.");
         }
     }
 
     private function validateIn(string $field, mixed $value, array $params): void
     {
-        if ($value !== null && !in_array($value, $params, true)) {
+        if ($value === null || $value === '') {
+            return;
+        }
+
+        if (!in_array($value, $params, true)) {
             $allowed = implode(', ', $params);
-            $this->addError($field, "El campo {$field} debe ser uno de: {$allowed}.");
+            $this->addError($field, 'in', "El campo {$field} debe ser uno de: {$allowed}.");
         }
     }
 
     private function validateDate(string $field, mixed $value, array $params): void
     {
         if ($value !== null && !strtotime((string)$value)) {
-            $this->addError($field, "El campo {$field} debe ser una fecha válida.");
+            $this->addError($field, 'date', "El campo {$field} debe ser una fecha válida.");
         }
     }
 
     private function validateInteger(string $field, mixed $value, array $params): void
     {
         if ($value !== null && !filter_var($value, FILTER_VALIDATE_INT) && $value !== 0 && $value !== '0') {
-            $this->addError($field, "El campo {$field} debe ser un entero.");
+            $this->addError($field, 'integer', "El campo {$field} debe ser un entero.");
         }
     }
 
@@ -172,7 +194,7 @@ class Validator
     private function validateArray(string $field, mixed $value, array $params): void
     {
         if ($value !== null && !is_array($value)) {
-            $this->addError($field, "El campo {$field} debe ser un arreglo.");
+            $this->addError($field, 'array', "El campo {$field} debe ser un arreglo.");
         }
     }
 }

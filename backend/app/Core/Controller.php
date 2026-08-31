@@ -6,9 +6,9 @@ namespace App\Core;
 
 abstract class Controller
 {
-    protected function validate(Request $request, array $rules): array
+    protected function validate(Request $request, array $rules, array $messages = []): array
     {
-        $validator = Validator::make($request->all(), $rules);
+        $validator = Validator::make($request->all(), $rules, $messages);
 
         if ($validator->fails()) {
             Response::validationError($validator->errors());
@@ -17,9 +17,9 @@ abstract class Controller
         return $validator->validated();
     }
 
-    protected function validateArray(array $data, array $rules): array
+    protected function validateArray(array $data, array $rules, array $messages = []): array
     {
-        $validator = Validator::make($data, $rules);
+        $validator = Validator::make($data, $rules, $messages);
 
         if ($validator->fails()) {
             Response::validationError($validator->errors());

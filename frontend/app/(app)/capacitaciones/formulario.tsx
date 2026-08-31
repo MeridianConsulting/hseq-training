@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
+import type { ApiErrorMap } from "@/lib/api";
 import type { Capacitacion, ItemCatalogo } from "@/lib/tipos";
 
 export type DatosCapacitacion = {
@@ -13,7 +14,7 @@ export type DatosCapacitacion = {
   categoria_id: string;
   tipo_capacitacion_id: string;
   duracion_estimada_horas: string;
-  criticidad: "BAJA" | "MEDIA" | "ALTA";
+  criticidad: "" | "BAJA" | "MEDIA" | "ALTA";
   es_tarea_critica: boolean;
   responsable: string;
   proveedor_default_id: string;
@@ -28,6 +29,8 @@ export type DatosCapacitacion = {
   estado: "ACTIVA" | "INACTIVA";
 };
 
+export type ErroresCapacitacion = Partial<Record<keyof DatosCapacitacion, string>>;
+
 function vacio(): DatosCapacitacion {
   return {
     codigo: "",
@@ -37,7 +40,7 @@ function vacio(): DatosCapacitacion {
     categoria_id: "",
     tipo_capacitacion_id: "",
     duracion_estimada_horas: "",
-    criticidad: "MEDIA",
+    criticidad: "",
     es_tarea_critica: false,
     responsable: "",
     proveedor_default_id: "",
@@ -86,33 +89,96 @@ function opciones(items: ItemCatalogo[], pk: string) {
   ));
 }
 
+export function validarDatosCapacitacion(datos: DatosCapacitacion): ErroresCapacitacion {
+  const errores: ErroresCapacitacion = {};
+  const horas = datos.duracion_estimada_horas.trim();
+
+  if (!datos.codigo.trim()) {
+    errores.codigo = "El código es obligatorio.";
+  }
+  if (!datos.nombre.trim()) {
+    errores.nombre = "El nombre es obligatorio.";
+  }
+  if (!datos.objetivo.trim()) {
+    errores.objetivo = "El objetivo es obligatorio.";
+  }
+
+  if (horas === "") {
+    errores.duracion_estimada_horas = "La duración estimada es obligatoria.";
+  } else if (!Number.isFinite(Number(horas))) {
+    errores.duracion_estimada_horas = "La duración estimada debe ser un valor numérico.";
+  } else if (Number(horas) <= 0) {
+    errores.duracion_estimada_horas = "La duración debe ser mayor que cero.";
+  }
+
+  if (!datos.criticidad) {
+    errores.criticidad = "Debe definir la criticidad de la capacitación.";
+  }
+
+  return errores;
+}
+
+function primerError(mapa: ApiErrorMap | null, campo: string): string | undefined {
+  const lista = mapa?.[campo];
+  return lista && lista.length > 0 ? lista[0] : undefined;
+}
+
 export function FormularioCapacitacion({
   inicial,
   catalogos,
+  erroresApi,
   onCancelar,
   onGuardar,
 }: {
   inicial: Capacitacion | null;
   catalogos: Record<string, ItemCatalogo[]>;
+  erroresApi?: ApiErrorMap | null;
   onCancelar: () => void;
   onGuardar: (evento: FormEvent, datos: DatosCapacitacion) => void | Promise<void>;
 }) {
   const base = useMemo(() => (inicial ? desdeItem(inicial) : vacio()), [inicial]);
   const [datos, setDatos] = useState<DatosCapacitacion>(base);
+  const [errores, setErrores] = useState<ErroresCapacitacion>({});
+
+  useEffect(() => {
+    if (!erroresApi) {
+      return;
+    }
+    setErrores({
+      duracion_estimada_horas: primerError(erroresApi, "duracion_estimada_horas"),
+      criticidad: primerError(erroresApi, "criticidad"),
+      codigo: primerError(erroresApi, "codigo"),
+      nombre: primerError(erroresApi, "nombre"),
+      objetivo: primerError(erroresApi, "objetivo"),
+      estado: primerError(erroresApi, "estado"),
+    });
+  }, [erroresApi]);
 
   function set<K extends keyof DatosCapacitacion>(clave: K, valor: DatosCapacitacion[K]) {
     setDatos((prev) => ({ ...prev, [clave]: valor }));
+    setErrores((prev) => ({ ...prev, [clave]: undefined }));
+  }
+
+  function enviar(evento: FormEvent) {
+    const locales = validarDatosCapacitacion(datos);
+    setErrores(locales);
+    if (Object.keys(locales).length > 0) {
+      evento.preventDefault();
+      return;
+    }
+    void onGuardar(evento, datos);
   }
 
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => void onGuardar(e, datos)}>
-      <Field etiqueta="Código">
+    <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={enviar}>
+      <p className="sm:col-span-2 text-sm font-semibold text-slate-800">Datos principales</p>
+      <Field etiqueta="Código" error={errores.codigo}>
         <input className={inputClass} required value={datos.codigo} onChange={(e) => set("codigo", e.target.value)} />
       </Field>
-      <Field etiqueta="Nombre">
+      <Field etiqueta="Nombre de la capacitación" error={errores.nombre}>
         <input className={inputClass} required value={datos.nombre} onChange={(e) => set("nombre", e.target.value)} />
       </Field>
-      <Field etiqueta="Objetivo">
+      <Field etiqueta="Objetivo" error={errores.objetivo}>
         <textarea
           className={inputClass}
           required
@@ -121,6 +187,42 @@ export function FormularioCapacitacion({
           onChange={(e) => set("objetivo", e.target.value)}
         />
       </Field>
+      <Field etiqueta="Duración estimada (horas)" error={errores.duracion_estimada_horas}>
+        <input
+          className={inputClass}
+          type="number"
+          min={0.01}
+          step="0.5"
+          value={datos.duracion_estimada_horas}
+          onChange={(e) => set("duracion_estimada_horas", e.target.value)}
+        />
+      </Field>
+      <Field etiqueta="Clasificación / categoría">
+        <select className={inputClass} value={datos.categoria_id} onChange={(e) => set("categoria_id", e.target.value)}>
+          <option value="">Sin categoría</option>
+          {opciones(catalogos.categorias ?? [], "categoria_id")}
+        </select>
+      </Field>
+      <Field etiqueta="Criticidad" error={errores.criticidad}>
+        <select
+          className={inputClass}
+          value={datos.criticidad}
+          onChange={(e) => set("criticidad", e.target.value as DatosCapacitacion["criticidad"])}
+        >
+          <option value="">Seleccione…</option>
+          <option value="BAJA">Baja</option>
+          <option value="MEDIA">Media</option>
+          <option value="ALTA">Alta</option>
+        </select>
+      </Field>
+      <Field etiqueta="Estado" error={errores.estado}>
+        <select className={inputClass} value={datos.estado} onChange={(e) => set("estado", e.target.value as DatosCapacitacion["estado"])}>
+          <option value="ACTIVA">Activa</option>
+          <option value="INACTIVA">Inactiva</option>
+        </select>
+      </Field>
+
+      <p className="sm:col-span-2 mt-2 text-sm font-semibold text-slate-800">Datos complementarios</p>
       <Field etiqueta="Temario">
         <textarea
           className={inputClass}
@@ -128,30 +230,6 @@ export function FormularioCapacitacion({
           value={datos.descripcion_temario}
           onChange={(e) => set("descripcion_temario", e.target.value)}
         />
-      </Field>
-      <Field etiqueta="Horas estimadas">
-        <input
-          className={inputClass}
-          type="number"
-          min={0}
-          step="0.5"
-          required
-          value={datos.duracion_estimada_horas}
-          onChange={(e) => set("duracion_estimada_horas", e.target.value)}
-        />
-      </Field>
-      <Field etiqueta="Criticidad">
-        <select className={inputClass} value={datos.criticidad} onChange={(e) => set("criticidad", e.target.value as DatosCapacitacion["criticidad"])}>
-          <option value="BAJA">Baja</option>
-          <option value="MEDIA">Media</option>
-          <option value="ALTA">Alta</option>
-        </select>
-      </Field>
-      <Field etiqueta="Categoría">
-        <select className={inputClass} value={datos.categoria_id} onChange={(e) => set("categoria_id", e.target.value)}>
-          <option value="">Sin categoría</option>
-          {opciones(catalogos.categorias ?? [], "categoria_id")}
-        </select>
       </Field>
       <Field etiqueta="Tipo">
         <select className={inputClass} value={datos.tipo_capacitacion_id} onChange={(e) => set("tipo_capacitacion_id", e.target.value)}>
@@ -202,15 +280,9 @@ export function FormularioCapacitacion({
           onChange={(e) => set("nota_minima", e.target.value)}
         />
       </Field>
-      <Field etiqueta="Estado">
-        <select className={inputClass} value={datos.estado} onChange={(e) => set("estado", e.target.value as DatosCapacitacion["estado"])}>
-          <option value="ACTIVA">Activa</option>
-          <option value="INACTIVA">Inactiva</option>
-        </select>
-      </Field>
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={datos.es_tarea_critica} onChange={(e) => set("es_tarea_critica", e.target.checked)} />
-        Tarea crítica (independiente de criticidad alta)
+        Tarea crítica (independiente de criticidad; alimenta el indicador de tareas críticas)
       </label>
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={datos.evaluacion} onChange={(e) => set("evaluacion", e.target.checked)} />
@@ -232,7 +304,7 @@ export function FormularioCapacitacion({
         <Button type="button" variante="secondary" onClick={onCancelar}>
           Cancelar
         </Button>
-        <Button type="submit">Guardar</Button>
+        <Button type="submit">Guardar capacitación</Button>
       </div>
     </form>
   );

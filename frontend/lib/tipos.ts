@@ -193,7 +193,7 @@ export type Capacitacion = {
   categoria_nombre: string | null;
   tipo_capacitacion_id: number | null;
   tipo_nombre: string | null;
-  duracion_estimada_horas: number | null;
+  duracion_estimada_horas: number;
   criticidad: "BAJA" | "MEDIA" | "ALTA";
   es_tarea_critica: boolean;
   responsable: string | null;

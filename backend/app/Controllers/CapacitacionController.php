@@ -42,7 +42,7 @@ class CapacitacionController extends Controller
 
     public function store(Request $request): void
     {
-        $datos = $this->validate($request, $this->service->reglas());
+        $datos = $this->validate($request, $this->service->reglas(), $this->service->mensajes());
         $creado = $this->service->crear($datos, $request->userId());
 
         $this->auditoria->dePeticion(
@@ -58,7 +58,7 @@ class CapacitacionController extends Controller
 
     public function update(Request $request, string $id): void
     {
-        $datos = $this->validate($request, $this->service->reglas(true));
+        $datos = $this->validate($request, $this->service->reglas(true), $this->service->mensajes());
         $actualizado = $this->service->actualizar((int)$id, $datos);
 
         $this->auditoria->dePeticion(

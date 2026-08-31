@@ -32,19 +32,16 @@ class CapacitacionService
     public function reglas(bool $esActualizacion = false): array
     {
         $codigo = $esActualizacion ? 'nullable|string|max:30' : 'required|string|max:30';
-        $nombre = $esActualizacion ? 'nullable|string|max:180' : 'required|string|max:180';
-        $objetivo = $esActualizacion ? 'nullable|string' : 'required|string';
-        $horas = $esActualizacion ? 'nullable|numeric|min:0' : 'required|numeric|min:0';
 
         return [
             'codigo' => $codigo,
-            'nombre' => $nombre,
-            'objetivo' => $objetivo,
+            'nombre' => 'required|string|max:180',
+            'objetivo' => 'required|string',
             'descripcion_temario' => 'nullable|string',
             'categoria_id' => 'nullable|integer',
             'tipo_capacitacion_id' => 'nullable|integer',
-            'duracion_estimada_horas' => $horas,
-            'criticidad' => ($esActualizacion ? 'nullable' : 'required') . '|in:BAJA,MEDIA,ALTA',
+            'duracion_estimada_horas' => 'required|numeric|gt:0',
+            'criticidad' => 'required|in:BAJA,MEDIA,ALTA',
             'es_tarea_critica' => 'nullable|integer|min:0|max:1',
             'responsable' => 'nullable|string|max:120',
             'proveedor_default_id' => 'nullable|integer',
@@ -57,6 +54,17 @@ class CapacitacionService
             'requiere_listado_asistencia' => 'nullable|integer|min:0|max:1',
             'fuente_normativa_id' => 'nullable|integer',
             'estado' => 'nullable|in:ACTIVA,INACTIVA',
+        ];
+    }
+
+    public function mensajes(): array
+    {
+        return [
+            'duracion_estimada_horas.required' => 'La duración estimada es obligatoria.',
+            'duracion_estimada_horas.numeric' => 'La duración estimada debe ser un valor numérico.',
+            'duracion_estimada_horas.gt' => 'La duración debe ser mayor que cero.',
+            'criticidad.required' => 'Debe definir la criticidad de la capacitación.',
+            'criticidad.in' => 'Debe definir la criticidad de la capacitación.',
         ];
     }
 
@@ -181,9 +189,8 @@ class CapacitacionService
         }
 
         if ($parcial) {
-            $datos = array_filter($datos, static fn ($valor) => $valor !== null || true);
             foreach ($datos as $clave => $valor) {
-                if ($valor === null && in_array($clave, ['codigo', 'nombre', 'objetivo', 'duracion_estimada_horas', 'criticidad'], true)) {
+                if ($valor === null && $clave === 'codigo') {
                     unset($datos[$clave]);
                 }
             }
