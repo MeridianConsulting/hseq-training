@@ -34,6 +34,8 @@ return [
         'asignaciones.editar',
         'asignaciones.eliminar',
         'cumplimientos.ver',
+        'cumplimientos.crear',
+        'cumplimientos.editar',
         'catalogos.ver',
         'catalogos.gestionar',
         'auditoria.ver',

@@ -41,7 +41,7 @@ export const MENU: GrupoMenu[] = [
     entradas: [
       { ruta: "/personal", etiqueta: "Personal corporativo", permiso: "personal.ver" },
       { ruta: "/asignaciones", etiqueta: "Asignaciones", permiso: "asignaciones.ver" },
-      { ruta: "/cumplimientos", etiqueta: "Cumplimientos", permiso: "cumplimientos.ver", preparado: true },
+      { ruta: "/cumplimientos", etiqueta: "Cumplimientos", permiso: "cumplimientos.ver" },
     ],
   },
   {

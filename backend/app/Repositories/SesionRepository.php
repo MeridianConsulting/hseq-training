@@ -134,10 +134,16 @@ class SesionRepository
                     a.capacitacion_id,
                     per.numero_documento,
                     per.nombre_completo_nombres_primero AS persona_nombre,
-                    per.estado AS persona_estado
+                    per.estado AS persona_estado,
+                    c.cumplimiento_id,
+                    c.resultado AS cumplimiento_resultado,
+                    c.fecha_realizacion,
+                    c.horas_efectivas,
+                    c.fecha_vencimiento
              FROM sesion_participantes sp
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = sp.asignacion_id
              LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
              WHERE sp.sesion_id = ?
              ORDER BY per.nombre_completo_nombres_primero ASC, sp.asignacion_id ASC",
             [$sesionId]
@@ -273,7 +279,8 @@ class SesionRepository
     public function cumplimientoPorAsignacion(int $asignacionId): ?array
     {
         return $this->db->fetch(
-            'SELECT cumplimiento_id, asignacion_id, sesion_id, fecha_realizacion, resultado, horas_efectivas
+            'SELECT cumplimiento_id, asignacion_id, sesion_id, fecha_realizacion, resultado,
+                    horas_efectivas, fecha_vencimiento
              FROM cumplimientos_capacitacion
              WHERE asignacion_id = ?
              LIMIT 1',

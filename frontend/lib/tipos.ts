@@ -126,6 +126,11 @@ export type ParticipanteSesion = {
   observacion: string | null;
   registrado_por_usuario_id_ext: number | null;
   updated_at: string | null;
+  cumplimiento_id: number | null;
+  cumplimiento_resultado: string | null;
+  fecha_realizacion: string | null;
+  horas_efectivas: number | null;
+  fecha_vencimiento: string | null;
 };
 
 export type ResumenAsistencia = {
@@ -259,8 +264,63 @@ export type Asignacion = {
   proyecto: string | null;
   estado_calculado: string;
   tiene_cumplimiento: boolean;
+  cumplimiento_id: number | null;
+  cumplimiento_sesion_id: number | null;
+  cumplimiento_resultado: string | null;
+  fecha_realizacion: string | null;
+  horas_efectivas: number | null;
+  fecha_vencimiento: string | null;
   dias_restantes: number | null;
   etiqueta_dias: string | null;
+};
+
+export type Cumplimiento = {
+  cumplimiento_id: number;
+  asignacion_id: number;
+  sesion_id: number | null;
+  persona_id_ext: number | null;
+  persona_nombre: string | null;
+  numero_documento: string | null;
+  capacitacion_id: number | null;
+  capacitacion_codigo: string | null;
+  capacitacion_nombre: string | null;
+  fecha_realizacion: string | null;
+  resultado: string | null;
+  horas_efectivas: number | null;
+  fecha_vencimiento: string | null;
+  observaciones: string | null;
+};
+
+export type PreviewItemCumplimiento = {
+  asignacion_id: number;
+  numero_documento: string | null;
+  persona_nombre: string | null;
+  estado_asistencia: string | null;
+  resultado_actual: string | null;
+  periodicidad_nombre: string | null;
+  periodicidad_cantidad: number | null;
+  periodicidad_unidad: string | null;
+  origen_periodicidad: string;
+  etiqueta_periodicidad: string;
+  fecha_vencimiento: string | null;
+  etiqueta_vencimiento: string;
+  puede_registrar: boolean;
+  motivo: string | null;
+};
+
+export type PreviewCumplimiento = {
+  sesion_id: number;
+  fecha_realizacion: string;
+  items: PreviewItemCumplimiento[];
+  periodicidades_distintas: boolean;
+  aviso: string | null;
+};
+
+export type ResultadoMasivoCumplimiento = {
+  procesados: number;
+  completados: number;
+  errores: number;
+  items: Cumplimiento[];
 };
 
 export type ProximasAsignaciones = {

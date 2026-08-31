@@ -10,6 +10,10 @@ import {
   FormularioAsignacionMasiva,
   type DatosAsignacionMasiva,
 } from "@/app/(app)/asignaciones/formulario-masivo";
+import {
+  FormularioCumplimiento,
+  type DatosCumplimiento,
+} from "@/app/(app)/cumplimientos/formulario";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -23,7 +27,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import type { Asignacion, Capacitacion, IntentoSesion, ProximasAsignaciones } from "@/lib/tipos";
+import type { Asignacion, Capacitacion, Cumplimiento, IntentoSesion, ProximasAsignaciones } from "@/lib/tipos";
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   PENDIENTE: "Pendiente",
@@ -132,6 +136,10 @@ function Contenido() {
   const [abierto, setAbierto] = useState(false);
   const [masivoAbierto, setMasivoAbierto] = useState(false);
   const [editando, setEditando] = useState<Asignacion | null>(null);
+  const [cumplimientosPersona, setCumplimientosPersona] = useState<Cumplimiento[]>([]);
+  const [cumpAbierto, setCumpAbierto] = useState(false);
+  const [cumpAsignacion, setCumpAsignacion] = useState<Asignacion | null>(null);
+  const [enviandoCump, setEnviandoCump] = useState(false);
 
   async function cargarListado(paginaActual = 1) {
     const respuesta = await apiGet<ListaPaginada<Asignacion>>(
@@ -187,6 +195,7 @@ function Contenido() {
   useEffect(() => {
     if (!personaHistorial) {
       setIntentosSesion([]);
+      setCumplimientosPersona([]);
       return;
     }
     const abortado = { actual: false };
@@ -198,6 +207,13 @@ function Contenido() {
         return;
       }
       setIntentosSesion(respuesta.success && respuesta.data ? respuesta.data.items : []);
+      const cump = await apiGet<ListaPaginada<Cumplimiento>>(
+        withQuery("/api/cumplimientos", { persona_id: personaHistorial.id, per_page: 50 }),
+      );
+      if (abortado.actual) {
+        return;
+      }
+      setCumplimientosPersona(cump.success && cump.data ? cump.data.items : []);
     })();
     return () => {
       abortado.actual = true;
@@ -278,6 +294,54 @@ function Contenido() {
     await refrescar(1);
   }
 
+  function sesionDeCumplimiento(item: Asignacion): number {
+    if (item.cumplimiento_sesion_id && item.cumplimiento_sesion_id > 0) {
+      return item.cumplimiento_sesion_id;
+    }
+    const intento = intentosSesion.find(
+      (i) =>
+        i.asignacion_id === item.asignacion_id &&
+        (i.estado_asistencia === "ASISTIO" || i.estado_asistencia === "TARDE"),
+    );
+    return intento?.sesion_id ?? 0;
+  }
+
+  async function guardarCumplimiento(evento: FormEvent, datos: DatosCumplimiento) {
+    evento.preventDefault();
+    if (!cumpAsignacion) {
+      return;
+    }
+    const sesionId = sesionDeCumplimiento(cumpAsignacion);
+    if (sesionId < 1) {
+      setError("No hay una sesión con asistencia para esta asignación.");
+      return;
+    }
+    setEnviandoCump(true);
+    const respuesta = await apiPost<Cumplimiento>("/api/cumplimientos", {
+      asignacion_id: cumpAsignacion.asignacion_id,
+      sesion_id: sesionId,
+      fecha_realizacion: datos.fecha_realizacion,
+      resultado: datos.resultado,
+      horas_efectivas: Number(datos.horas_efectivas),
+      observaciones: datos.observaciones.trim() || null,
+    });
+    setEnviandoCump(false);
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible registrar el cumplimiento.");
+      return;
+    }
+    setMensaje(respuesta.message);
+    setCumpAbierto(false);
+    setCumpAsignacion(null);
+    await refrescar(pagina);
+    if (personaHistorial) {
+      const cump = await apiGet<ListaPaginada<Cumplimiento>>(
+        withQuery("/api/cumplimientos", { persona_id: personaHistorial.id, per_page: 50 }),
+      );
+      setCumplimientosPersona(cump.success && cump.data ? cump.data.items : []);
+    }
+  }
+
   async function eliminar(item: Asignacion) {
     if (!confirm("¿Eliminar esta asignación?")) {
       return;
@@ -351,6 +415,28 @@ function Contenido() {
             Quitar filtro
           </button>
         </Alert>
+      ) : null}
+
+      {personaHistorial && cumplimientosPersona.length > 0 ? (
+        <Card className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Cumplimientos</h2>
+          <Table
+            columnas={[
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "real", etiqueta: "Realización" },
+              { clave: "res", etiqueta: "Resultado" },
+              { clave: "horas", etiqueta: "Horas" },
+              { clave: "vence", etiqueta: "Vencimiento" },
+            ]}
+            filas={cumplimientosPersona.map((c) => [
+              `${c.capacitacion_codigo ?? ""} — ${c.capacitacion_nombre ?? ""}`,
+              formatoFecha(c.fecha_realizacion),
+              c.resultado === "APROBADO" ? "Aprobado" : (c.resultado ?? "—"),
+              c.horas_efectivas ?? "—",
+              c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
+            ])}
+          />
+        </Card>
       ) : null}
 
       {personaHistorial && intentosSesion.length > 0 ? (
@@ -471,6 +557,10 @@ function Contenido() {
           { clave: "periodicidad", etiqueta: "Periodicidad" },
           { clave: "obligatoria", etiqueta: "Obligatoria" },
           { clave: "limite", etiqueta: "Fecha límite" },
+          { clave: "realizacion", etiqueta: "Realización" },
+          { clave: "resultado", etiqueta: "Resultado" },
+          { clave: "horas", etiqueta: "Horas" },
+          { clave: "vence", etiqueta: "Vencimiento" },
           { clave: "estado", etiqueta: "Estado" },
           { clave: "dias", etiqueta: "Días" },
           { clave: "acciones", etiqueta: "" },
@@ -490,6 +580,12 @@ function Contenido() {
           item.periodicidad_nombre ?? "—",
           item.obligatoria === null ? "—" : item.obligatoria ? "Sí" : "No",
           formatoFecha(item.fecha_limite_cumplimiento),
+          formatoFecha(item.fecha_realizacion),
+          item.cumplimiento_resultado === "APROBADO"
+            ? "Aprobado"
+            : item.cumplimiento_resultado ?? "—",
+          item.horas_efectivas ?? "—",
+          item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : item.tiene_cumplimiento ? "Sin vencimiento" : "—",
           <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
             {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
           </Badge>,
@@ -497,6 +593,20 @@ function Contenido() {
             ? item.etiqueta_dias ?? "—"
             : "—",
           <span key="a" className="flex flex-wrap gap-2">
+            {puede("cumplimientos.crear") &&
+            item.cumplimiento_resultado !== "APROBADO" &&
+            sesionDeCumplimiento(item) > 0 ? (
+              <Button
+                type="button"
+                variante="ghost"
+                onClick={() => {
+                  setCumpAsignacion(item);
+                  setCumpAbierto(true);
+                }}
+              >
+                Cumplimiento
+              </Button>
+            ) : null}
             {puede("asignaciones.editar") ? (
               <Button
                 type="button"
@@ -552,6 +662,30 @@ function Contenido() {
           onCancelar={() => setMasivoAbierto(false)}
           onGuardar={guardarMasivo}
         />
+      </Modal>
+
+      <Modal
+        abierto={cumpAbierto}
+        titulo="Registrar cumplimiento"
+        onCerrar={() => {
+          setCumpAbierto(false);
+          setCumpAsignacion(null);
+        }}
+      >
+        {cumpAsignacion ? (
+          <FormularioCumplimiento
+            key={cumpAsignacion.asignacion_id}
+            asignacionId={cumpAsignacion.asignacion_id}
+            sesionId={sesionDeCumplimiento(cumpAsignacion)}
+            fechaDefault={(cumpAsignacion.fecha_realizacion ?? "").slice(0, 10)}
+            enviando={enviandoCump}
+            onCancelar={() => {
+              setCumpAbierto(false);
+              setCumpAsignacion(null);
+            }}
+            onSubmit={guardarCumplimiento}
+          />
+        ) : null}
       </Modal>
     </>
   );

@@ -211,6 +211,11 @@ class AsignacionRepository
                        a.proyecto,
                        e.estado_calculado,
                        e.cumplimiento_id,
+                       e.fecha_realizacion,
+                       e.fecha_vencimiento,
+                       cc.resultado AS cumplimiento_resultado,
+                       cc.horas_efectivas,
+                       cc.sesion_id AS cumplimiento_sesion_id,
                        DATEDIFF(a.fecha_limite_cumplimiento, CURDATE()) AS dias_restantes,
                        cap.codigo AS capacitacion_codigo,
                        cap.nombre AS capacitacion_nombre,
@@ -220,6 +225,7 @@ class AsignacionRepository
                        per.nombre_completo_nombres_primero AS persona_nombre
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+                LEFT JOIN cumplimientos_capacitacion cc ON cc.cumplimiento_id = e.cumplimiento_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 LEFT JOIN matriz_aplicabilidad mat ON mat.matriz_aplicabilidad_id = a.matriz_aplicabilidad_id
                 LEFT JOIN periodicidades per_mat ON per_mat.periodicidad_id = mat.periodicidad_id

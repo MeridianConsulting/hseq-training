@@ -370,6 +370,16 @@ class AsignacionService
             'proyecto' => $fila['proyecto'],
             'estado_calculado' => (string)$fila['estado_calculado'],
             'tiene_cumplimiento' => $fila['cumplimiento_id'] !== null,
+            'cumplimiento_id' => $fila['cumplimiento_id'] !== null ? (int)$fila['cumplimiento_id'] : null,
+            'cumplimiento_sesion_id' => isset($fila['cumplimiento_sesion_id']) && $fila['cumplimiento_sesion_id'] !== null
+                ? (int)$fila['cumplimiento_sesion_id']
+                : null,
+            'cumplimiento_resultado' => $fila['cumplimiento_resultado'] ?? null,
+            'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
+            'horas_efectivas' => isset($fila['horas_efectivas']) && $fila['horas_efectivas'] !== null
+                ? (float)$fila['horas_efectivas']
+                : null,
+            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
             'dias_restantes' => $dias,
             'etiqueta_dias' => VencimientoService::etiquetaDias($dias),
         ];

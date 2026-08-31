@@ -1,13 +1,21 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Table } from "@/components/ui/table";
 import { apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
-import type { DetalleSesion, ParticipanteSesion, ResumenAsistencia, SesionCronograma } from "@/lib/tipos";
+import type {
+  DetalleSesion,
+  ParticipanteSesion,
+  PreviewCumplimiento,
+  ResultadoMasivoCumplimiento,
+  ResumenAsistencia,
+  SesionCronograma,
+} from "@/lib/tipos";
 
 const ESTADOS: { valor: string; etiqueta: string }[] = [
   { valor: "CONVOCADO", etiqueta: "Pendiente" },
@@ -66,9 +74,16 @@ export function FormularioAsistencia({
   const [destinoId, setDestinoId] = useState("");
   const [destinos, setDestinos] = useState<SesionCronograma[]>([]);
   const [reprogramando, setReprogramando] = useState(false);
+  const { puede } = useAuth();
+  const [seleccionCump, setSeleccionCump] = useState<number[]>([]);
+  const [fechaCump, setFechaCump] = useState(sesion.fecha ?? "");
+  const [horasCump, setHorasCump] = useState("");
+  const [previewCump, setPreviewCump] = useState<PreviewCumplimiento | null>(null);
+  const [guardandoCump, setGuardandoCump] = useState(false);
 
   useEffect(() => {
     setFilas(filasDesde(sesion.participantes));
+    setFechaCump(sesion.fecha ?? "");
   }, [sesion]);
 
   const resumen = useMemo(() => resumenLocal(filas), [filas]);
@@ -161,6 +176,88 @@ export function FormularioAsistencia({
   }
 
   const ausentesGuardados = sesion.participantes.filter((p) => p.estado_asistencia === "AUSENTE");
+  const elegiblesCump = sesion.participantes.filter(
+    (p) =>
+      (p.estado_asistencia === "ASISTIO" || p.estado_asistencia === "TARDE") &&
+      p.cumplimiento_resultado !== "APROBADO",
+  );
+
+  useEffect(() => {
+    setSeleccionCump((prev) => {
+      const ids = new Set(elegiblesCump.map((p) => p.asignacion_id));
+      const keep = prev.filter((id) => ids.has(id));
+      return keep.length > 0 ? keep : elegiblesCump.map((p) => p.asignacion_id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion.participantes]);
+
+  useEffect(() => {
+    if (seleccionCump.length === 0 || !fechaCump) {
+      setPreviewCump(null);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      void (async () => {
+        const r = await apiGet<PreviewCumplimiento>(
+          withQuery("/api/cumplimientos/previsualizar", {
+            sesion_id: sesion.sesion_id,
+            asignacion_ids: seleccionCump.join(","),
+            fecha_realizacion: fechaCump,
+          }),
+        );
+        setPreviewCump(r.success && r.data ? r.data : null);
+      })();
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [seleccionCump, fechaCump, sesion.sesion_id]);
+
+  async function registrarCumplimiento(evento: FormEvent) {
+    evento.preventDefault();
+    setError(null);
+    if (seleccionCump.length === 0) {
+      setError("Seleccione al menos un trabajador que haya asistido o llegado tarde.");
+      return;
+    }
+    if (!fechaCump) {
+      setError("La fecha de realización es obligatoria.");
+      return;
+    }
+    if (horasCump.trim() === "" || Number(horasCump) <= 0 || Number.isNaN(Number(horasCump))) {
+      setError("Las horas efectivas deben ser un número mayor que cero.");
+      return;
+    }
+    if (!window.confirm(`¿Registrar para ${seleccionCump.length} trabajadores?`)) {
+      return;
+    }
+
+    setGuardandoCump(true);
+    const respuesta = await apiPost<ResultadoMasivoCumplimiento>("/api/cumplimientos/masivo", {
+      sesion_id: sesion.sesion_id,
+      asignacion_ids: seleccionCump,
+      fecha_realizacion: fechaCump,
+      resultado: "APROBADO",
+      horas_efectivas: Number(horasCump),
+    });
+    setGuardandoCump(false);
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible registrar el cumplimiento.");
+      return;
+    }
+
+    const recarga = await apiGet<DetalleSesion>(`/api/sesiones/${sesion.sesion_id}`);
+    if (recarga.success && recarga.data) {
+      onGuardado(recarga.data, respuesta.message);
+    } else {
+      onGuardado(sesion, respuesta.message);
+    }
+  }
+
+  function formatoVence(valor: string | null): string {
+    if (!valor) return "Sin vencimiento";
+    const [anio, mes, dia] = valor.slice(0, 10).split("-");
+    if (!dia) return valor;
+    return `${dia}/${mes}/${anio}`;
+  }
 
   return (
     <div className="space-y-4">
@@ -320,6 +417,96 @@ export function FormularioAsistencia({
               </Button>
             </form>
           ) : null}
+        </div>
+      ) : null}
+
+      {puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
+        <div className="rounded-lg border border-slate-200 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registrar cumplimiento</h3>
+          <p className="mb-3 text-sm text-slate-600">
+            Solo trabajadores que asistieron o llegaron tarde. El vencimiento se calcula con la
+            periodicidad de la matriz y no se digita.
+          </p>
+          <form className="space-y-3" onSubmit={(e) => void registrarCumplimiento(e)}>
+            <ul className="space-y-2">
+              {elegiblesCump.map((p) => {
+                const prev = previewCump?.items.find((i) => i.asignacion_id === p.asignacion_id);
+                return (
+                  <li key={p.asignacion_id}>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={seleccionCump.includes(p.asignacion_id)}
+                        onChange={(e) => {
+                          setSeleccionCump((prevSel) =>
+                            e.target.checked
+                              ? [...prevSel, p.asignacion_id]
+                              : prevSel.filter((id) => id !== p.asignacion_id),
+                          );
+                        }}
+                      />
+                      <span>
+                        <span className="font-medium">{p.persona_nombre}</span>
+                        {p.numero_documento ? (
+                          <span className="ml-1 text-slate-500">{p.numero_documento}</span>
+                        ) : null}
+                        <span className="block text-xs text-slate-500">
+                          Vence: {formatoVence(prev?.fecha_vencimiento ?? p.fecha_vencimiento)}
+                          {prev?.etiqueta_periodicidad
+                            ? ` · ${prev.etiqueta_periodicidad}`
+                            : ""}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            {previewCump?.aviso ? <Alert tono="aviso">{previewCump.aviso}</Alert> : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field etiqueta="Fecha de realización">
+                <input
+                  type="date"
+                  className={inputClass}
+                  required
+                  value={fechaCump}
+                  onChange={(e) => setFechaCump(e.target.value)}
+                />
+              </Field>
+              <Field etiqueta="Resultado">
+                <select className={inputClass} value="APROBADO" disabled>
+                  <option value="APROBADO">Aprobado</option>
+                </select>
+              </Field>
+              <Field etiqueta="Horas efectivas">
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className={inputClass}
+                  required
+                  value={horasCump}
+                  onChange={(e) => setHorasCump(e.target.value)}
+                />
+              </Field>
+            </div>
+            <Field etiqueta="Fecha de vencimiento">
+              <input
+                className={inputClass}
+                readOnly
+                disabled
+                value={
+                  previewCump?.periodicidades_distintas
+                    ? "Varía por trabajador (ver listado)"
+                    : formatoVence(previewCump?.items[0]?.fecha_vencimiento ?? null)
+                }
+              />
+            </Field>
+            <Button type="submit" disabled={guardandoCump}>
+              {guardandoCump ? "Registrando…" : "Registrar cumplimiento"}
+            </Button>
+          </form>
         </div>
       ) : null}
     </div>

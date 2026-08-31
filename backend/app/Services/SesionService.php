@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Repositories\SesionRepository;
-use DateTimeImmutable;
 use PDOException;
 
 class SesionService
@@ -14,10 +13,12 @@ class SesionService
     private const SQLSTATE_INTEGRIDAD = '23000';
 
     private SesionRepository $repo;
+    private VencimientoService $vencimiento;
 
     public function __construct()
     {
         $this->repo = new SesionRepository();
+        $this->vencimiento = new VencimientoService();
     }
 
     public function reglasCrear(): array
@@ -831,6 +832,15 @@ class SesionService
                 ? (int)$fila['registrado_por_usuario_id_ext']
                 : null,
             'updated_at' => $fila['updated_at'] ?? null,
+            'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
+                ? (int)$fila['cumplimiento_id']
+                : null,
+            'cumplimiento_resultado' => $fila['cumplimiento_resultado'] ?? null,
+            'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
+            'horas_efectivas' => isset($fila['horas_efectivas']) && $fila['horas_efectivas'] !== null
+                ? (float)$fila['horas_efectivas']
+                : null,
+            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
         ];
     }
 
@@ -966,6 +976,8 @@ class SesionService
         $sesionDelCump = $existente !== null && $existente['sesion_id'] !== null
             ? (int)$existente['sesion_id']
             : null;
+        $yaAprobado = $existente !== null
+            && strtoupper((string)($existente['resultado'] ?? '')) === 'APROBADO';
 
         if (!$asistio) {
             if ($existente !== null && $sesionDelCump === $sesionId) {
@@ -974,17 +986,18 @@ class SesionService
             return;
         }
 
+        if ($yaAprobado) {
+            return;
+        }
+
         $horas = isset($cap['duracion_estimada_horas']) && $cap['duracion_estimada_horas'] !== null
             ? (float)$cap['duracion_estimada_horas']
             : 0.0;
-        $vence = $this->fechaVencimientoDesde(
-            $fechaReal,
-            isset($cap['vigencia_cantidad']) ? (int)$cap['vigencia_cantidad'] : 0,
-            isset($cap['vigencia_unidad']) ? (string)$cap['vigencia_unidad'] : ''
-        );
+        $fecha = $fechaReal !== '' ? $fechaReal : date('Y-m-d');
+        $vence = $this->vencimiento->fechaVencimientoDeAsignacion($asignacionId, $fecha);
         $campos = [
             'sesion_id' => $sesionId,
-            'fecha_realizacion' => $fechaReal !== '' ? $fechaReal : date('Y-m-d'),
+            'fecha_realizacion' => $fecha,
             'resultado' => $estado,
             'horas_efectivas' => $horas,
             'fecha_vencimiento' => $vence,
@@ -1000,25 +1013,6 @@ class SesionService
         if ($sesionDelCump === null || $sesionDelCump === $sesionId) {
             $this->repo->actualizarCumplimiento((int)$existente['cumplimiento_id'], $campos);
         }
-    }
-
-    private function fechaVencimientoDesde(string $fechaBase, int $cantidad, string $unidad): ?string
-    {
-        if ($cantidad <= 0) {
-            return null;
-        }
-        try {
-            $base = new DateTimeImmutable($fechaBase !== '' ? $fechaBase : 'today');
-        } catch (\Exception $e) {
-            $base = new DateTimeImmutable('today');
-        }
-        $mapa = ['DIAS' => 'days', 'MESES' => 'months', 'ANIOS' => 'years'];
-        $mod = $mapa[strtoupper($unidad)] ?? null;
-        if ($mod === null) {
-            return null;
-        }
-
-        return $base->modify('+' . $cantidad . ' ' . $mod)->format('Y-m-d');
     }
 
     private function recortar(string $texto, int $max): string

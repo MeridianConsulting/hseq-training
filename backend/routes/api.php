@@ -13,6 +13,7 @@ use App\Controllers\HealthController;
 use App\Controllers\MatrizController;
 use App\Controllers\PersonalController;
 use App\Controllers\PlanAnualController;
+use App\Controllers\CumplimientoController;
 use App\Controllers\SesionController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\PermisoMiddleware;
@@ -92,6 +93,15 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->post('', [AsignacionController::class, 'store'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
         $router->put('/{id}', [AsignacionController::class, 'update'], [[PermisoMiddleware::class, 'asignaciones.editar']]);
         $router->delete('/{id}', [AsignacionController::class, 'destroy'], [[PermisoMiddleware::class, 'asignaciones.eliminar']]);
+    });
+
+    $router->group(['prefix' => '/cumplimientos'], function ($router) {
+        $router->get('/previsualizar', [CumplimientoController::class, 'previsualizar'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->get('', [CumplimientoController::class, 'index'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->post('/masivo', [CumplimientoController::class, 'storeMasivo'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
+        $router->post('', [CumplimientoController::class, 'store'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
+        $router->put('/{id}', [CumplimientoController::class, 'update'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
+        $router->get('/{id}', [CumplimientoController::class, 'show'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
     });
 
     $router->group(['prefix' => '/capacitaciones'], function ($router) {
