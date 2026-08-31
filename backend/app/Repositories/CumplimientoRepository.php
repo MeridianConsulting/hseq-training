@@ -18,7 +18,7 @@ class CumplimientoRepository
     }
 
     /**
-     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string} $filtros
+     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string, evidencia_faltante?:?int} $filtros
      * @return list<array<string,mixed>>
      */
     public function listar(int $limite, int $offset, array $filtros): array
@@ -34,7 +34,7 @@ class CumplimientoRepository
     }
 
     /**
-     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string} $filtros
+     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string, evidencia_faltante?:?int} $filtros
      */
     public function contar(array $filtros): int
     {
@@ -43,6 +43,7 @@ class CumplimientoRepository
             'SELECT COUNT(*) AS total
              FROM cumplimientos_capacitacion c
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
              ' . $this->joinPersonas() . "
              {$where}",
             $params
@@ -114,9 +115,11 @@ class CumplimientoRepository
     public function sesionPorId(int $sesionId): ?array
     {
         return $this->db->fetch(
-            'SELECT sesion_id, capacitacion_id, fecha_hora, estado
-             FROM sesiones_capacitacion
-             WHERE sesion_id = ?
+            'SELECT s.sesion_id, s.capacitacion_id, s.fecha_hora, s.estado,
+                    cap.certificado AS capacitacion_certificado
+             FROM sesiones_capacitacion s
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = s.capacitacion_id
+             WHERE s.sesion_id = ?
              LIMIT 1',
             [$sesionId]
         );
@@ -151,6 +154,7 @@ class CumplimientoRepository
                     a.proyecto,
                     cap.codigo AS capacitacion_codigo,
                     cap.nombre AS capacitacion_nombre,
+                    cap.certificado AS capacitacion_certificado,
                     per.numero_documento,
                     per.nombre_completo_nombres_primero AS persona_nombre
                 FROM cumplimientos_capacitacion c
@@ -167,7 +171,7 @@ class CumplimientoRepository
     }
 
     /**
-     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string} $filtros
+     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string, evidencia_faltante?:?int} $filtros
      * @return array{0:string,1:list<mixed>}
      */
     private function filtros(array $filtros): array
@@ -195,6 +199,14 @@ class CumplimientoRepository
                 OR cap.nombre LIKE ?)';
             $like = '%' . $buscar . '%';
             array_push($params, $like, $like, $like, $like);
+        }
+
+        if (!empty($filtros['evidencia_faltante'])) {
+            $condiciones[] = 'cap.certificado = 1';
+            $condiciones[] = 'NOT EXISTS (
+                SELECT 1 FROM soportes_cumplimiento so
+                WHERE so.cumplimiento_id = c.cumplimiento_id
+            )';
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

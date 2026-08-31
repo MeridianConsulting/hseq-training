@@ -6,17 +6,21 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Request;
+use App\Core\Response;
 use App\Services\AuditoriaService;
 use App\Services\CumplimientoService;
+use App\Services\SoporteService;
 
 class CumplimientoController extends Controller
 {
     private CumplimientoService $service;
+    private SoporteService $soportes;
     private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->service = new CumplimientoService();
+        $this->soportes = new SoporteService();
         $this->auditoria = new AuditoriaService();
     }
 
@@ -24,6 +28,8 @@ class CumplimientoController extends Controller
     {
         $personaRaw = $request->query('persona_id');
         $sesionRaw = $request->query('sesion_id');
+        $ev = $request->query('evidencia_faltante');
+        $faltante = $ev === '1' || $ev === 1 || $ev === true || $ev === 'true';
 
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
@@ -32,6 +38,7 @@ class CumplimientoController extends Controller
                 'persona_id' => ($personaRaw !== null && $personaRaw !== '') ? (int)$personaRaw : null,
                 'sesion_id' => ($sesionRaw !== null && $sesionRaw !== '') ? (int)$sesionRaw : null,
                 'buscar' => nullable_trimmed_string($request->query('buscar')),
+                'evidencia_faltante' => $faltante ? 1 : null,
             ]
         );
 
@@ -104,5 +111,66 @@ class CumplimientoController extends Controller
         );
 
         $this->success($actualizado, 'Cumplimiento actualizado');
+    }
+
+    public function soportes(Request $request, string $id): void
+    {
+        $this->success($this->soportes->listar((int)$id), 'Soportes del cumplimiento');
+    }
+
+    public function storeSoporte(Request $request, string $id): void
+    {
+        $archivo = $request->file('archivo');
+        if ($archivo === null) {
+            $this->error('Debe seleccionar un archivo.', 422);
+            return;
+        }
+
+        $tipo = nullable_trimmed_string($request->input('tipo_soporte'));
+        $creado = $this->soportes->cargar((int)$id, $archivo, $tipo, $request->userId() ?: null);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'cargar',
+            'soportes_cumplimiento',
+            (int)($creado['soporte_id'] ?? 0),
+            [
+                'cumplimiento_id' => (int)$id,
+                'nombre_archivo' => $creado['nombre_archivo'] ?? null,
+                'tipo_soporte' => $creado['tipo_soporte'] ?? null,
+            ]
+        );
+
+        $this->created($creado, 'Archivo cargado');
+    }
+
+    public function descargarSoporte(Request $request, string $id): void
+    {
+        $archivo = $this->soportes->descargar((int)$id);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'descargar',
+            'soportes_cumplimiento',
+            (int)$id,
+            ['nombre_archivo' => $archivo['nombre']]
+        );
+
+        Response::download($archivo['contenido'], $archivo['nombre'], $archivo['mime']);
+    }
+
+    public function destroySoporte(Request $request, string $id): void
+    {
+        $resultado = $this->soportes->eliminar((int)$id);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'eliminar',
+            'soportes_cumplimiento',
+            (int)$id,
+            $resultado
+        );
+
+        $this->success($resultado, 'Archivo eliminado');
     }
 }

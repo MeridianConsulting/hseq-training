@@ -343,7 +343,7 @@ export function FormularioCapacitacion({
       </label>
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={datos.certificado} onChange={(e) => set("certificado", e.target.checked)} />
-        Emite certificado
+        Requiere certificado
       </label>
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input

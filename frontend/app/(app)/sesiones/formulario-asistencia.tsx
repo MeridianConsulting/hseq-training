@@ -423,6 +423,13 @@ export function FormularioAsistencia({
       {puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
         <div className="rounded-lg border border-slate-200 p-4">
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registrar cumplimiento</h3>
+          {sesion.requiere_certificado ? (
+            <Alert tono="aviso">
+              Esta capacitación requiere certificado. Complete cada trabajador de forma individual
+              y adjunte su archivo en Cumplimientos. El registro masivo no está disponible.
+            </Alert>
+          ) : (
+          <>
           <p className="mb-3 text-sm text-slate-600">
             Solo trabajadores que asistieron o llegaron tarde. El vencimiento se calcula con la
             periodicidad de la matriz y no se digita.
@@ -507,6 +514,8 @@ export function FormularioAsistencia({
               {guardandoCump ? "Registrando…" : "Registrar cumplimiento"}
             </Button>
           </form>
+          </>
+          )}
         </div>
       ) : null}
     </div>

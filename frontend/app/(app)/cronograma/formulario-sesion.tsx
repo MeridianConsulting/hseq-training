@@ -153,12 +153,13 @@ export function FormularioSesion({
       const r = await apiGet<ContextoSesion>(ruta);
       if (abortado.actual) return;
       if (r.success && r.data) {
-        setContexto(r.data);
+        const ctx = r.data;
+        setContexto(ctx);
         if (!sesion) {
           setDatos((prev) => ({
             ...prev,
-            modalidad_id: prev.modalidad_id || (r.data.modalidad_default_id ? String(r.data.modalidad_default_id) : ""),
-            proveedor_id: prev.proveedor_id || (r.data.proveedor_default_id ? String(r.data.proveedor_default_id) : ""),
+            modalidad_id: prev.modalidad_id || (ctx.modalidad_default_id ? String(ctx.modalidad_default_id) : ""),
+            proveedor_id: prev.proveedor_id || (ctx.proveedor_default_id ? String(ctx.proveedor_default_id) : ""),
           }));
         }
       } else {

@@ -14,11 +14,13 @@ class SesionService
 
     private SesionRepository $repo;
     private VencimientoService $vencimiento;
+    private SoporteService $soportes;
 
     public function __construct()
     {
         $this->repo = new SesionRepository();
         $this->vencimiento = new VencimientoService();
+        $this->soportes = new SoporteService();
     }
 
     public function reglasCrear(): array
@@ -808,6 +810,7 @@ class SesionService
             'disponibles' => $disponibles,
             'cupo_completo' => $cupo > 0 && $convocados >= $cupo,
             'estado' => (string)($fila['estado'] ?? 'PROGRAMADA'),
+            'requiere_certificado' => (int)($fila['capacitacion_certificado'] ?? 0) === 1,
         ];
     }
 
@@ -981,6 +984,7 @@ class SesionService
 
         if (!$asistio) {
             if ($existente !== null && $sesionDelCump === $sesionId) {
+                $this->soportes->eliminarArchivosDeCumplimiento((int)$existente['cumplimiento_id']);
                 $this->repo->borrarCumplimiento((int)$existente['cumplimiento_id']);
             }
             return;

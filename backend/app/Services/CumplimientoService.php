@@ -18,11 +18,13 @@ class CumplimientoService
 
     private CumplimientoRepository $repo;
     private VencimientoService $vencimiento;
+    private SoporteService $soportes;
 
     public function __construct()
     {
         $this->repo = new CumplimientoRepository();
         $this->vencimiento = new VencimientoService();
+        $this->soportes = new SoporteService();
     }
 
     public function reglasIndividual(): array
@@ -76,7 +78,7 @@ class CumplimientoService
     }
 
     /**
-     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string} $filtros
+     * @param array{persona_id?:?int, sesion_id?:?int, buscar?:?string, evidencia_faltante?:?int} $filtros
      */
     public function listar(int $pagina, int $porPagina, array $filtros): array
     {
@@ -84,10 +86,8 @@ class CumplimientoService
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
 
-        $items = array_map(
-            [$this, 'normalizar'],
-            $this->repo->listar($porPagina, $offset, $filtros)
-        );
+        $filas = $this->repo->listar($porPagina, $offset, $filtros);
+        $items = $this->normalizarConSoportes($filas);
 
         return [
             'items' => $items,
@@ -104,7 +104,7 @@ class CumplimientoService
             throw new HttpException('El cumplimiento no existe.', 404);
         }
 
-        return $this->normalizar($fila);
+        return $this->normalizarConSoportes([$fila])[0];
     }
 
     /**
@@ -154,7 +154,7 @@ class CumplimientoService
 
         $fila = $this->repo->buscarPorAsignacion((int)$campos['asignacion_id']);
 
-        return $this->normalizar($fila ?? []);
+        return $fila === null ? [] : $this->normalizarConSoportes([$fila])[0];
     }
 
     /**
@@ -165,7 +165,10 @@ class CumplimientoService
     {
         unset($datos['fecha_vencimiento']);
         $sesionId = (int)($datos['sesion_id'] ?? 0);
-        $this->exigirSesion($sesionId);
+        $sesion = $this->exigirSesion($sesionId);
+        if ((int)($sesion['capacitacion_certificado'] ?? 0) === 1) {
+            throw new HttpException(SoporteService::MENSAJE_MASIVO_CERTIFICADO, 422);
+        }
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
         $resultado = $this->exigirResultado($datos['resultado'] ?? null);
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
@@ -222,7 +225,7 @@ class CumplimientoService
                     );
                     $fila = $this->repo->buscarPorAsignacion($asignacionId);
                     if ($fila !== null) {
-                        $completados[] = $this->normalizar($fila);
+                        $completados[] = $fila;
                     }
                 }
             });
@@ -239,7 +242,7 @@ class CumplimientoService
             'procesados' => count($ids),
             'completados' => count($completados),
             'errores' => 0,
-            'items' => $completados,
+            'items' => $this->normalizarConSoportes($completados),
             'errores_detalle' => [],
         ];
     }
@@ -258,6 +261,12 @@ class CumplimientoService
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
         $resultado = $this->exigirResultado($datos['resultado'] ?? self::RESULTADO_APROBADO);
+        $this->exigirEvidenciaParaAprobado(
+            $resultado,
+            $actual,
+            (int)($actual['sesion_id'] ?? 0),
+            (int)$actual['asignacion_id']
+        );
         $observaciones = nullable_trimmed_string($datos['observaciones'] ?? null);
         $vence = $this->vencimiento->fechaVencimientoDeAsignacion((int)$actual['asignacion_id'], $fecha);
 
@@ -339,6 +348,8 @@ class CumplimientoService
         ?string $observaciones,
         ?int $usuarioId
     ): void {
+        $existente = $this->repo->buscarPorAsignacion($asignacionId);
+        $this->exigirEvidenciaParaAprobado($resultado, $existente, $sesionId, $asignacionId);
         $vence = $this->vencimiento->fechaVencimientoDeAsignacion($asignacionId, $fecha);
         $campos = [
             'sesion_id' => $sesionId,
@@ -350,7 +361,6 @@ class CumplimientoService
             'registrado_por_usuario_id_ext' => $usuarioId,
         ];
 
-        $existente = $this->repo->buscarPorAsignacion($asignacionId);
         if ($existente === null) {
             $campos['asignacion_id'] = $asignacionId;
             $this->repo->crear($campos);
@@ -358,6 +368,31 @@ class CumplimientoService
         }
 
         $this->repo->actualizar((int)$existente['cumplimiento_id'], $campos);
+    }
+
+    private function exigirEvidenciaParaAprobado(
+        string $resultado,
+        ?array $existente,
+        int $sesionId,
+        int $asignacionId
+    ): void {
+        if ($resultado !== self::RESULTADO_APROBADO) {
+            return;
+        }
+
+        $capId = (int)($existente['capacitacion_id'] ?? 0);
+        if ($capId < 1) {
+            $part = $this->repo->participanteEnSesion($sesionId, $asignacionId);
+            $capId = (int)($part['capacitacion_id'] ?? 0);
+        }
+        if ($capId < 1 || !$this->soportes->requiereCertificadoPorCapacitacion($capId)) {
+            return;
+        }
+
+        $count = $existente !== null ? $this->soportes->contar((int)$existente['cumplimiento_id']) : 0;
+        if ($count === 0) {
+            throw new HttpException(SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 422);
+        }
     }
 
     private function validarParticipante(int $sesionId, int $asignacionId, bool $bloquearAprobado): void
@@ -409,8 +444,14 @@ class CumplimientoService
             $motivo = self::MENSAJE_YA_REGISTRADO;
         }
 
+        $capId = (int)($part['capacitacion_id'] ?? $existente['capacitacion_id'] ?? 0);
+        $requiere = $capId > 0 && $this->soportes->requiereCertificadoPorCapacitacion($capId);
+        $cumplimientoId = $existente !== null ? (int)$existente['cumplimiento_id'] : null;
+        $soportesCount = $cumplimientoId !== null ? $this->soportes->contar($cumplimientoId) : 0;
+
         return [
             'asignacion_id' => $asignacionId,
+            'cumplimiento_id' => $cumplimientoId,
             'numero_documento' => $part['numero_documento'] ?? null,
             'persona_nombre' => $part['persona_nombre'] ?? null,
             'estado_asistencia' => $part['estado_asistencia'] ?? null,
@@ -424,6 +465,8 @@ class CumplimientoService
             'etiqueta_vencimiento' => $vence === null ? 'Sin vencimiento' : $vence,
             'puede_registrar' => $puede,
             'motivo' => $motivo,
+            'requiere_certificado' => $requiere,
+            'soportes_count' => $soportesCount,
         ];
     }
 
@@ -526,6 +569,29 @@ class CumplimientoService
     }
 
     /**
+     * @param list<array<string,mixed>> $filas
+     * @return list<array<string,mixed>>
+     */
+    private function normalizarConSoportes(array $filas): array
+    {
+        $ids = [];
+        foreach ($filas as $fila) {
+            if (isset($fila['cumplimiento_id'])) {
+                $ids[] = (int)$fila['cumplimiento_id'];
+            }
+        }
+        $por = $this->soportes->porCumplimientos($ids);
+        $items = [];
+        foreach ($filas as $fila) {
+            $cid = (int)($fila['cumplimiento_id'] ?? 0);
+            $fila['soportes'] = $por[$cid] ?? [];
+            $items[] = $this->normalizar($fila);
+        }
+
+        return $items;
+    }
+
+    /**
      * @param array<string,mixed> $fila
      * @return array<string,mixed>
      */
@@ -534,6 +600,8 @@ class CumplimientoService
         if ($fila === []) {
             return [];
         }
+
+        $soportes = is_array($fila['soportes'] ?? null) ? $fila['soportes'] : [];
 
         return [
             'cumplimiento_id' => (int)$fila['cumplimiento_id'],
@@ -545,6 +613,7 @@ class CumplimientoService
             'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
             'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? null,
             'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? null,
+            'requiere_certificado' => (int)($fila['capacitacion_certificado'] ?? 0) === 1,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'resultado' => $fila['resultado'] ?? null,
             'horas_efectivas' => $fila['horas_efectivas'] !== null ? (float)$fila['horas_efectivas'] : null,
@@ -553,6 +622,8 @@ class CumplimientoService
             'registrado_por_usuario_id_ext' => $fila['registrado_por_usuario_id_ext'] !== null
                 ? (int)$fila['registrado_por_usuario_id_ext']
                 : null,
+            'soportes_count' => count($soportes),
+            'soportes' => $soportes,
             'created_at' => $fila['created_at'] ?? null,
             'updated_at' => $fila['updated_at'] ?? null,
         ];

@@ -5,6 +5,7 @@ import {
   FormularioCumplimiento,
   type DatosCumplimiento,
 } from "@/app/(app)/cumplimientos/formulario";
+import { ListaEvidencias, subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -55,6 +56,7 @@ function Contenido() {
   const [enviando, setEnviando] = useState(false);
   const [buscarAsig, setBuscarAsig] = useState("");
   const [candidatas, setCandidatas] = useState<Asignacion[]>([]);
+  const [evidenciaFaltante, setEvidenciaFaltante] = useState(false);
 
   async function cargar(paginaActual = 1) {
     const respuesta = await apiGet<ListaPaginada<Cumplimiento>>(
@@ -62,6 +64,7 @@ function Contenido() {
         page: paginaActual,
         per_page: 15,
         buscar: buscar.trim() || undefined,
+        evidencia_faltante: evidenciaFaltante ? 1 : undefined,
       }),
     );
     if (!respuesta.success || !respuesta.data) {
@@ -80,7 +83,7 @@ function Contenido() {
     }, 300);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar]);
+  }, [buscar, evidenciaFaltante]);
 
   useEffect(() => {
     if (!abierto || editando) {
@@ -114,6 +117,14 @@ function Contenido() {
     setEnviando(true);
 
     if (editando) {
+      if (datos.archivos.length > 0) {
+        const err = await subirSoportes(editando.cumplimiento_id, datos.archivos);
+        if (err) {
+          setEnviando(false);
+          setError(err);
+          return;
+        }
+      }
       const respuesta = await apiPut<Cumplimiento>(`/api/cumplimientos/${editando.cumplimiento_id}`, {
         fecha_realizacion: datos.fecha_realizacion,
         resultado: datos.resultado,
@@ -136,6 +147,21 @@ function Contenido() {
       setEnviando(false);
       setError("Seleccione una asignación con asistencia registrada.");
       return;
+    }
+
+    const cumpId = asignacionAlta.cumplimiento_id;
+    if (datos.archivos.length > 0) {
+      if (!cumpId) {
+        setEnviando(false);
+        setError("No hay un cumplimiento borrador para adjuntar el archivo.");
+        return;
+      }
+      const err = await subirSoportes(cumpId, datos.archivos);
+      if (err) {
+        setEnviando(false);
+        setError(err);
+        return;
+      }
     }
 
     const respuesta = await apiPost<Cumplimiento>("/api/cumplimientos", {
@@ -190,6 +216,14 @@ function Contenido() {
             placeholder="Trabajador, documento o capacitación"
           />
         </Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={evidenciaFaltante}
+            onChange={(e) => setEvidenciaFaltante(e.target.checked)}
+          />
+          Evidencia faltante
+        </label>
       </Filters>
 
       <Table
@@ -201,6 +235,7 @@ function Contenido() {
           { clave: "resultado", etiqueta: "Resultado" },
           { clave: "horas", etiqueta: "Horas" },
           { clave: "vence", etiqueta: "Vencimiento" },
+          { clave: "evidencia", etiqueta: "Evidencia" },
           { clave: "acciones", etiqueta: "" },
         ]}
         filas={items.map((item) => [
@@ -215,6 +250,11 @@ function Contenido() {
           </Badge>,
           item.horas_efectivas ?? "—",
           item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : "Sin vencimiento",
+          <ListaEvidencias
+            key={`e-${item.cumplimiento_id}`}
+            soportes={item.soportes ?? []}
+            onError={setError}
+          />,
           <span key="a" className="flex flex-wrap gap-2">
             {puede("cumplimientos.crear") && item.resultado !== "APROBADO" && item.sesion_id ? (
               <Button
@@ -324,11 +364,24 @@ function Contenido() {
             key={editando ? `e-${editando.cumplimiento_id}` : `a-${asignacionAlta?.asignacion_id}`}
             asignacionId={editando?.asignacion_id ?? asignacionAlta?.asignacion_id ?? 0}
             sesionId={editando?.sesion_id ?? asignacionAlta?.cumplimiento_sesion_id ?? 0}
+            cumplimientoId={editando?.cumplimiento_id ?? asignacionAlta?.cumplimiento_id}
+            soportes={editando?.soportes ?? []}
             fechaDefault={
               (editando?.fecha_realizacion ?? asignacionAlta?.fecha_realizacion ?? "").slice(0, 10)
             }
             enviando={enviando}
             modoEdicion={Boolean(editando)}
+            onError={setError}
+            onSoporteEliminado={(soporteId) => {
+              if (editando) {
+                setEditando({
+                  ...editando,
+                  soportes: (editando.soportes ?? []).filter((s) => s.soporte_id !== soporteId),
+                  soportes_count: Math.max(0, (editando.soportes_count ?? 1) - 1),
+                });
+              }
+              void cargar(pagina);
+            }}
             onCancelar={() => {
               setAbierto(false);
               setEditando(null);

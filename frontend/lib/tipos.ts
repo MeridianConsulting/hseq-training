@@ -112,6 +112,7 @@ export type SesionCronograma = {
   disponibles: number;
   cupo_completo: boolean;
   estado: string;
+  requiere_certificado?: boolean;
 };
 
 export type ParticipanteSesion = {
@@ -274,6 +275,17 @@ export type Asignacion = {
   etiqueta_dias: string | null;
 };
 
+export type SoporteCumplimiento = {
+  soporte_id: number;
+  cumplimiento_id: number | null;
+  tipo_soporte: string;
+  nombre_archivo: string;
+  mime_type: string | null;
+  tamano_bytes: number | null;
+  cargado_por_usuario_id_ext: number | null;
+  created_at: string | null;
+};
+
 export type Cumplimiento = {
   cumplimiento_id: number;
   asignacion_id: number;
@@ -284,15 +296,19 @@ export type Cumplimiento = {
   capacitacion_id: number | null;
   capacitacion_codigo: string | null;
   capacitacion_nombre: string | null;
+  requiere_certificado?: boolean;
   fecha_realizacion: string | null;
   resultado: string | null;
   horas_efectivas: number | null;
   fecha_vencimiento: string | null;
   observaciones: string | null;
+  soportes_count?: number;
+  soportes?: SoporteCumplimiento[];
 };
 
 export type PreviewItemCumplimiento = {
   asignacion_id: number;
+  cumplimiento_id: number | null;
   numero_documento: string | null;
   persona_nombre: string | null;
   estado_asistencia: string | null;
@@ -306,6 +322,8 @@ export type PreviewItemCumplimiento = {
   etiqueta_vencimiento: string;
   puede_registrar: boolean;
   motivo: string | null;
+  requiere_certificado?: boolean;
+  soportes_count?: number;
 };
 
 export type PreviewCumplimiento = {

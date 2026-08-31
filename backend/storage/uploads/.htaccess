@@ -1,0 +1,7 @@
+# Impide ejecutar scripts en el directorio de evidencias.
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<FilesMatch "\.(php|phtml|phar|cgi|pl|exe)$">
+  Require all denied
+</FilesMatch>

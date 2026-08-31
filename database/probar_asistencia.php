@@ -59,6 +59,10 @@ function borrarPlanYSesiones(Database $db, int $anio): void
         $sesiones = $db->fetchAll('SELECT sesion_id FROM sesiones_capacitacion WHERE plan_detalle_id = ?', [$id]);
         foreach ($sesiones as $s) {
             $sid = (int)$s['sesion_id'];
+            $cump = $db->fetchAll('SELECT cumplimiento_id FROM cumplimientos_capacitacion WHERE sesion_id = ?', [$sid]);
+            foreach ($cump as $c) {
+                $db->query('DELETE FROM soportes_cumplimiento WHERE cumplimiento_id = ?', [(int)$c['cumplimiento_id']]);
+            }
             $db->query('DELETE FROM cumplimientos_capacitacion WHERE sesion_id = ?', [$sid]);
             $db->query('DELETE FROM sesion_participantes WHERE sesion_id = ?', [$sid]);
             $db->query('DELETE FROM sesiones_capacitacion WHERE sesion_id = ?', [$sid]);

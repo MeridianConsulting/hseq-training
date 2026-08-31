@@ -97,9 +97,13 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->group(['prefix' => '/cumplimientos'], function ($router) {
         $router->get('/previsualizar', [CumplimientoController::class, 'previsualizar'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->get('/soportes/{id}/archivo', [CumplimientoController::class, 'descargarSoporte'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->delete('/soportes/{id}', [CumplimientoController::class, 'destroySoporte'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
         $router->get('', [CumplimientoController::class, 'index'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->post('/masivo', [CumplimientoController::class, 'storeMasivo'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
         $router->post('', [CumplimientoController::class, 'store'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
+        $router->get('/{id}/soportes', [CumplimientoController::class, 'soportes'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->post('/{id}/soportes', [CumplimientoController::class, 'storeSoporte'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
         $router->put('/{id}', [CumplimientoController::class, 'update'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
         $router->get('/{id}', [CumplimientoController::class, 'show'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
     });

@@ -406,6 +406,7 @@ class SesionRepository
                        s.updated_at,
                        c.codigo AS capacitacion_codigo,
                        c.nombre AS capacitacion_nombre,
+                       c.certificado AS capacitacion_certificado,
                        p.plan_anual_id,
                        p.anio,
                        p.estado AS plan_estado,

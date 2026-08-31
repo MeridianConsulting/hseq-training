@@ -14,6 +14,7 @@ import {
   FormularioCumplimiento,
   type DatosCumplimiento,
 } from "@/app/(app)/cumplimientos/formulario";
+import { ListaEvidencias, subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -317,6 +318,20 @@ function Contenido() {
       return;
     }
     setEnviandoCump(true);
+    const cumpId = cumpAsignacion.cumplimiento_id;
+    if (datos.archivos.length > 0) {
+      if (!cumpId) {
+        setEnviandoCump(false);
+        setError("No hay un cumplimiento borrador para adjuntar el archivo.");
+        return;
+      }
+      const err = await subirSoportes(cumpId, datos.archivos);
+      if (err) {
+        setEnviandoCump(false);
+        setError(err);
+        return;
+      }
+    }
     const respuesta = await apiPost<Cumplimiento>("/api/cumplimientos", {
       asignacion_id: cumpAsignacion.asignacion_id,
       sesion_id: sesionId,
@@ -427,6 +442,7 @@ function Contenido() {
               { clave: "res", etiqueta: "Resultado" },
               { clave: "horas", etiqueta: "Horas" },
               { clave: "vence", etiqueta: "Vencimiento" },
+              { clave: "evid", etiqueta: "Evidencia" },
             ]}
             filas={cumplimientosPersona.map((c) => [
               `${c.capacitacion_codigo ?? ""} — ${c.capacitacion_nombre ?? ""}`,
@@ -434,6 +450,7 @@ function Contenido() {
               c.resultado === "APROBADO" ? "Aprobado" : (c.resultado ?? "—"),
               c.horas_efectivas ?? "—",
               c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
+              <ListaEvidencias key={`ev-${c.cumplimiento_id}`} soportes={c.soportes ?? []} onError={setError} />,
             ])}
           />
         </Card>
@@ -677,8 +694,11 @@ function Contenido() {
             key={cumpAsignacion.asignacion_id}
             asignacionId={cumpAsignacion.asignacion_id}
             sesionId={sesionDeCumplimiento(cumpAsignacion)}
+            cumplimientoId={cumpAsignacion.cumplimiento_id}
             fechaDefault={(cumpAsignacion.fecha_realizacion ?? "").slice(0, 10)}
             enviando={enviandoCump}
+            onError={setError}
+            onSoporteEliminado={() => void refrescar(pagina)}
             onCancelar={() => {
               setCumpAbierto(false);
               setCumpAsignacion(null);
