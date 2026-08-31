@@ -144,4 +144,71 @@ class SesionController extends Controller
 
         $this->success($actualizada, 'Trabajador retirado de la sesión.');
     }
+
+    public function historial(Request $request): void
+    {
+        $personaId = (int)$request->query('persona_id', 0);
+        $this->success(
+            ['items' => $this->service->historialPersona($personaId)],
+            'Historial de sesiones del trabajador'
+        );
+    }
+
+    public function asistencia(Request $request, string $id): void
+    {
+        $datos = $this->validate($request, [
+            'items' => 'required|array',
+        ], [
+            'items.required' => 'Debe enviar los resultados de asistencia.',
+            'items.array' => 'Debe enviar los resultados de asistencia.',
+        ]);
+        $anterior = $this->service->ver((int)$id);
+        $actualizada = $this->service->guardarAsistencia((int)$id, $datos, $request->userId());
+
+        $this->auditoria->dePeticion(
+            $request,
+            'asistencia',
+            'sesiones_capacitacion',
+            (int)$id,
+            [
+                'resumen' => $actualizada['resumen'] ?? null,
+                'items' => $datos['items'],
+            ],
+            ['participantes' => $anterior['participantes'] ?? []]
+        );
+
+        $this->success($actualizada, 'Control de asistencia registrado correctamente.');
+    }
+
+    public function reprogramar(Request $request, string $id): void
+    {
+        $datos = $this->validate($request, [
+            'origen_sesion_id' => 'required|integer|min:1',
+            'asignacion_ids' => 'required|array',
+        ], [
+            'origen_sesion_id.required' => 'Debe indicar la sesión de origen.',
+            'asignacion_ids.required' => 'Seleccione al menos un trabajador ausente.',
+        ]);
+        $actualizada = $this->service->reprogramar((int)$id, $datos, $request->userId());
+        $resumen = $actualizada['reprogramacion'] ?? [];
+
+        $this->auditoria->dePeticion(
+            $request,
+            'reprogramar',
+            'sesiones_capacitacion',
+            (int)$id,
+            [
+                'origen_sesion_id' => (int)$datos['origen_sesion_id'],
+                'asignacion_ids' => $datos['asignacion_ids'],
+                'reprogramacion' => $resumen,
+            ]
+        );
+
+        $seleccionados = (int)($resumen['seleccionados'] ?? 0);
+        $reprogramados = (int)($resumen['reprogramados'] ?? 0);
+        $this->success(
+            $actualizada,
+            "Seleccionados: {$seleccionados}. Reprogramados: {$reprogramados}. Errores: 0."
+        );
+    }
 }

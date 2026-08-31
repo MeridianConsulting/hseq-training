@@ -23,7 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import type { Asignacion, Capacitacion, ProximasAsignaciones } from "@/lib/tipos";
+import type { Asignacion, Capacitacion, IntentoSesion, ProximasAsignaciones } from "@/lib/tipos";
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   PENDIENTE: "Pendiente",
@@ -52,6 +52,14 @@ function etiquetaOrigen(origen: string): string {
   if (origen === "AUTOMATICA") return "Automática";
   if (origen === "MANUAL") return "Manual";
   return origen;
+}
+
+function etiquetaAsistencia(estado: string): string {
+  if (estado === "ASISTIO") return "Asistió";
+  if (estado === "TARDE") return "Llegó tarde";
+  if (estado === "AUSENTE") return "Ausente";
+  if (estado === "CONVOCADO") return "Pendiente";
+  return estado;
 }
 
 type PersonaHistorial = {
@@ -118,6 +126,7 @@ function Contenido() {
   const [origen, setOrigen] = useState("");
   const [personaHistorial, setPersonaHistorial] = useState<PersonaHistorial | null>(null);
   const [historialListo, setHistorialListo] = useState(false);
+  const [intentosSesion, setIntentosSesion] = useState<IntentoSesion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -174,6 +183,26 @@ function Contenido() {
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buscar, capacitacionId, estado, origen, personaHistorial, historialListo]);
+
+  useEffect(() => {
+    if (!personaHistorial) {
+      setIntentosSesion([]);
+      return;
+    }
+    const abortado = { actual: false };
+    void (async () => {
+      const respuesta = await apiGet<{ items: IntentoSesion[] }>(
+        withQuery("/api/sesiones/historial", { persona_id: personaHistorial.id }),
+      );
+      if (abortado.actual) {
+        return;
+      }
+      setIntentosSesion(respuesta.success && respuesta.data ? respuesta.data.items : []);
+    })();
+    return () => {
+      abortado.actual = true;
+    };
+  }, [personaHistorial]);
 
   useEffect(() => {
     void cargarProximas();
@@ -322,6 +351,26 @@ function Contenido() {
             Quitar filtro
           </button>
         </Alert>
+      ) : null}
+
+      {personaHistorial && intentosSesion.length > 0 ? (
+        <Card className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Intentos de sesión</h2>
+          <Table
+            columnas={[
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "fecha", etiqueta: "Sesión" },
+              { clave: "estado", etiqueta: "Asistencia" },
+              { clave: "motivo", etiqueta: "Razón" },
+            ]}
+            filas={intentosSesion.map((intento) => [
+              `${intento.capacitacion_codigo} — ${intento.capacitacion_nombre}`,
+              formatoFecha(intento.fecha),
+              etiquetaAsistencia(intento.estado_asistencia),
+              intento.motivo_ausencia ?? "—",
+            ])}
+          />
+        </Card>
       ) : null}
 
       <Card className="mb-6">

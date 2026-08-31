@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Repositories\SesionRepository;
+use DateTimeImmutable;
 use PDOException;
 
 class SesionService
@@ -121,6 +122,7 @@ class SesionService
             [$this, 'normalizarParticipante'],
             $this->repo->participantes($id)
         );
+        $salida['resumen'] = $this->resumenAsistencia($salida['participantes']);
 
         return $salida;
     }
@@ -246,6 +248,168 @@ class SesionService
         }
 
         return $this->ver($sesionId);
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     */
+    public function guardarAsistencia(int $sesionId, array $datos, int $usuarioId): array
+    {
+        $items = $datos['items'] ?? null;
+        if (!is_array($items) || $items === []) {
+            throw new HttpException('Debe enviar los resultados de asistencia.', 422);
+        }
+
+        try {
+            $this->repo->transaccion(function () use ($sesionId, $items, $usuarioId): void {
+                $sesion = $this->repo->bloquearPorId($sesionId);
+                if ($sesion === null) {
+                    throw new HttpException('La sesión no existe.', 404);
+                }
+                if (($sesion['estado'] ?? '') === 'CANCELADA') {
+                    throw new HttpException('No es posible registrar asistencia en una sesión cancelada.', 409);
+                }
+
+                $convocados = $this->repo->participantes($sesionId);
+                if ($convocados === []) {
+                    throw new HttpException('Esta sesión no tiene trabajadores convocados.', 422);
+                }
+
+                $porAsig = [];
+                foreach ($convocados as $fila) {
+                    $porAsig[(int)$fila['asignacion_id']] = $fila;
+                }
+
+                $normalizados = $this->normalizarItemsAsistencia($items, $porAsig);
+                $cap = $this->repo->datosCapacitacionCumplimiento((int)$sesion['capacitacion_id']);
+                $fechaReal = substr((string)($sesion['fecha_hora'] ?? ''), 0, 10);
+                $usuario = $usuarioId > 0 ? $usuarioId : null;
+
+                foreach ($normalizados as $item) {
+                    $this->repo->actualizarAsistencia($sesionId, $item['asignacion_id'], [
+                        'estado_asistencia' => $item['estado_asistencia'],
+                        'motivo_ausencia' => $item['motivo_ausencia'],
+                        'observacion' => $item['observacion'],
+                        'registrado_por_usuario_id_ext' => $usuario,
+                    ]);
+                    $this->sincronizarCumplimiento(
+                        $sesionId,
+                        $item['asignacion_id'],
+                        $item['estado_asistencia'],
+                        $fechaReal,
+                        $cap,
+                        $usuario
+                    );
+                }
+            });
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (PDOException $e) {
+            throw $this->errorPersistencia($e, 'No fue posible registrar la asistencia.');
+        }
+
+        return $this->ver($sesionId);
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     */
+    public function reprogramar(int $destinoId, array $datos, int $usuarioId): array
+    {
+        $origenId = (int)($datos['origen_sesion_id'] ?? 0);
+        $ids = $this->normalizarIds($datos['asignacion_ids'] ?? []);
+        if ($origenId < 1) {
+            throw new HttpException('Debe indicar la sesión de origen.', 422);
+        }
+        if ($destinoId === $origenId) {
+            throw new HttpException('La sesión destino debe ser distinta a la de origen.', 422);
+        }
+        if ($ids === []) {
+            throw new HttpException('Seleccione al menos un trabajador ausente.', 422);
+        }
+
+        $seleccionados = count($ids);
+        $reprogramados = 0;
+
+        try {
+            $this->repo->transaccion(function () use (
+                $destinoId,
+                $origenId,
+                $ids,
+                $usuarioId,
+                &$reprogramados
+            ): void {
+                $destino = $this->repo->bloquearPorId($destinoId);
+                if ($destino === null) {
+                    throw new HttpException('La sesión destino no existe.', 404);
+                }
+                if (($destino['estado'] ?? '') === 'CANCELADA') {
+                    throw new HttpException('No es posible reprogramar hacia una sesión cancelada.', 409);
+                }
+
+                $origen = $this->repo->buscarPorId($origenId);
+                if ($origen === null) {
+                    throw new HttpException('La sesión de origen no existe.', 404);
+                }
+                if ((int)$destino['capacitacion_id'] !== (int)$origen['capacitacion_id']) {
+                    throw new HttpException('La sesión destino debe ser de la misma capacitación.', 422);
+                }
+
+                $partOrigen = $this->repo->participantes($origenId);
+                $porAsig = [];
+                foreach ($partOrigen as $fila) {
+                    $porAsig[(int)$fila['asignacion_id']] = $fila;
+                }
+
+                foreach ($ids as $asignacionId) {
+                    if (!isset($porAsig[$asignacionId])) {
+                        throw new HttpException('El trabajador no está convocado a la sesión de origen.', 422);
+                    }
+                    if ((string)$porAsig[$asignacionId]['estado_asistencia'] !== 'AUSENTE') {
+                        throw new HttpException('Solo se pueden reprogramar trabajadores ausentes.', 422);
+                    }
+                }
+
+                $reprogramados = $this->insertarConvocadosAtomico(
+                    $destinoId,
+                    (int)$destino['capacitacion_id'],
+                    (int)($destino['cupo_maximo'] ?? 0),
+                    $ids,
+                    $usuarioId > 0 ? $usuarioId : null,
+                    true,
+                    true
+                );
+            });
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (PDOException $e) {
+            throw $this->errorPersistencia($e, 'No fue posible reprogramar a los trabajadores.');
+        }
+
+        $salida = $this->ver($destinoId);
+        $salida['reprogramacion'] = [
+            'seleccionados' => $seleccionados,
+            'reprogramados' => $reprogramados,
+            'omitidas' => max(0, $seleccionados - $reprogramados),
+            'errores' => 0,
+        ];
+
+        return $salida;
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function historialPersona(int $personaId): array
+    {
+        if ($personaId < 1) {
+            throw new HttpException('Debe indicar el trabajador.', 422);
+        }
+
+        return array_map(
+            [$this, 'normalizarIntento'],
+            $this->repo->participacionesPorPersona($personaId)
+        );
     }
 
     public function retirar(int $sesionId, int $asignacionId): array
@@ -480,8 +644,9 @@ class SesionService
         int $cupo,
         array $ids,
         ?int $usuarioId,
-        bool $sesionRecienCreada
-    ): void {
+        bool $sesionRecienCreada,
+        bool $reprogramacion = false
+    ): int {
         if (!$sesionRecienCreada) {
             $this->repo->bloquearPorId($sesionId);
         }
@@ -516,10 +681,17 @@ class SesionService
         $actuales = count($ya);
         $disponibles = max(0, $cupo - $actuales);
         if (count($nuevos) > $disponibles) {
-            throw new HttpException($this->mensajeCupo($cupo, $actuales, count($nuevos)), 422);
+            throw new HttpException(
+                $reprogramacion
+                    ? 'La sesión seleccionada no tiene cupos suficientes para los trabajadores seleccionados.'
+                    : $this->mensajeCupo($cupo, $actuales, count($nuevos)),
+                422
+            );
         }
 
         $this->repo->insertarParticipantes($sesionId, $nuevos, $usuarioId);
+
+        return count($nuevos);
     }
 
     private function mensajeCupo(int $cupo, int $actuales, int $nuevos): string
@@ -652,7 +824,210 @@ class SesionService
             'numero_documento' => (string)($fila['numero_documento'] ?? ''),
             'persona_estado' => $fila['persona_estado'] ?? null,
             'estado_asistencia' => (string)($fila['estado_asistencia'] ?? ''),
+            'motivo_ausencia' => $fila['motivo_ausencia'] ?? null,
+            'observacion' => $fila['observacion'] ?? null,
+            'registrado_por_usuario_id_ext' => isset($fila['registrado_por_usuario_id_ext'])
+                && $fila['registrado_por_usuario_id_ext'] !== null
+                ? (int)$fila['registrado_por_usuario_id_ext']
+                : null,
+            'updated_at' => $fila['updated_at'] ?? null,
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function normalizarIntento(array $fila): array
+    {
+        $fechaHora = (string)($fila['fecha_hora'] ?? '');
+
+        return [
+            'sesion_participante_id' => (int)$fila['sesion_participante_id'],
+            'sesion_id' => (int)$fila['sesion_id'],
+            'asignacion_id' => (int)$fila['asignacion_id'],
+            'persona_id_ext' => (int)$fila['persona_id_ext'],
+            'estado_asistencia' => (string)($fila['estado_asistencia'] ?? ''),
+            'motivo_ausencia' => $fila['motivo_ausencia'] ?? null,
+            'observacion' => $fila['observacion'] ?? null,
+            'fecha_hora' => $fechaHora,
+            'fecha' => $fechaHora !== '' ? substr($fechaHora, 0, 10) : null,
+            'sesion_estado' => (string)($fila['sesion_estado'] ?? ''),
+            'capacitacion_codigo' => (string)($fila['capacitacion_codigo'] ?? ''),
+            'capacitacion_nombre' => (string)($fila['capacitacion_nombre'] ?? ''),
+            'updated_at' => $fila['updated_at'] ?? null,
+        ];
+    }
+
+    /**
+     * @param list<array<string,mixed>> $participantes
+     * @return array{convocados:int,asistieron:int,tarde:int,ausentes:int,pendientes:int}
+     */
+    private function resumenAsistencia(array $participantes): array
+    {
+        $resumen = [
+            'convocados' => count($participantes),
+            'asistieron' => 0,
+            'tarde' => 0,
+            'ausentes' => 0,
+            'pendientes' => 0,
+        ];
+
+        foreach ($participantes as $p) {
+            $estado = (string)($p['estado_asistencia'] ?? '');
+            if ($estado === 'ASISTIO') {
+                $resumen['asistieron']++;
+            } elseif ($estado === 'TARDE') {
+                $resumen['tarde']++;
+            } elseif ($estado === 'AUSENTE') {
+                $resumen['ausentes']++;
+            } else {
+                $resumen['pendientes']++;
+            }
+        }
+
+        return $resumen;
+    }
+
+    /**
+     * @param mixed $items
+     * @param array<int,array<string,mixed>> $porAsig
+     * @return list<array{asignacion_id:int,estado_asistencia:string,motivo_ausencia:?string,observacion:?string}>
+     */
+    private function normalizarItemsAsistencia(mixed $items, array $porAsig): array
+    {
+        if (!is_array($items)) {
+            return [];
+        }
+
+        $vistos = [];
+        $normalizados = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $asigId = (int)($item['asignacion_id'] ?? 0);
+            if ($asigId < 1 || isset($vistos[$asigId])) {
+                continue;
+            }
+            $vistos[$asigId] = true;
+            if (!isset($porAsig[$asigId])) {
+                throw new HttpException('El trabajador no está convocado a esta sesión.', 422);
+            }
+
+            $estado = strtoupper(trim((string)($item['estado_asistencia'] ?? '')));
+            if (!in_array($estado, ['CONVOCADO', 'ASISTIO', 'TARDE', 'AUSENTE'], true)) {
+                throw new HttpException('El estado de asistencia no es válido.', 422);
+            }
+
+            $motivo = nullable_trimmed_string($item['motivo_ausencia'] ?? null);
+            $observacion = nullable_trimmed_string($item['observacion'] ?? null);
+            if ($observacion !== null) {
+                $observacion = $this->recortar($observacion, 500);
+            }
+
+            if ($estado === 'AUSENTE') {
+                if ($motivo === null || $motivo === '') {
+                    throw new HttpException('Debe registrar la razón de ausencia.', 422);
+                }
+                $motivo = $this->recortar($motivo, 255);
+            } else {
+                $motivo = null;
+            }
+
+            $normalizados[] = [
+                'asignacion_id' => $asigId,
+                'estado_asistencia' => $estado,
+                'motivo_ausencia' => $motivo,
+                'observacion' => $observacion,
+            ];
+        }
+
+        if ($normalizados === []) {
+            throw new HttpException('Debe enviar los resultados de asistencia.', 422);
+        }
+
+        return $normalizados;
+    }
+
+    /**
+     * @param array<string,mixed>|null $cap
+     */
+    private function sincronizarCumplimiento(
+        int $sesionId,
+        int $asignacionId,
+        string $estado,
+        string $fechaReal,
+        ?array $cap,
+        ?int $usuarioId
+    ): void {
+        $asistio = $estado === 'ASISTIO' || $estado === 'TARDE';
+        $existente = $this->repo->cumplimientoPorAsignacion($asignacionId);
+        $sesionDelCump = $existente !== null && $existente['sesion_id'] !== null
+            ? (int)$existente['sesion_id']
+            : null;
+
+        if (!$asistio) {
+            if ($existente !== null && $sesionDelCump === $sesionId) {
+                $this->repo->borrarCumplimiento((int)$existente['cumplimiento_id']);
+            }
+            return;
+        }
+
+        $horas = isset($cap['duracion_estimada_horas']) && $cap['duracion_estimada_horas'] !== null
+            ? (float)$cap['duracion_estimada_horas']
+            : 0.0;
+        $vence = $this->fechaVencimientoDesde(
+            $fechaReal,
+            isset($cap['vigencia_cantidad']) ? (int)$cap['vigencia_cantidad'] : 0,
+            isset($cap['vigencia_unidad']) ? (string)$cap['vigencia_unidad'] : ''
+        );
+        $campos = [
+            'sesion_id' => $sesionId,
+            'fecha_realizacion' => $fechaReal !== '' ? $fechaReal : date('Y-m-d'),
+            'resultado' => $estado,
+            'horas_efectivas' => $horas,
+            'fecha_vencimiento' => $vence,
+            'registrado_por_usuario_id_ext' => $usuarioId,
+        ];
+
+        if ($existente === null) {
+            $campos['asignacion_id'] = $asignacionId;
+            $this->repo->crearCumplimiento($campos);
+            return;
+        }
+
+        if ($sesionDelCump === null || $sesionDelCump === $sesionId) {
+            $this->repo->actualizarCumplimiento((int)$existente['cumplimiento_id'], $campos);
+        }
+    }
+
+    private function fechaVencimientoDesde(string $fechaBase, int $cantidad, string $unidad): ?string
+    {
+        if ($cantidad <= 0) {
+            return null;
+        }
+        try {
+            $base = new DateTimeImmutable($fechaBase !== '' ? $fechaBase : 'today');
+        } catch (\Exception $e) {
+            $base = new DateTimeImmutable('today');
+        }
+        $mapa = ['DIAS' => 'days', 'MESES' => 'months', 'ANIOS' => 'years'];
+        $mod = $mapa[strtoupper($unidad)] ?? null;
+        if ($mod === null) {
+            return null;
+        }
+
+        return $base->modify('+' . $cantidad . ' ' . $mod)->format('Y-m-d');
+    }
+
+    private function recortar(string $texto, int $max): string
+    {
+        if (function_exists('mb_substr')) {
+            return mb_strlen($texto) > $max ? mb_substr($texto, 0, $max) : $texto;
+        }
+
+        return strlen($texto) > $max ? substr($texto, 0, $max) : $texto;
     }
 
     /**

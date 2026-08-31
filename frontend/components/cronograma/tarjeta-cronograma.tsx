@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { FormularioSesion, PanelConvocados, tipoModalidad } from "@/app/(app)/cronograma/formulario-sesion";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -136,6 +137,14 @@ export function TarjetaCronograma({
                 )}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
+                {puede("sesiones.ver") ? (
+                  <Link
+                    href={`/sesiones?sesion_id=${sesion.sesion_id}`}
+                    className="inline-flex items-center justify-center rounded-lg px-0 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
+                  >
+                    Asistencia
+                  </Link>
+                ) : null}
                 {puede("sesiones.editar") ? (
                   <>
                     <Button type="button" variante="ghost" className="px-0" onClick={() => setEditar(sesion)}>

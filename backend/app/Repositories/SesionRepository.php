@@ -48,7 +48,7 @@ class SesionRepository
     public function bloquearPorId(int $id): ?array
     {
         return $this->db->fetch(
-            'SELECT sesion_id, plan_detalle_id, capacitacion_id, cupo_maximo, estado
+            'SELECT sesion_id, plan_detalle_id, capacitacion_id, cupo_maximo, estado, fecha_hora
              FROM sesiones_capacitacion
              WHERE sesion_id = ?
              FOR UPDATE',
@@ -126,6 +126,10 @@ class SesionRepository
                     sp.sesion_id,
                     sp.asignacion_id,
                     sp.estado_asistencia,
+                    sp.motivo_ausencia,
+                    sp.observacion,
+                    sp.registrado_por_usuario_id_ext,
+                    sp.updated_at,
                     a.persona_id_ext,
                     a.capacitacion_id,
                     per.numero_documento,
@@ -229,6 +233,109 @@ class SesionRepository
             'sesion_participantes',
             'sesion_id = ? AND asignacion_id = ?',
             [$sesionId, $asignacionId]
+        );
+    }
+
+    /**
+     * @param array{estado_asistencia:string, motivo_ausencia:?string, observacion:?string, registrado_por_usuario_id_ext:?int} $datos
+     */
+    public function actualizarAsistencia(int $sesionId, int $asignacionId, array $datos): int
+    {
+        return $this->db->update(
+            'sesion_participantes',
+            [
+                'estado_asistencia' => $datos['estado_asistencia'],
+                'motivo_ausencia' => $datos['motivo_ausencia'],
+                'observacion' => $datos['observacion'],
+                'registrado_por_usuario_id_ext' => $datos['registrado_por_usuario_id_ext'],
+            ],
+            'sesion_id = ? AND asignacion_id = ?',
+            [$sesionId, $asignacionId]
+        );
+    }
+
+    /** @return array<string,mixed>|null */
+    public function datosCapacitacionCumplimiento(int $capacitacionId): ?array
+    {
+        return $this->db->fetch(
+            'SELECT c.capacitacion_id,
+                    c.duracion_estimada_horas,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad
+             FROM capacitaciones c
+             LEFT JOIN vigencias vig ON vig.vigencia_id = c.vigencia_id
+             WHERE c.capacitacion_id = ?
+             LIMIT 1',
+            [$capacitacionId]
+        );
+    }
+
+    public function cumplimientoPorAsignacion(int $asignacionId): ?array
+    {
+        return $this->db->fetch(
+            'SELECT cumplimiento_id, asignacion_id, sesion_id, fecha_realizacion, resultado, horas_efectivas
+             FROM cumplimientos_capacitacion
+             WHERE asignacion_id = ?
+             LIMIT 1',
+            [$asignacionId]
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     */
+    public function crearCumplimiento(array $datos): int
+    {
+        return (int)$this->db->insert('cumplimientos_capacitacion', $datos);
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     */
+    public function actualizarCumplimiento(int $cumplimientoId, array $datos): int
+    {
+        return $this->db->update(
+            'cumplimientos_capacitacion',
+            $datos,
+            'cumplimiento_id = ?',
+            [$cumplimientoId]
+        );
+    }
+
+    public function borrarCumplimiento(int $cumplimientoId): int
+    {
+        $this->db->delete('soportes_cumplimiento', 'cumplimiento_id = ?', [$cumplimientoId]);
+
+        return $this->db->delete(
+            'cumplimientos_capacitacion',
+            'cumplimiento_id = ?',
+            [$cumplimientoId]
+        );
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function participacionesPorPersona(int $personaId): array
+    {
+        return $this->db->fetchAll(
+            'SELECT sp.sesion_participante_id,
+                    sp.sesion_id,
+                    sp.asignacion_id,
+                    sp.estado_asistencia,
+                    sp.motivo_ausencia,
+                    sp.observacion,
+                    sp.updated_at,
+                    s.fecha_hora,
+                    s.estado AS sesion_estado,
+                    c.codigo AS capacitacion_codigo,
+                    c.nombre AS capacitacion_nombre,
+                    a.persona_id_ext
+             FROM sesion_participantes sp
+             INNER JOIN sesiones_capacitacion s ON s.sesion_id = sp.sesion_id
+             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = sp.asignacion_id
+             INNER JOIN capacitaciones c ON c.capacitacion_id = a.capacitacion_id
+             WHERE a.persona_id_ext = ?
+             ORDER BY s.fecha_hora ASC, sp.sesion_participante_id ASC',
+            [$personaId]
         );
     }
 

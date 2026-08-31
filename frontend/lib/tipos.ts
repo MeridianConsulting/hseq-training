@@ -122,6 +122,34 @@ export type ParticipanteSesion = {
   numero_documento: string;
   persona_estado: string | null;
   estado_asistencia: string;
+  motivo_ausencia: string | null;
+  observacion: string | null;
+  registrado_por_usuario_id_ext: number | null;
+  updated_at: string | null;
+};
+
+export type ResumenAsistencia = {
+  convocados: number;
+  asistieron: number;
+  tarde: number;
+  ausentes: number;
+  pendientes: number;
+};
+
+export type IntentoSesion = {
+  sesion_participante_id: number;
+  sesion_id: number;
+  asignacion_id: number;
+  persona_id_ext: number;
+  estado_asistencia: string;
+  motivo_ausencia: string | null;
+  observacion: string | null;
+  fecha_hora: string;
+  fecha: string | null;
+  sesion_estado: string;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  updated_at: string | null;
 };
 
 export type ConvocableSesion = {
@@ -156,6 +184,13 @@ export type DetalleSesion = SesionCronograma & {
   anio: number | null;
   observaciones: string | null;
   participantes: ParticipanteSesion[];
+  resumen?: ResumenAsistencia;
+  reprogramacion?: {
+    seleccionados: number;
+    reprogramados: number;
+    omitidas: number;
+    errores: number;
+  };
 };
 
 export type ItemCronograma = {
