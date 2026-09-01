@@ -75,6 +75,17 @@ class PersonalRepository
         return $this->db->fetch($sql, $params) !== null;
     }
 
+    public function buscarIdPorDocumento(string $numeroDocumento): ?int
+    {
+        $personas = Database::personalTable('personas');
+        $fila = $this->db->fetch(
+            "SELECT persona_id FROM {$personas} WHERE numero_documento = ? LIMIT 1",
+            [$numeroDocumento]
+        );
+
+        return $fila === null ? null : (int)$fila['persona_id'];
+    }
+
     /**
      * @param list<string> $numeros
      * @return array<string, true>
@@ -299,20 +310,7 @@ class PersonalRepository
      */
     public function transaccion(callable $operacion): int
     {
-        $this->db->beginTransaction();
-
-        try {
-            $resultado = $operacion();
-            $this->db->commit();
-
-            return $resultado;
-        } catch (PDOException $e) {
-            $this->db->rollBack();
-            throw $e;
-        } catch (\Throwable $e) {
-            $this->db->rollBack();
-            throw $e;
-        }
+        return (int)$this->db->transaccion($operacion);
     }
 
     public static function esConflictoUnico(PDOException $e): bool

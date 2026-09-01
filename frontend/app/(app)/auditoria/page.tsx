@@ -17,6 +17,7 @@ const MODULOS = [
   { valor: "asignaciones_capacitacion", etiqueta: "Asignaciones" },
   { valor: "cumplimientos_capacitacion", etiqueta: "Cumplimientos" },
   { valor: "soportes_cumplimiento", etiqueta: "Evidencias" },
+  { valor: "migraciones", etiqueta: "Migración Excel" },
 ];
 
 const ACCIONES = [
@@ -27,6 +28,7 @@ const ACCIONES = [
   { valor: "cargar", etiqueta: "Cargar" },
   { valor: "asignar_masivo", etiqueta: "Asignar masivo" },
   { valor: "generar_automaticas", etiqueta: "Motor automático" },
+  { valor: "migracion_inicial", etiqueta: "Carga inicial Excel" },
 ];
 
 function formatoFechaHora(valor: string | null): string {

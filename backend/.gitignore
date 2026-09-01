@@ -8,3 +8,5 @@
 !/storage/uploads/.htaccess
 !/storage/uploads/soportes/
 !/storage/uploads/soportes/.gitkeep
+!/storage/uploads/migraciones/
+!/storage/uploads/migraciones/.gitkeep

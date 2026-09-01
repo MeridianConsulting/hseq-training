@@ -44,6 +44,14 @@ class CapacitacionRepository
         );
     }
 
+    public function buscarPorCodigo(string $codigo): ?array
+    {
+        return $this->db->fetch(
+            $this->selectBase() . ' WHERE c.codigo = ? LIMIT 1',
+            [$codigo]
+        );
+    }
+
     public function codigoDuplicado(string $codigo, ?int $exceptoId = null): bool
     {
         $sql = 'SELECT capacitacion_id FROM capacitaciones WHERE codigo = ?';
@@ -106,20 +114,7 @@ class CapacitacionRepository
      */
     public function transaccion(callable $operacion): mixed
     {
-        $this->db->beginTransaction();
-
-        try {
-            $resultado = $operacion();
-            $this->db->commit();
-
-            return $resultado;
-        } catch (\PDOException $e) {
-            $this->db->rollBack();
-            throw $e;
-        } catch (\Throwable $e) {
-            $this->db->rollBack();
-            throw $e;
-        }
+        return $this->db->transaccion($operacion);
     }
 
     /**

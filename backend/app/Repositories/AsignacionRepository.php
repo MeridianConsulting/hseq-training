@@ -78,6 +78,18 @@ class AsignacionRepository
         );
     }
 
+    public function buscarPorPersonaYCapacitacion(int $personaId, int $capacitacionId): ?array
+    {
+        return $this->db->fetch(
+            'SELECT asignacion_id, persona_id_ext, capacitacion_id, origen, matriz_aplicabilidad_id
+             FROM asignaciones_capacitacion
+             WHERE persona_id_ext = ? AND capacitacion_id = ?
+             ORDER BY asignacion_id DESC
+             LIMIT 1',
+            [$personaId, $capacitacionId]
+        );
+    }
+
     public function pendienteDuplicada(int $personaId, int $capacitacionId, ?int $exceptoId = null): bool
     {
         $sql = 'SELECT a.asignacion_id

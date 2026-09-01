@@ -136,7 +136,7 @@ class PersonalService
     /**
      * @param array<string, mixed> $entrada
      */
-    public function crear(array $entrada): array
+    public function crear(array $entrada, bool $sincronizarMotor = true): array
     {
         $preparado = $this->prepararEntrada($entrada, null);
 
@@ -146,7 +146,9 @@ class PersonalService
 
         $personaId = $this->persistirAlta($preparado['datos']);
         $persona = $this->ver($personaId);
-        $persona['sincronizacion'] = $this->sincronizarAsignaciones($persona);
+        $persona['sincronizacion'] = $sincronizarMotor
+            ? $this->sincronizarAsignaciones($persona)
+            : ['creadas' => 0, 'omitidas' => 0, 'creadas_especiales' => [], 'error' => null];
 
         return $persona;
     }

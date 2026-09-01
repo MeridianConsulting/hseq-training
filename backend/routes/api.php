@@ -12,6 +12,7 @@ use App\Controllers\CronogramaController;
 use App\Controllers\DashboardController;
 use App\Controllers\HealthController;
 use App\Controllers\MatrizController;
+use App\Controllers\MigracionController;
 use App\Controllers\PersonalController;
 use App\Controllers\PlanAnualController;
 use App\Controllers\CumplimientoController;
@@ -87,6 +88,16 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     });
 
     $router->get('/auditoria', [AuditoriaController::class, 'index'], [[PermisoMiddleware::class, 'auditoria.ver']]);
+
+    $router->group(['prefix' => '/migracion', 'middleware' => [[PermisoMiddleware::class, 'migracion.ejecutar']]], function ($router) {
+        $router->post('/validar', [MigracionController::class, 'validar']);
+        $router->get('/{id}/inconsistencias', [MigracionController::class, 'inconsistencias']);
+        $router->get('/{id}/reporte', [MigracionController::class, 'reporte']);
+        $router->get('/{id}/archivo', [MigracionController::class, 'archivo']);
+        $router->post('/{id}/confirmar', [MigracionController::class, 'confirmar']);
+        $router->post('/{id}/cancelar', [MigracionController::class, 'cancelar']);
+        $router->get('/{id}', [MigracionController::class, 'show']);
+    });
 
     $router->group(['prefix' => '/personal'], function ($router) {
         $router->get('/cargos', [PersonalController::class, 'cargos'], [[PermisoMiddleware::class, 'personal.ver']]);

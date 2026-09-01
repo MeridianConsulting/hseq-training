@@ -40,5 +40,6 @@ return [
         'catalogos.ver',
         'catalogos.gestionar',
         'auditoria.ver',
+        'migracion.ejecutar',
     ],
 ];

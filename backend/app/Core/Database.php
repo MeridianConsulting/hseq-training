@@ -130,6 +130,36 @@ class Database
         return $stmt->rowCount();
     }
 
+    public function inTransaction(): bool
+    {
+        return $this->connection->inTransaction();
+    }
+
+    /**
+     * @param callable():mixed $operacion
+     */
+    public function transaccion(callable $operacion): mixed
+    {
+        $propia = !$this->connection->inTransaction();
+        if ($propia) {
+            $this->connection->beginTransaction();
+        }
+
+        try {
+            $resultado = $operacion();
+            if ($propia) {
+                $this->connection->commit();
+            }
+
+            return $resultado;
+        } catch (\Throwable $e) {
+            if ($propia && $this->connection->inTransaction()) {
+                $this->connection->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     public function beginTransaction(): void
     {
         $this->connection->beginTransaction();

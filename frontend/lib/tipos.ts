@@ -655,3 +655,54 @@ export type RegistroAuditoria = {
   ip_origen: string | null;
   created_at: string | null;
 };
+
+export type ConteoMigracion = {
+  detectados?: number;
+  validos?: number;
+  inconsistencias?: number;
+  existentes?: number;
+  excel?: number;
+  importados?: number;
+  rechazados?: number;
+  sistema?: number;
+  diferencia?: number;
+};
+
+export type ResumenMigracion = {
+  hojas_detectadas: string[];
+  hojas_faltantes: string[];
+  estructura_valida: boolean;
+  anio_programa: number;
+  trabajadores: ConteoMigracion;
+  capacitaciones: ConteoMigracion;
+  matriz: ConteoMigracion;
+  cumplimientos: ConteoMigracion;
+  asignaciones_pendientes?: ConteoMigracion;
+  inconsistencias_total: number;
+  errores: number;
+  advertencias: number;
+};
+
+export type InconsistenciaMigracion = {
+  hoja: string;
+  fila: number;
+  tipo: string;
+  identificador: string;
+  campo: string;
+  valor: string;
+  motivo: string;
+  severidad: "Error" | "Advertencia" | string;
+};
+
+export type Migracion = {
+  migracion_id: number;
+  nombre_archivo: string;
+  anio_programa: number;
+  estado: string;
+  usuario_nombre: string | null;
+  created_at: string | null;
+  confirmada_at: string | null;
+  resumen: ResumenMigracion;
+  inconsistencias_total: number;
+  conteos: Record<string, ConteoMigracion> | null;
+};

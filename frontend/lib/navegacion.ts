@@ -50,6 +50,7 @@ export const MENU: GrupoMenu[] = [
     entradas: [
       { ruta: "/configuracion", etiqueta: "Catálogos", permiso: "catalogos.ver" },
       { ruta: "/auditoria", etiqueta: "Auditoría", permiso: "auditoria.ver" },
+      { ruta: "/migracion", etiqueta: "Carga inicial Excel", permiso: "migracion.ejecutar" },
     ],
   },
 ];
