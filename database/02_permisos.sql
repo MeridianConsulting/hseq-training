@@ -52,9 +52,12 @@ INSERT IGNORE INTO permisos (codigo, descripcion) VALUES
 ('asignaciones.editar', 'Editar fecha limite de asignaciones'),
 ('asignaciones.eliminar', 'Eliminar asignaciones sin cumplimiento'),
 ('cumplimientos.ver', 'Ver cumplimientos'),
+('cumplimientos.crear', 'Registrar cumplimientos, evaluaciones y evidencias'),
+('cumplimientos.editar', 'Editar cumplimientos y eliminar evidencias'),
 ('catalogos.ver', 'Ver catalogos'),
 ('catalogos.gestionar', 'Crear, editar y eliminar catalogos'),
-('auditoria.ver', 'Ver auditoria del modulo');
+('auditoria.ver', 'Ver auditoria del modulo'),
+('migracion.ejecutar', 'Validar y confirmar la carga inicial desde Excel HSEQ');
 
 INSERT IGNORE INTO roles (nombre) VALUES ('Administrador HSEQ');
 

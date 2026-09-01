@@ -16,14 +16,16 @@ Las asignaciones siguen usando `persona_id_ext`. Un trabajador creado en `/perso
 - Fecha de ingreso se guarda en `contratos.fecha_inicio`.
 - Área/proceso **no** se persisten en el trabajador (son catálogos de matriz/asignaciones). Pendiente de decisión HSEQ.
 
-## Migración del cronograma Excel (asignaciones)
+## Carga inicial de la matriz Excel HSEQ (`/migracion`)
 
-Sigue aplicando para el Excel operativo de capacitaciones (`docs/02_HSEQ_PRG_10_Capacitacion_entrenamiento_Frontera.xlsx`):
+La matriz histórica (formato HSEQ-PRG-10) se carga en **Carga inicial Excel**. El flujo es validar → revisar inconsistencias → confirmar. **No se escriben trabajadores, capacitaciones, matriz ni cumplimientos hasta confirmar.**
+
+Cruce de documento (igual que en personal):
 
 1. Normalizar documento (quitar espacios y puntos de miles; **no** quitar ceros a la izquierda).
 2. Buscar en `meridian_personal.personas.numero_documento`.
-3. Si hay coincidencia única: usar ese `persona_id` al crear asignaciones.
-4. Si no hay coincidencia: el personal puede registrarse primero en `/personal` (individual o carga masiva). No se crea la persona desde el importador de asignaciones (aún no implementado).
+3. Si hay coincidencia única: usar ese `persona_id`.
+4. Si no hay coincidencia: registrar primero en `/personal` (individual o carga masiva) o corregir el Excel y volver a validar.
 5. Cargos del Excel se cruzan con `meridian_personal.cargos` por nombre.
 
 ## Inconsistencias típicas
