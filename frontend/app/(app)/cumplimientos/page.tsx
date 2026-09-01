@@ -34,6 +34,26 @@ function etiquetaResultado(valor: string | null): string {
   return valor || "—";
 }
 
+const ETIQUETAS_VIGENCIA: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  COMPLETADA: "Completado",
+  PROXIMA_A_VENCER: "Próximo a vencer",
+  VENCIDA: "Vencido",
+};
+
+function etiquetaVigencia(item: Cumplimiento): string {
+  const clave = item.estado_vigencia ?? (item.resultado === "APROBADO" ? "COMPLETADA" : "PENDIENTE");
+  return ETIQUETAS_VIGENCIA[clave] ?? clave;
+}
+
+function tonoVigencia(item: Cumplimiento): "alto" | "aviso" | "ok" | "neutral" {
+  const clave = item.estado_vigencia ?? "";
+  if (clave === "VENCIDA") return "alto";
+  if (clave === "PROXIMA_A_VENCER") return "aviso";
+  if (clave === "COMPLETADA") return "ok";
+  return "neutral";
+}
+
 export default function Page() {
   return (
     <RequierePermiso permiso="cumplimientos.ver">
@@ -235,6 +255,7 @@ function Contenido() {
           { clave: "resultado", etiqueta: "Resultado" },
           { clave: "horas", etiqueta: "Horas" },
           { clave: "vence", etiqueta: "Vencimiento" },
+          { clave: "estado", etiqueta: "Estado" },
           { clave: "evidencia", etiqueta: "Evidencia" },
           { clave: "acciones", etiqueta: "" },
         ]}
@@ -250,6 +271,9 @@ function Contenido() {
           </Badge>,
           item.horas_efectivas ?? "—",
           item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : "Sin vencimiento",
+          <Badge key="v" tono={tonoVigencia(item)}>
+            {etiquetaVigencia(item)}
+          </Badge>,
           <ListaEvidencias
             key={`e-${item.cumplimiento_id}`}
             soportes={item.soportes ?? []}

@@ -302,6 +302,8 @@ export type Cumplimiento = {
   horas_efectivas: number | null;
   fecha_vencimiento: string | null;
   observaciones: string | null;
+  estado_calculado?: string | null;
+  estado_vigencia?: string;
   soportes_count?: number;
   soportes?: SoporteCumplimiento[];
 };

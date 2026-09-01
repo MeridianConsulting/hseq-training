@@ -46,6 +46,26 @@ function tonoEstado(estado: string) {
   return "neutral" as const;
 }
 
+const ETIQUETAS_VIGENCIA: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  COMPLETADA: "Completado",
+  PROXIMA_A_VENCER: "Próximo a vencer",
+  VENCIDA: "Vencido",
+};
+
+function etiquetaVigencia(c: Cumplimiento): string {
+  const clave = c.estado_vigencia ?? (c.resultado === "APROBADO" ? "COMPLETADA" : "PENDIENTE");
+  return ETIQUETAS_VIGENCIA[clave] ?? clave;
+}
+
+function tonoVigencia(c: Cumplimiento): "alto" | "aviso" | "ok" | "neutral" {
+  const clave = c.estado_vigencia ?? "";
+  if (clave === "VENCIDA") return "alto";
+  if (clave === "PROXIMA_A_VENCER") return "aviso";
+  if (clave === "COMPLETADA") return "ok";
+  return "neutral";
+}
+
 function formatoFecha(valor: string | null): string {
   if (!valor) return "—";
   const [anio, mes, dia] = valor.slice(0, 10).split("-");
@@ -488,7 +508,9 @@ function Contenido() {
               c.horas_efectivas ?? "—",
               c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
               c.requiere_certificado ? "Sí" : "No",
-              etiquetaCierreCumplimiento(c.resultado),
+              <Badge key={`vig-${c.cumplimiento_id}`} tono={tonoVigencia(c)}>
+                {etiquetaVigencia(c)}
+              </Badge>,
               <ListaEvidencias key={`ev-${c.cumplimiento_id}`} soportes={c.soportes ?? []} onError={setError} />,
             ])}
           />

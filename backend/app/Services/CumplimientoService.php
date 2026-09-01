@@ -602,6 +602,14 @@ class CumplimientoService
         }
 
         $soportes = is_array($fila['soportes'] ?? null) ? $fila['soportes'] : [];
+        $resultado = strtoupper((string)($fila['resultado'] ?? ''));
+        $calculado = strtoupper((string)($fila['estado_calculado'] ?? ''));
+        $vigencia = 'PENDIENTE';
+        if ($resultado === self::RESULTADO_APROBADO) {
+            $vigencia = in_array($calculado, ['PROXIMA_A_VENCER', 'VENCIDA', 'COMPLETADA'], true)
+                ? $calculado
+                : 'COMPLETADA';
+        }
 
         return [
             'cumplimiento_id' => (int)$fila['cumplimiento_id'],
@@ -622,6 +630,8 @@ class CumplimientoService
             'registrado_por_usuario_id_ext' => $fila['registrado_por_usuario_id_ext'] !== null
                 ? (int)$fila['registrado_por_usuario_id_ext']
                 : null,
+            'estado_calculado' => $calculado !== '' ? $calculado : null,
+            'estado_vigencia' => $vigencia,
             'soportes_count' => count($soportes),
             'soportes' => $soportes,
             'created_at' => $fila['created_at'] ?? null,

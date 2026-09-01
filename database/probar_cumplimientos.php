@@ -435,6 +435,10 @@ ok((string)$editado['fecha_vencimiento'] === '2032-10-15', 'PUT recálculo +12 m
 
 $listado = $cumplimientos->listar(1, 50, ['persona_id' => $personaIds[0]]);
 ok($listado['total'] >= 1, 'Historial GET por persona');
+ok(
+    ($listado['items'][0]['estado_vigencia'] ?? '') === 'COMPLETADA',
+    'APROBADO vigente → estado_vigencia COMPLETADA'
+);
 
 echo "\n== Casos extra (plan 2032) ==\n";
 $anioExtra = 2032;

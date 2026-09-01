@@ -156,10 +156,12 @@ class CumplimientoRepository
                     cap.nombre AS capacitacion_nombre,
                     cap.certificado AS capacitacion_certificado,
                     per.numero_documento,
-                    per.nombre_completo_nombres_primero AS persona_nombre
+                    per.nombre_completo_nombres_primero AS persona_nombre,
+                    e.estado_calculado
                 FROM cumplimientos_capacitacion c
                 INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+                LEFT JOIN vw_estado_asignaciones e ON e.asignacion_id = c.asignacion_id
                 ' . $this->joinPersonas();
     }
 
