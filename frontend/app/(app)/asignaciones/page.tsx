@@ -27,6 +27,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { BadgeCheck, CalendarPlus, Pencil, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import type { Asignacion, Capacitacion, Cumplimiento, IntentoSesion, ProximasAsignaciones } from "@/lib/tipos";
 
@@ -466,6 +467,7 @@ function Contenido() {
                 variante="secondary"
                 onClick={() => setMasivoAbierto(true)}
               >
+                <Users className="h-4 w-4" aria-hidden />
                 Asignación masiva
               </Button>
               <Button
@@ -475,6 +477,7 @@ function Contenido() {
                   setAbierto(true);
                 }}
               >
+                <CalendarPlus className="h-4 w-4" aria-hidden />
                 Asignar capacitación
               </Button>
             </span>
@@ -735,6 +738,7 @@ function Contenido() {
                   setCumpAbierto(true);
                 }}
               >
+                <BadgeCheck className="h-4 w-4" aria-hidden />
                 Cumplimiento
               </Button>
             ) : null}
@@ -747,11 +751,13 @@ function Contenido() {
                   setAbierto(true);
                 }}
               >
+                <Pencil className="h-4 w-4" aria-hidden />
                 Fecha
               </Button>
             ) : null}
             {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
               <Button type="button" variante="danger" onClick={() => void eliminar(item)}>
+                <Trash2 className="h-4 w-4" aria-hidden />
                 Eliminar
               </Button>
             ) : null}

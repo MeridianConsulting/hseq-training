@@ -11,6 +11,7 @@ import { Filters } from "@/components/ui/filters";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
+import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
@@ -153,6 +154,7 @@ function Contenido() {
                 setAbierto(true);
               }}
             >
+              <Plus className="h-4 w-4" aria-hidden />
               Nuevo registro
             </Button>
           ) : null
@@ -223,14 +225,17 @@ function Contenido() {
                     setAbierto(true);
                   }}
                 >
+                  <Pencil className="h-4 w-4" aria-hidden />
                   Editar
                 </Button>
                 {Number(item.activo) === 0 ? (
                   <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
+                    <RotateCcw className="h-4 w-4" aria-hidden />
                     Reactivar
                   </Button>
                 ) : (
                   <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
+                    <UserMinus className="h-4 w-4" aria-hidden />
                     Inactivar
                   </Button>
                 )}

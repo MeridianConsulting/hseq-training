@@ -11,6 +11,7 @@ import { Filters } from "@/components/ui/filters";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { Download } from "lucide-react";
 import { FichaTrabajador, GruposCapacitacion, ListaPeriodos } from "./historial";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
 import type {
@@ -357,6 +358,7 @@ function Contenido() {
         descripcion={titulo}
         acciones={
           <Button onClick={() => void exportar()} disabled={exportando || total === 0}>
+            <Download className="h-4 w-4" aria-hidden />
             {exportando ? "Exportando…" : "Exportar Excel"}
           </Button>
         }

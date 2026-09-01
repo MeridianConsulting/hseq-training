@@ -17,6 +17,7 @@ import {
   withQuery,
   type ListaPaginada,
 } from "@/lib/api";
+import { Check, Download, Search, X } from "lucide-react";
 import type { ConteoMigracion, InconsistenciaMigracion, Migracion } from "@/lib/tipos";
 
 const anioActual = new Date().getFullYear();
@@ -156,6 +157,7 @@ function Contenido() {
         </Field>
         <div className="flex items-end">
           <Button type="submit" disabled={validando}>
+            <Search className="h-4 w-4" aria-hidden />
             {validando ? "Validando…" : "Validar archivo"}
           </Button>
         </div>
@@ -179,6 +181,7 @@ function Contenido() {
 
           <div className="flex flex-wrap gap-2">
             <Button type="button" variante="secondary" onClick={() => void descargarReporte()}>
+              <Download className="h-4 w-4" aria-hidden />
               Descargar reporte de inconsistencias
             </Button>
             <Button
@@ -194,19 +197,30 @@ function Contenido() {
                 });
               }}
             >
+              <Download className="h-4 w-4" aria-hidden />
               Descargar archivo original
             </Button>
             {pendiente ? (
               <>
                 <Button type="button" variante="danger" disabled={cancelando} onClick={() => void cancelar()}>
-                  {cancelando ? "Cancelando…" : "Cancelar"}
+                  {cancelando ? "Cancelando…" : (
+                    <>
+                      <X className="h-4 w-4" aria-hidden />
+                      Cancelar
+                    </>
+                  )}
                 </Button>
                 <Button
                   type="button"
                   disabled={confirmando || !estructuraOk}
                   onClick={() => void confirmar()}
                 >
-                  {confirmando ? "Confirmando…" : "Confirmar importación"}
+                  {confirmando ? "Confirmando…" : (
+                    <>
+                      <Check className="h-4 w-4" aria-hidden />
+                      Confirmar importación
+                    </>
+                  )}
                 </Button>
               </>
             ) : null}

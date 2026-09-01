@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { Download, History, Pencil, Plus, Upload, UserMinus } from "lucide-react";
 import {
   apiDownload,
   apiGet,
@@ -258,11 +259,13 @@ function Contenido() {
           <>
             {puede("personal.importar") ? (
               <Button type="button" variante="secondary" onClick={abrirCarga}>
+                <Upload className="h-4 w-4" aria-hidden />
                 Carga masiva
               </Button>
             ) : null}
             {puede("personal.crear") ? (
               <Button type="button" onClick={abrirNueva}>
+                <Plus className="h-4 w-4" aria-hidden />
                 Registrar trabajador
               </Button>
             ) : null}
@@ -338,8 +341,9 @@ function Contenido() {
             {puede("asignaciones.ver") ? (
               <Link
                 href={rutaHistorial(item)}
-                className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
               >
+                <History className="h-4 w-4" aria-hidden />
                 Historial
               </Link>
             ) : null}
@@ -352,11 +356,13 @@ function Contenido() {
                   setInactivarDe(item);
                 }}
               >
+                <UserMinus className="h-4 w-4" aria-hidden />
                 Inactivar
               </Button>
             ) : null}
             {puede("personal.editar") ? (
               <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
+                <Pencil className="h-4 w-4" aria-hidden />
                 Editar
               </Button>
             ) : null}
@@ -388,6 +394,7 @@ function Contenido() {
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variante="secondary" onClick={() => void descargarPlantilla()}>
+              <Download className="h-4 w-4" aria-hidden />
               Descargar plantilla
             </Button>
           </div>
@@ -404,6 +411,7 @@ function Contenido() {
               Cerrar
             </Button>
             <Button type="submit" disabled={cargandoImportacion}>
+              <Upload className="h-4 w-4" aria-hidden />
               {cargandoImportacion ? "Procesando…" : "Importar"}
             </Button>
           </div>
@@ -419,6 +427,7 @@ function Contenido() {
               <>
                 <div className="flex justify-end">
                   <Button type="button" variante="secondary" onClick={descargarErrores}>
+                    <Download className="h-4 w-4" aria-hidden />
                     Descargar reporte de errores
                   </Button>
                 </div>
@@ -481,7 +490,12 @@ function Contenido() {
                 disabled={inactivando}
                 onClick={() => void confirmarInactivar()}
               >
-                {inactivando ? "Inactivando…" : "Inactivar"}
+                {inactivando ? "Inactivando…" : (
+                  <>
+                    <UserMinus className="h-4 w-4" aria-hidden />
+                    Inactivar
+                  </>
+                )}
               </Button>
             </div>
           </div>

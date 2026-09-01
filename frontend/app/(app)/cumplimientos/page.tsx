@@ -17,6 +17,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { BadgeCheck, Pencil } from "lucide-react";
 import { apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import type { Asignacion, Cumplimiento } from "@/lib/tipos";
 
@@ -234,6 +235,7 @@ function Contenido() {
                 setAbierto(true);
               }}
             >
+              <BadgeCheck className="h-4 w-4" aria-hidden />
               Registrar cumplimiento
             </Button>
           ) : null
@@ -348,6 +350,7 @@ function Contenido() {
                   setAbierto(true);
                 }}
               >
+                <Pencil className="h-4 w-4" aria-hidden />
                 Editar
               </Button>
             ) : null}

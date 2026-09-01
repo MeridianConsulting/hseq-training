@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { CalendarPlus, ClipboardCheck, Pencil, Users } from "lucide-react";
 import type { ItemCronograma, SesionCronograma } from "@/lib/tipos";
 
 const LIMITE_OBJETIVO = 160;
@@ -140,17 +141,20 @@ export function TarjetaCronograma({
                 {puede("sesiones.ver") ? (
                   <Link
                     href={`/sesiones?sesion_id=${sesion.sesion_id}`}
-                    className="inline-flex items-center justify-center rounded-lg px-0 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg px-0 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
                   >
+                    <ClipboardCheck className="h-4 w-4" aria-hidden />
                     Asistencia
                   </Link>
                 ) : null}
                 {puede("sesiones.editar") ? (
                   <>
                     <Button type="button" variante="ghost" className="px-0" onClick={() => setEditar(sesion)}>
+                      <Pencil className="h-4 w-4" aria-hidden />
                       Editar sesión
                     </Button>
                     <Button type="button" variante="ghost" className="px-0" onClick={() => setConvocar(sesion)}>
+                      <Users className="h-4 w-4" aria-hidden />
                       Gestionar convocados
                     </Button>
                   </>
@@ -215,6 +219,7 @@ export function TarjetaCronograma({
         </Button>
         {puede("sesiones.crear") ? (
           <Button type="button" variante="secondary" onClick={() => setCrearAbierta(true)}>
+            <CalendarPlus className="h-4 w-4" aria-hidden />
             Crear sesión
           </Button>
         ) : null}

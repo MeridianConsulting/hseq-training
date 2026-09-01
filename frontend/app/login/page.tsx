@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff, LogIn } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 
 export default function LoginPage() {
@@ -117,14 +118,16 @@ export default function LoginPage() {
                     required
                     value={password}
                     onChange={(evento) => setPassword(evento.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-24 text-sm outline-none transition focus:border-hseq-600 focus:ring-2 focus:ring-hseq-100"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-28 text-sm outline-none transition focus:border-hseq-600 focus:ring-2 focus:ring-hseq-100"
                     placeholder="••••••••"
                   />
                   <button
                     type="button"
                     onClick={() => setMostrarPassword((valor) => !valor)}
-                    className="absolute inset-y-0 right-2 my-auto rounded-md px-2 text-xs font-medium text-hseq-700 hover:bg-hseq-50"
+                    className="absolute inset-y-0 right-2 my-auto inline-flex items-center gap-1 rounded-md px-2 text-xs font-medium text-hseq-700 hover:bg-hseq-50"
+                    aria-label={mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
+                    {mostrarPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
                     {mostrarPassword ? "Ocultar" : "Mostrar"}
                   </button>
                 </div>
@@ -139,8 +142,9 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={enviando || !listo}
-                className="w-full rounded-lg bg-hseq-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-hseq-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-hseq-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-hseq-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
+                <LogIn className="h-4 w-4" aria-hidden />
                 {enviando ? "Ingresando..." : "Ingresar"}
               </button>
             </form>

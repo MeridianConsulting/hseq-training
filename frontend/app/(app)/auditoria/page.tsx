@@ -8,6 +8,7 @@ import { Filters } from "@/components/ui/filters";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
+import { Funnel } from "lucide-react";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type { CambioAuditoria, RegistroAuditoria } from "@/lib/tipos";
 
@@ -140,6 +141,7 @@ function Contenido() {
         </Field>
         <div className="flex items-end">
           <Button type="button" variante="secondary" onClick={() => void cargar(1)}>
+            <Funnel className="h-4 w-4" aria-hidden />
             Filtrar
           </Button>
         </div>

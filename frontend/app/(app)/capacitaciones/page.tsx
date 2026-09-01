@@ -22,6 +22,7 @@ import {
   type ListaPaginada,
 } from "@/lib/api";
 import type { Capacitacion, ItemCatalogo } from "@/lib/tipos";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { FormularioCapacitacion, type DatosCapacitacion } from "./formulario";
 
 export default function CapacitacionesPage() {
@@ -171,6 +172,7 @@ function Contenido() {
         acciones={
           puede("capacitaciones.crear") ? (
             <Button type="button" onClick={abrirNueva}>
+              <Plus className="h-4 w-4" aria-hidden />
               Nueva capacitación
             </Button>
           ) : null
@@ -238,11 +240,13 @@ function Contenido() {
           <div key="a" className="flex justify-end gap-2">
             {puede("capacitaciones.editar") ? (
               <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
+                <Pencil className="h-4 w-4" aria-hidden />
                 Editar
               </Button>
             ) : null}
             {puede("capacitaciones.eliminar") ? (
               <Button type="button" variante="ghost" onClick={() => void eliminar(item)}>
+                <Trash2 className="h-4 w-4" aria-hidden />
                 Eliminar
               </Button>
             ) : null}

@@ -16,6 +16,7 @@ import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } fro
 import type { Capacitacion, CargoCorporativo, FilaMatriz, ItemCatalogo } from "@/lib/tipos";
 import { FormularioMatriz, type DatosMatriz } from "./formulario";
 import { FormularioMatrizMasiva, type DatosMatrizMasiva } from "./formulario-masivo";
+import { Link2, Pencil, Plus, UserMinus, WandSparkles } from "lucide-react";
 
 type ResultadoMasivo = {
   creadas: number;
@@ -208,24 +209,27 @@ function Contenido() {
           <div className="flex flex-wrap gap-2">
             {puede("asignaciones.crear") ? (
               <Button type="button" variante="secondary" onClick={() => void generarAutomaticas()}>
+                <WandSparkles className="h-4 w-4" aria-hidden />
                 Generar asignaciones automáticas
               </Button>
             ) : null}
             {puede("matriz.crear") ? (
               <>
-                <Button
-                  type="button"
-                  variante="secondary"
-                  onClick={() => {
-                    setEditando(null);
-                    setAbierto(true);
-                  }}
-                >
-                  Nueva fila
-                </Button>
-                <Button type="button" onClick={() => setMasivoAbierto(true)}>
-                  Asociar capacitación
-                </Button>
+                  <Button
+                    type="button"
+                    variante="secondary"
+                    onClick={() => {
+                      setEditando(null);
+                      setAbierto(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden />
+                    Nueva fila
+                  </Button>
+                  <Button type="button" onClick={() => setMasivoAbierto(true)}>
+                    <Link2 className="h-4 w-4" aria-hidden />
+                    Asociar capacitación
+                  </Button>
               </>
             ) : null}
           </div>
@@ -319,6 +323,7 @@ function Contenido() {
                   setAbierto(true);
                 }}
               >
+                <Pencil className="h-4 w-4" aria-hidden />
                 Editar
               </Button>
             ) : null}
@@ -326,6 +331,7 @@ function Contenido() {
               ? puede("matriz.eliminar")
                 ? (
                   <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
+                    <UserMinus className="h-4 w-4" aria-hidden />
                     Inactivar
                   </Button>
                 )

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 void logout().then(() => router.replace("/login"));
               }}
             >
+              <LogOut className="h-4 w-4" aria-hidden />
               Salir
             </Button>
           </div>

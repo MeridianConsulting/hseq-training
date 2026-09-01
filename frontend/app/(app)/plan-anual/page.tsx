@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { ArrowLeft, Check, Plus, Send, UserPlus } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import type { AsignacionEnPlan, DetallePlanAnual, PlanAnual } from "@/lib/tipos";
 
@@ -223,20 +224,24 @@ function Contenido() {
           acciones={
             <span className="flex flex-wrap gap-2">
               <Button type="button" variante="secondary" onClick={() => setPlan(null)}>
+                <ArrowLeft className="h-4 w-4" aria-hidden />
                 Volver al listado
               </Button>
               {esBorrador && puede("planes.editar") ? (
                 <Button type="button" onClick={() => setIncluirAbierto(true)}>
+                  <UserPlus className="h-4 w-4" aria-hidden />
                   Incluir asignaciones
                 </Button>
               ) : null}
               {esBorrador && puede("planes.editar") ? (
                 <Button type="button" variante="secondary" onClick={() => void enviarRevision()}>
+                  <Send className="h-4 w-4" aria-hidden />
                   Enviar a revisión
                 </Button>
               ) : null}
               {plan.estado === "EN_REVISION" && puede("planes.aprobar") ? (
                 <Button type="button" onClick={() => void aprobar()}>
+                  <Check className="h-4 w-4" aria-hidden />
                   Aprobar plan
                 </Button>
               ) : null}
@@ -381,6 +386,7 @@ function Contenido() {
         acciones={
           puede("planes.crear") ? (
             <Button type="button" onClick={() => setCrearAbierto(true)}>
+              <Plus className="h-4 w-4" aria-hidden />
               Crear plan
             </Button>
           ) : null
