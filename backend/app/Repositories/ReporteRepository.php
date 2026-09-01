@@ -41,6 +41,9 @@ class ReporteRepository
         if ($tipo === 'evidencias_faltantes') {
             return $this->listarEvidencias($filtros, $limite, $offset);
         }
+        if ($tipo === 'historial_trabajador') {
+            return $this->listarHistorial($filtros, $limite, $offset);
+        }
 
         [$where, $params] = $this->whereAsignaciones($tipo, $filtros);
         $sql = $this->selectAsignaciones() . " {$where}
@@ -349,6 +352,93 @@ class ReporteRepository
         );
     }
 
+    /**
+     * @param array<string,mixed> $filtros
+     * @return list<array<string,mixed>>
+     */
+    private function listarHistorial(array $filtros, int $limite, int $offset): array
+    {
+        [$where, $params] = $this->whereAsignaciones('historial_trabajador', $filtros);
+
+        return $this->db->fetchAll(
+            $this->selectHistorial() . " {$where}
+             ORDER BY a.fecha_asignacion DESC, a.asignacion_id DESC
+             LIMIT {$limite} OFFSET {$offset}",
+            $params
+        );
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function catalogoCapacitaciones(): array
+    {
+        return $this->db->fetchAll(
+            "SELECT capacitacion_id, codigo, nombre
+             FROM capacitaciones
+             WHERE estado = 'ACTIVA'
+             ORDER BY nombre ASC"
+        );
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function catalogoTiposCapacitacion(): array
+    {
+        return $this->db->fetchAll(
+            'SELECT tipo_capacitacion_id, nombre
+             FROM tipos_capacitacion
+             ORDER BY nombre ASC'
+        );
+    }
+
+    private function selectHistorial(): string
+    {
+        $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
+        $contratos = Database::personalTable('contratos');
+
+        return "SELECT a.asignacion_id,
+                       a.persona_id_ext,
+                       a.origen,
+                       a.fecha_asignacion,
+                       a.fecha_limite_cumplimiento,
+                       a.proyecto,
+                       a.proceso_id,
+                       a.cargo_id_ext,
+                       a.capacitacion_id,
+                       e.estado_calculado,
+                       e.cumplimiento_id,
+                       e.fecha_realizacion,
+                       e.fecha_vencimiento,
+                       cap.codigo AS capacitacion_codigo,
+                       cap.nombre AS capacitacion_nombre,
+                       cap.evaluacion AS capacitacion_evaluacion,
+                       cap.nota_minima AS capacitacion_nota_minima,
+                       cap.certificado AS capacitacion_certificado,
+                       cap.tipo_capacitacion_id,
+                       tip.nombre AS tipo_nombre,
+                       proc.nombre AS proceso_nombre,
+                       per.numero_documento,
+                       per.nombre_completo_nombres_primero AS persona_nombre,
+                       car.nombre_cargo,
+                       ct.fecha_inicio AS fecha_ingreso,
+                       per_cap.nombre AS periodicidad_nombre,
+                       c.horas_efectivas,
+                       c.nota_evaluacion,
+                       c.resultado AS cumplimiento_resultado,
+                       c.sesion_id,
+                       s.fecha_hora AS fecha_sesion
+                FROM asignaciones_capacitacion a
+                INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+                INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+                LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = cap.tipo_capacitacion_id
+                LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
+                LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
+                LEFT JOIN sesiones_capacitacion s ON s.sesion_id = c.sesion_id
+                LEFT JOIN periodicidades per_cap ON per_cap.periodicidad_id = cap.periodicidad_default_id
+                LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+                LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
+                LEFT JOIN {$contratos} ct ON ct.contrato_id = a.contrato_id_ext";
+    }
+
     private function selectAsignaciones(): string
     {
         $personas = Database::personalTable('personas');
@@ -503,9 +593,28 @@ class ReporteRepository
         }
 
         $estado = isset($filtros['estado']) ? trim((string)$filtros['estado']) : '';
-        if ($estado !== '' && in_array($tipo, ['cumplimiento_general', 'cumplimiento_trabajador', 'tareas_criticas', 'inducciones', 'reinducciones'], true)) {
+        if ($estado !== '' && in_array($tipo, [
+            'cumplimiento_general',
+            'cumplimiento_trabajador',
+            'tareas_criticas',
+            'inducciones',
+            'reinducciones',
+            'historial_trabajador',
+        ], true)) {
             $condiciones[] = 'e.estado_calculado COLLATE utf8mb4_unicode_ci = ?';
             $params[] = $estado;
+        }
+
+        $capacitacionId = isset($filtros['capacitacion_id']) ? (int)$filtros['capacitacion_id'] : 0;
+        if ($capacitacionId > 0) {
+            $condiciones[] = 'a.capacitacion_id = ?';
+            $params[] = $capacitacionId;
+        }
+
+        $tipoCapId = isset($filtros['tipo_capacitacion_id']) ? (int)$filtros['tipo_capacitacion_id'] : 0;
+        if ($tipoCapId > 0) {
+            $condiciones[] = 'cap.tipo_capacitacion_id = ?';
+            $params[] = $tipoCapId;
         }
 
         $where = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones);

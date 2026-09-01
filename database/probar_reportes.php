@@ -63,6 +63,7 @@ function limpiarPersonas(Database $db, $personalDb, string $personasT, string $c
             continue;
         }
         $pid = (int)$prev['persona_id'];
+        $db->query('DELETE FROM historial_contexto_trabajador WHERE persona_id_ext = ?', [$pid]);
         $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$pid]);
         foreach ($asigs as $a) {
             $aid = (int)$a['asignacion_id'];

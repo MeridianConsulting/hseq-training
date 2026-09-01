@@ -10,8 +10,17 @@ import { Filters } from "@/components/ui/filters";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { FichaTrabajador, GruposCapacitacion, ListaPeriodos } from "./historial";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
-import type { OpcionesAlertas, ResultadoReporte, TotalesReporte } from "@/lib/tipos";
+import type {
+  FichaTrabajadorReporte,
+  GrupoHistorial,
+  OpcionesAlertas,
+  PeriodoHistorial,
+  PersonaCorporativa,
+  ResultadoReporte,
+  TotalesReporte,
+} from "@/lib/tipos";
 import { TIPOS_REPORTE } from "@/lib/tipos";
 
 const VACIO = "No se encontraron registros para los filtros seleccionados.";
@@ -51,6 +60,10 @@ function etiquetaEstado(estado: unknown): string {
     ASISTIO: "Asistió",
     TARDE: "Tarde",
     AUSENTE: "Ausente",
+    AUTOMATICA: "Automática (matriz)",
+    MANUAL: "Manual",
+    INDUCCION: "Inducción",
+    REINDUCCION: "Reinducción",
   };
   const clave = typeof estado === "string" ? estado : "";
   return mapa[clave] ?? (clave || "—");
@@ -174,12 +187,25 @@ function Contenido() {
   const [proyecto, setProyecto] = useState("");
   const [buscar, setBuscar] = useState("");
   const [estado, setEstado] = useState("");
+  const [cargoId, setCargoId] = useState("");
+  const [capacitacionId, setCapacitacionId] = useState("");
+  const [tipoCapId, setTipoCapId] = useState("");
+  const [personaId, setPersonaId] = useState("");
+  const [consultaTrabajador, setConsultaTrabajador] = useState("");
+  const [sugerencias, setSugerencias] = useState<PersonaCorporativa[]>([]);
   const [opciones, setOpciones] = useState<OpcionesAlertas>({
     procesos: [],
     proyectos: [],
     cargos: [],
+    capacitaciones: [],
+    tipos_capacitacion: [],
   });
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
+  const [grupos, setGrupos] = useState<GrupoHistorial[]>([]);
+  const [trabajador, setTrabajador] = useState<FichaTrabajadorReporte | null>(null);
+  const [historialCargo, setHistorialCargo] = useState<PeriodoHistorial[]>([]);
+  const [historialProyecto, setHistorialProyecto] = useState<PeriodoHistorial[]>([]);
+  const [historialProceso, setHistorialProceso] = useState<PeriodoHistorial[]>([]);
   const [totales, setTotales] = useState<TotalesReporte | null>(null);
   const [etiquetas, setEtiquetas] = useState<Record<string, string>>({});
   const [titulo, setTitulo] = useState("Reportes");
@@ -190,36 +216,62 @@ function Contenido() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
 
+  const esHistorial = tipo === "historial_trabajador";
+
   const params = useMemo(
     () => ({
       desde: desde || undefined,
       hasta: hasta || undefined,
       proceso_id: procesoId || undefined,
       proyecto: proyecto || undefined,
-      buscar: buscar.trim() || undefined,
+      buscar: esHistorial ? undefined : buscar.trim() || undefined,
       estado: estado || undefined,
+      cargo_id_ext: esHistorial ? cargoId || undefined : undefined,
+      capacitacion_id: esHistorial ? capacitacionId || undefined : undefined,
+      tipo_capacitacion_id: esHistorial ? tipoCapId || undefined : undefined,
+      persona_id: esHistorial ? personaId || undefined : undefined,
     }),
-    [desde, hasta, procesoId, proyecto, buscar, estado],
+    [desde, hasta, procesoId, proyecto, buscar, estado, cargoId, capacitacionId, tipoCapId, personaId, esHistorial],
   );
 
   const columnas = columnasDe(tipo);
 
   async function cargar(paginaActual = 1) {
+    if (esHistorial && !personaId) {
+      setItems([]);
+      setGrupos([]);
+      setTrabajador(null);
+      setHistorialCargo([]);
+      setHistorialProyecto([]);
+      setHistorialProceso([]);
+      setTotales(null);
+      setEtiquetas({});
+      setTotal(0);
+      setError(null);
+      setAviso("Seleccione un trabajador para consultar su historial.");
+      return;
+    }
     const respuesta = await apiGet<ResultadoReporte>(
       withQuery(`/api/reportes/${tipo}`, {
         ...params,
         page: paginaActual,
-        per_page: 20,
+        per_page: esHistorial ? 20000 : 20,
       }),
     );
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar el reporte.");
       setItems([]);
+      setGrupos([]);
       setTotales(null);
       return;
     }
     const data = respuesta.data;
     setItems(data.items);
+    setGrupos(data.grupos ?? []);
+    setTrabajador(data.trabajador ?? null);
+    setHistorialCargo(data.historial_cargo ?? []);
+    setHistorialProyecto(data.historial_proyecto ?? []);
+    setHistorialProceso(data.historial_proceso ?? []);
     setTotales(data.totales);
     setEtiquetas(data.filtros_etiqueta ?? {});
     setTitulo(data.titulo);
@@ -257,6 +309,29 @@ function Contenido() {
   }, []);
 
   useEffect(() => {
+    if (!esHistorial) {
+      setSugerencias([]);
+      return;
+    }
+    const q = consultaTrabajador.trim();
+    if (q.length < 2) {
+      setSugerencias([]);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      void (async () => {
+        const respuesta = await apiGet<{ items: PersonaCorporativa[] }>(
+          withQuery("/api/reportes/trabajadores", { buscar: q }),
+        );
+        if (respuesta.success && respuesta.data) {
+          setSugerencias(respuesta.data.items);
+        }
+      })();
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [consultaTrabajador, esHistorial]);
+
+  useEffect(() => {
     const id = window.setTimeout(() => {
       void cargar(1);
     }, 250);
@@ -270,6 +345,7 @@ function Contenido() {
     "tareas_criticas",
     "inducciones",
     "reinducciones",
+    "historial_trabajador",
   ].includes(tipo);
   const muestraPeriodo = tipo !== "proximas";
 
@@ -339,14 +415,85 @@ function Contenido() {
             </select>
           </Field>
         ) : null}
-        <Field etiqueta="Buscar">
-          <input
-            className={inputClass}
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
-            placeholder="Trabajador, documento o capacitación"
-          />
-        </Field>
+        {esHistorial ? (
+          <Field etiqueta="Trabajador">
+            <input
+              className={inputClass}
+              value={consultaTrabajador}
+              onChange={(e) => {
+                setConsultaTrabajador(e.target.value);
+                if (personaId) setPersonaId("");
+              }}
+              placeholder="Documento o nombre"
+            />
+            {sugerencias.length > 0 ? (
+              <ul className="mt-1 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-sm">
+                {sugerencias.map((p) => (
+                  <li key={p.persona_id}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left hover:bg-slate-50"
+                      onClick={() => {
+                        setPersonaId(String(p.persona_id));
+                        setConsultaTrabajador(`${p.numero_documento} — ${p.nombre_completo}`);
+                        setSugerencias([]);
+                      }}
+                    >
+                      {p.numero_documento} — {p.nombre_completo}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Field>
+        ) : (
+          <Field etiqueta="Buscar">
+            <input
+              className={inputClass}
+              value={buscar}
+              onChange={(e) => setBuscar(e.target.value)}
+              placeholder="Trabajador, documento o capacitación"
+            />
+          </Field>
+        )}
+        {esHistorial ? (
+          <>
+            <Field etiqueta="Cargo">
+              <select className={inputClass} value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
+                <option value="">Todos</option>
+                {opciones.cargos.map((c) => (
+                  <option key={c.cargo_id} value={c.cargo_id}>
+                    {c.nombre_cargo}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field etiqueta="Tipo de capacitación">
+              <select className={inputClass} value={tipoCapId} onChange={(e) => setTipoCapId(e.target.value)}>
+                <option value="">Todos</option>
+                {(opciones.tipos_capacitacion ?? []).map((t) => (
+                  <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field etiqueta="Capacitación">
+              <select
+                className={inputClass}
+                value={capacitacionId}
+                onChange={(e) => setCapacitacionId(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {(opciones.capacitaciones ?? []).map((c) => (
+                  <option key={c.capacitacion_id} value={c.capacitacion_id}>
+                    {c.codigo} — {c.nombre}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </>
+        ) : null}
       </Filters>
 
       {Object.keys(etiquetas).length > 0 ? (
@@ -383,12 +530,35 @@ function Contenido() {
         </div>
       ) : null}
 
-      <Table
-        columnas={columnas}
-        filas={items.map((item) => columnas.map((col) => celda(tipo, col.clave, item)))}
-        vacio={VACIO}
-      />
-      <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
+      {esHistorial ? (
+        <>
+          {trabajador ? <FichaTrabajador trabajador={trabajador} /> : null}
+          {trabajador ? (
+            <div className="mb-4 grid gap-3 lg:grid-cols-3">
+              <ListaPeriodos titulo="Historial de cargo" periodos={historialCargo} campo="cargo" />
+              <ListaPeriodos titulo="Historial de proceso" periodos={historialProceso} campo="proceso" />
+              <ListaPeriodos titulo="Historial de proyectos" periodos={historialProyecto} campo="proyecto" />
+            </div>
+          ) : null}
+          {personaId ? (
+            <>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Historial de capacitaciones
+              </h2>
+              <GruposCapacitacion grupos={grupos} vacio={VACIO} />
+            </>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Table
+            columnas={columnas}
+            filas={items.map((item) => columnas.map((col) => celda(tipo, col.clave, item)))}
+            vacio={VACIO}
+          />
+          <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
+        </>
+      )}
     </>
   );
 }

@@ -6,7 +6,9 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Repositories\AlertaRepository;
+use App\Repositories\HistorialContextoRepository;
 use App\Repositories\ReporteRepository;
+use App\Repositories\SoporteRepository;
 use DateTimeImmutable;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -33,17 +35,24 @@ class ReporteService
         'reinducciones',
         'tareas_criticas',
         'evidencias_faltantes',
+        'historial_trabajador',
     ];
 
     private ReporteRepository $repo;
     private AlertaService $alertas;
     private AlertaRepository $alertaRepo;
+    private PersonalService $personal;
+    private HistorialContextoRepository $historial;
+    private SoporteRepository $soportes;
 
     public function __construct()
     {
         $this->repo = new ReporteRepository();
         $this->alertas = new AlertaService();
         $this->alertaRepo = new AlertaRepository();
+        $this->personal = new PersonalService();
+        $this->historial = new HistorialContextoRepository();
+        $this->soportes = new SoporteRepository();
     }
 
     /**
@@ -65,6 +74,10 @@ class ReporteService
         $porPagina = min(100, max(1, $porPagina));
         $limpios = $this->normalizarFiltros($filtros);
         $offset = ($pagina - 1) * $porPagina;
+
+        if ($tipo === 'historial_trabajador') {
+            return $this->consultarHistorial($limpios, $pagina, $porPagina);
+        }
 
         if ($tipo === 'proximas') {
             $resultado = $this->alertas->listar($pagina, $porPagina, $limpios);
@@ -106,6 +119,10 @@ class ReporteService
     {
         $tipo = $this->exigirTipo($tipo);
         $limpios = $this->normalizarFiltros($filtros);
+
+        if ($tipo === 'historial_trabajador') {
+            return $this->excelHistorial($limpios, $usuario);
+        }
 
         if ($tipo === 'proximas') {
             $todo = $this->alertas->listarTodos($limpios);
@@ -246,7 +263,44 @@ class ReporteService
      */
     public function opciones(): array
     {
-        return $this->alertas->opciones();
+        $base = $this->alertas->opciones();
+        $capacitaciones = [];
+        foreach ($this->repo->catalogoCapacitaciones() as $fila) {
+            $capacitaciones[] = [
+                'capacitacion_id' => (int)$fila['capacitacion_id'],
+                'codigo' => (string)$fila['codigo'],
+                'nombre' => (string)$fila['nombre'],
+            ];
+        }
+        $tipos = [];
+        foreach ($this->repo->catalogoTiposCapacitacion() as $fila) {
+            $tipos[] = [
+                'tipo_capacitacion_id' => (int)$fila['tipo_capacitacion_id'],
+                'nombre' => (string)$fila['nombre'],
+            ];
+        }
+        $base['capacitaciones'] = $capacitaciones;
+        $base['tipos_capacitacion'] = $tipos;
+
+        return $base;
+    }
+
+    /**
+     * @return array{items:list<array<string,mixed>>,total:int}
+     */
+    public function buscarTrabajadores(?string $buscar): array
+    {
+        $texto = $buscar !== null ? trim($buscar) : '';
+        if ($texto === '') {
+            return ['items' => [], 'total' => 0];
+        }
+
+        $resultado = $this->personal->listar(1, 20, $texto, null, null);
+
+        return [
+            'items' => $resultado['items'],
+            'total' => (int)$resultado['total'],
+        ];
     }
 
     public function titulo(string $tipo): string
@@ -266,6 +320,7 @@ class ReporteService
             'reinducciones' => 'Reinducciones',
             'tareas_criticas' => 'Tareas críticas',
             'evidencias_faltantes' => 'Evidencias faltantes',
+            'historial_trabajador' => 'Historial del trabajador',
             default => 'Reporte',
         };
     }
@@ -349,6 +404,12 @@ class ReporteService
             'asistencia' => isset($filtros['asistencia']) && trim((string)$filtros['asistencia']) !== ''
                 ? trim((string)$filtros['asistencia'])
                 : null,
+            'capacitacion_id' => isset($filtros['capacitacion_id']) && (int)$filtros['capacitacion_id'] > 0
+                ? (int)$filtros['capacitacion_id']
+                : null,
+            'tipo_capacitacion_id' => isset($filtros['tipo_capacitacion_id']) && (int)$filtros['tipo_capacitacion_id'] > 0
+                ? (int)$filtros['tipo_capacitacion_id']
+                : null,
         ];
     }
 
@@ -384,11 +445,24 @@ class ReporteService
             ? $filtros['proyecto']
             : 'Todos';
 
-        return [
+        $etiquetas = [
             'Periodo' => $periodo,
             'Proceso' => $proceso,
             'Proyecto' => $proyecto,
         ];
+
+        if (isset($filtros['persona_id']) && (int)$filtros['persona_id'] > 0) {
+            try {
+                $persona = $this->personal->ver((int)$filtros['persona_id']);
+                $etiquetas['Trabajador'] = trim(
+                    (string)($persona['numero_documento'] ?? '') . ' ' . (string)($persona['nombre_completo'] ?? '')
+                );
+            } catch (HttpException $e) {
+                $etiquetas['Trabajador'] = (string)$filtros['persona_id'];
+            }
+        }
+
+        return $etiquetas;
     }
 
     /**
@@ -561,6 +635,30 @@ class ReporteService
             ];
         }
 
+        if ($tipo === 'historial_trabajador') {
+            return [
+                ['clave' => 'proyecto', 'etiqueta' => 'Proyecto'],
+                ['clave' => 'capacitacion', 'etiqueta' => 'Capacitación'],
+                ['clave' => 'tipo', 'etiqueta' => 'Tipo'],
+                ['clave' => 'origen', 'etiqueta' => 'Origen'],
+                ['clave' => 'cargo', 'etiqueta' => 'Cargo'],
+                ['clave' => 'proceso', 'etiqueta' => 'Proceso'],
+                ['clave' => 'fecha_asignacion', 'etiqueta' => 'Fecha de asignación', 'tipo' => 'fecha'],
+                ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha de realización', 'tipo' => 'fecha'],
+                ['clave' => 'fecha_sesion', 'etiqueta' => 'Fecha de sesión', 'tipo' => 'fecha'],
+                ['clave' => 'estado', 'etiqueta' => 'Estado'],
+                ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
+                ['clave' => 'resultado', 'etiqueta' => 'Resultado'],
+                ['clave' => 'horas_efectivas', 'etiqueta' => 'Horas', 'tipo' => 'numero'],
+                ['clave' => 'evaluacion_requerida', 'etiqueta' => 'Evaluación'],
+                ['clave' => 'nota_evaluacion', 'etiqueta' => 'Nota', 'tipo' => 'numero'],
+                ['clave' => 'nota_minima', 'etiqueta' => 'Nota mínima', 'tipo' => 'numero'],
+                ['clave' => 'evaluacion_resultado', 'etiqueta' => 'Resultado evaluación'],
+                ['clave' => 'evidencia', 'etiqueta' => 'Evidencia'],
+                ['clave' => 'soportes_nombres', 'etiqueta' => 'Soportes'],
+            ];
+        }
+
         $cols = [
             ['clave' => 'documento', 'etiqueta' => 'Documento'],
             ['clave' => 'trabajador', 'etiqueta' => 'Trabajador'],
@@ -589,6 +687,432 @@ class ReporteService
         }
 
         return $cols;
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
+     */
+    private function consultarHistorial(array $filtros, int $pagina, int $porPagina): array
+    {
+        $personaId = (int)($filtros['persona_id'] ?? 0);
+        if ($personaId < 1) {
+            throw new HttpException('Debe seleccionar un trabajador.', 422);
+        }
+
+        $trabajador = $this->fichaTrabajador($this->personal->ver($personaId));
+        $total = $this->repo->contar('historial_trabajador', $filtros);
+        $limite = min(self::MAX_EXPORT, max(1, $total > 0 ? $total : 1));
+        $filas = $total === 0 ? [] : $this->repo->listar('historial_trabajador', $filtros, $limite, 0);
+        $items = $this->normalizarItemsHistorial($filas);
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'page' => 1,
+            'per_page' => max(1, $total),
+            'totales' => $this->repo->totales('historial_trabajador', $filtros),
+            'titulo' => $this->titulo('historial_trabajador'),
+            'filtros_etiqueta' => $this->etiquetasFiltro($filtros),
+            'trabajador' => $trabajador,
+            'historial_cargo' => $this->historialCargo($personaId),
+            'historial_proyecto' => $this->historialProyecto($personaId),
+            'historial_proceso' => $this->historialProceso($personaId),
+            'grupos' => $this->agruparPorProyecto($items),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{contenido:string,nombre:string}
+     */
+    private function excelHistorial(array $filtros, ?string $usuario): array
+    {
+        $resultado = $this->consultarHistorial($filtros, 1, self::MAX_EXPORT);
+        if ((int)$resultado['total'] === 0) {
+            throw new HttpException(self::MENSAJE_VACIO, 422);
+        }
+
+        $titulo = (string)$resultado['titulo'];
+        $etiquetas = $resultado['filtros_etiqueta'];
+        $columnas = $this->columnas('historial_trabajador');
+        $trabajador = $resultado['trabajador'];
+        $documento = is_string($trabajador['documento'] ?? null) && $trabajador['documento'] !== ''
+            ? preg_replace('/[^A-Za-z0-9_-]/', '', (string)$trabajador['documento'])
+            : 'trabajador';
+
+        $libro = new Spreadsheet();
+        $hoja = $libro->getActiveSheet();
+        $hoja->setTitle(substr($titulo, 0, 31));
+
+        $fila = 1;
+        $hoja->setCellValue('A' . $fila, 'REPORTE');
+        $hoja->setCellValue('B' . $fila, $titulo);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'FECHA DE GENERACIÓN');
+        $hoja->setCellValue('B' . $fila, (new DateTimeImmutable('now'))->format('d/m/Y H:i'));
+        $fila++;
+        if ($usuario !== null && $usuario !== '') {
+            $hoja->setCellValue('A' . $fila, 'USUARIO');
+            $hoja->setCellValue('B' . $fila, $usuario);
+            $fila++;
+        }
+        $hoja->setCellValue('A' . $fila, 'TRABAJADOR');
+        $hoja->setCellValue('B' . $fila, (string)($trabajador['nombre'] ?? ''));
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'DOCUMENTO');
+        $hoja->setCellValue('B' . $fila, (string)($trabajador['documento'] ?? ''));
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'CARGO ACTUAL');
+        $hoja->setCellValue('B' . $fila, (string)($trabajador['cargo'] ?? '—'));
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'PROYECTO ACTUAL');
+        $hoja->setCellValue('B' . $fila, (string)($trabajador['proyecto'] ?? '—'));
+        $fila++;
+        foreach ($etiquetas as $clave => $valor) {
+            $hoja->setCellValue('A' . $fila, strtoupper((string)$clave));
+            $hoja->setCellValue('B' . $fila, $valor);
+            $fila++;
+        }
+        $fila++;
+
+        $hoja->setCellValue('A' . $fila, 'HISTORIAL DE CARGO');
+        $hoja->getStyle('A' . $fila)->getFont()->setBold(true);
+        $fila++;
+        foreach ($resultado['historial_cargo'] as $periodo) {
+            $hoja->setCellValue('A' . $fila, $this->rangoPeriodo($periodo));
+            $hoja->setCellValue('B' . $fila, (string)($periodo['cargo'] ?? '—'));
+            $fila++;
+        }
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'HISTORIAL DE PROYECTO');
+        $hoja->getStyle('A' . $fila)->getFont()->setBold(true);
+        $fila++;
+        foreach ($resultado['historial_proyecto'] as $periodo) {
+            $hoja->setCellValue('A' . $fila, $this->rangoPeriodo($periodo));
+            $hoja->setCellValue('B' . $fila, (string)($periodo['proyecto'] ?? '—'));
+            $fila++;
+        }
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'HISTORIAL DE PROCESO');
+        $hoja->getStyle('A' . $fila)->getFont()->setBold(true);
+        $fila++;
+        foreach ($resultado['historial_proceso'] as $periodo) {
+            $hoja->setCellValue('A' . $fila, $this->rangoPeriodo($periodo));
+            $hoja->setCellValue('B' . $fila, (string)($periodo['proceso'] ?? '—'));
+            $fila++;
+        }
+        $fila++;
+
+        $colIndex = 1;
+        foreach ($columnas as $col) {
+            $hoja->setCellValueByColumnAndRow($colIndex, $fila, $col['etiqueta']);
+            $colIndex++;
+        }
+        $ultimaCol = Coordinate::stringFromColumnIndex(count($columnas));
+        $hoja->getStyle('A' . $fila . ':' . $ultimaCol . $fila)->getFont()->setBold(true);
+
+        foreach ($resultado['items'] as $item) {
+            $fila++;
+            $colIndex = 1;
+            foreach ($columnas as $col) {
+                $clave = $col['clave'];
+                $valor = $item[$clave] ?? '';
+                if (is_bool($valor)) {
+                    $valor = $valor ? 'Sí' : 'No';
+                }
+                if (($col['tipo'] ?? '') === 'fecha') {
+                    $valor = $this->fechaExcel(is_string($valor) ? $valor : null);
+                }
+                if (($col['tipo'] ?? '') === 'numero' && ($valor === null || $valor === '')) {
+                    $valor = null;
+                }
+                $hoja->setCellValueByColumnAndRow($colIndex, $fila, $valor);
+                if (($col['tipo'] ?? '') === 'numero') {
+                    $coord = Coordinate::stringFromColumnIndex($colIndex) . $fila;
+                    $hoja->getStyle($coord)
+                        ->getNumberFormat()
+                        ->setFormatCode(NumberFormat::FORMAT_NUMBER_00);
+                }
+                $colIndex++;
+            }
+        }
+
+        $totales = $resultado['totales'];
+        $fila += 2;
+        $hoja->setCellValue('A' . $fila, 'TOTAL REGISTROS');
+        $hoja->setCellValue('B' . $fila, $totales['asignadas']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'COMPLETADAS');
+        $hoja->setCellValue('B' . $fila, $totales['completadas']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'PENDIENTES');
+        $hoja->setCellValue('B' . $fila, $totales['pendientes']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'VENCIDAS');
+        $hoja->setCellValue('B' . $fila, $totales['vencidas']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, '% CUMPLIMIENTO');
+        $hoja->setCellValue('B' . $fila, $totales['porcentaje'] === null ? '—' : $totales['porcentaje']);
+
+        $hoja->getColumnDimension('A')->setWidth(28);
+        $hoja->getColumnDimension('B')->setWidth(36);
+        for ($i = 3; $i <= max(3, count($columnas)); $i++) {
+            $hoja->getColumnDimensionByColumn($i)->setWidth(18);
+        }
+
+        $escritor = new Xlsx($libro);
+        ob_start();
+        $escritor->save('php://output');
+        $contenido = (string)ob_get_clean();
+        $libro->disconnectWorksheets();
+
+        return [
+            'contenido' => $contenido,
+            'nombre' => 'historial_trabajador_' . $documento . '_' . (new DateTimeImmutable('today'))->format('Y-m-d') . '.xlsx',
+        ];
+    }
+
+    /**
+     * @param list<array<string,mixed>> $filas
+     * @return list<array<string,mixed>>
+     */
+    private function normalizarItemsHistorial(array $filas): array
+    {
+        $cumplimientoIds = [];
+        foreach ($filas as $fila) {
+            $cid = isset($fila['cumplimiento_id']) ? (int)$fila['cumplimiento_id'] : 0;
+            if ($cid > 0) {
+                $cumplimientoIds[] = $cid;
+            }
+        }
+        $porCumplimiento = [];
+        foreach ($this->soportes->listarPorCumplimientos($cumplimientoIds) as $soporte) {
+            $cid = (int)$soporte['cumplimiento_id'];
+            $porCumplimiento[$cid][] = [
+                'soporte_id' => (int)$soporte['soporte_id'],
+                'nombre_archivo' => (string)$soporte['nombre_archivo'],
+                'tipo_soporte' => (string)$soporte['tipo_soporte'],
+            ];
+        }
+
+        $items = [];
+        foreach ($filas as $fila) {
+            $items[] = $this->normalizarFilaHistorial($fila, $porCumplimiento);
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @param array<int,list<array<string,mixed>>> $porCumplimiento
+     * @return array<string,mixed>
+     */
+    private function normalizarFilaHistorial(array $fila, array $porCumplimiento): array
+    {
+        $codigo = $fila['capacitacion_codigo'] ?? null;
+        $nombre = $fila['capacitacion_nombre'] ?? null;
+        $capacitacion = $codigo && $nombre ? "{$codigo} — {$nombre}" : ($nombre ?? $codigo);
+        $requiereEval = (int)($fila['capacitacion_evaluacion'] ?? 0) === 1;
+        $requiereCert = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
+        $minima = isset($fila['capacitacion_nota_minima']) ? round((float)$fila['capacitacion_nota_minima'], 2) : 0.0;
+        $nota = isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
+            ? (float)$fila['nota_evaluacion']
+            : null;
+        $aprobada = $this->evaluacionAprobada($nota, $requiereEval, $minima);
+        $cid = isset($fila['cumplimiento_id']) ? (int)$fila['cumplimiento_id'] : 0;
+        $soportes = $cid > 0 ? ($porCumplimiento[$cid] ?? []) : [];
+        $nombres = [];
+        foreach ($soportes as $s) {
+            $nombres[] = (string)$s['nombre_archivo'];
+        }
+        $evidencia = 'No aplica';
+        if ($requiereCert) {
+            $evidencia = $soportes === [] ? 'Faltante' : 'Disponible';
+        } elseif ($soportes !== []) {
+            $evidencia = 'Disponible';
+        }
+        $fechaSesion = isset($fila['fecha_sesion']) && is_string($fila['fecha_sesion']) && $fila['fecha_sesion'] !== ''
+            ? substr($fila['fecha_sesion'], 0, 10)
+            : null;
+
+        return [
+            'asignacion_id' => isset($fila['asignacion_id']) ? (int)$fila['asignacion_id'] : null,
+            'cumplimiento_id' => $cid > 0 ? $cid : null,
+            'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
+            'documento' => $fila['numero_documento'] ?? null,
+            'trabajador' => $fila['persona_nombre'] ?? null,
+            'capacitacion' => $capacitacion,
+            'tipo' => $fila['tipo_nombre'] ?? null,
+            'origen' => $fila['origen'] ?? null,
+            'cargo' => $fila['nombre_cargo'] ?? null,
+            'proceso' => $fila['proceso_nombre'] ?? null,
+            'proyecto' => $fila['proyecto'] ?? null,
+            'fecha_asignacion' => $fila['fecha_asignacion'] ?? null,
+            'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'] ?? null,
+            'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
+            'fecha_sesion' => $fechaSesion,
+            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'estado' => $fila['estado_calculado'] ?? null,
+            'resultado' => $fila['cumplimiento_resultado'] ?? null,
+            'horas_efectivas' => isset($fila['horas_efectivas']) && $fila['horas_efectivas'] !== null
+                ? (float)$fila['horas_efectivas']
+                : null,
+            'evaluacion_requerida' => $requiereEval ? 'Requerida' : 'No',
+            'nota_evaluacion' => $nota,
+            'nota_minima' => $requiereEval ? $minima : null,
+            'evaluacion_resultado' => $aprobada === null ? null : ($aprobada ? 'Aprobado' : 'No aprobado'),
+            'requiere_certificado' => $requiereCert,
+            'evidencia' => $evidencia,
+            'soportes' => $soportes,
+            'soportes_nombres' => implode(', ', $nombres),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     * @return array<string,mixed>
+     */
+    private function fichaTrabajador(array $persona): array
+    {
+        return [
+            'persona_id' => (int)$persona['persona_id'],
+            'documento' => $persona['numero_documento'] ?? null,
+            'nombre' => $persona['nombre_completo'] ?? null,
+            'correo' => $persona['correo_corporativo'] ?? null,
+            'cargo' => $persona['cargo'] ?? null,
+            'proyecto' => $persona['proyecto'] ?? null,
+            'fecha_ingreso' => $persona['contrato_fecha_inicio'] ?? null,
+            'estado' => $persona['estado'] ?? null,
+        ];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function historialCargo(int $personaId): array
+    {
+        $laboral = $this->historial->listarPorPersona($personaId);
+        if ($laboral !== []) {
+            $items = [];
+            foreach ($laboral as $fila) {
+                $items[] = [
+                    'cargo' => $fila['nombre_cargo'] ?? null,
+                    'vigente_desde' => $fila['vigente_desde'] ?? null,
+                    'vigente_hasta' => $fila['vigente_hasta'] ?? null,
+                    'fuente' => 'laboral',
+                    'origen' => $fila['origen'] ?? null,
+                ];
+            }
+
+            return $items;
+        }
+
+        $items = [];
+        foreach ($this->historial->cargosDesdeAsignaciones($personaId) as $fila) {
+            $items[] = [
+                'cargo' => $fila['nombre_cargo'] ?? null,
+                'vigente_desde' => $fila['primera_asignacion'] ?? null,
+                'vigente_hasta' => $fila['ultima_asignacion'] ?? null,
+                'fuente' => 'asignaciones',
+                'origen' => null,
+            ];
+        }
+
+        return $items;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function historialProyecto(int $personaId): array
+    {
+        $laboral = $this->historial->listarPorPersona($personaId);
+        if ($laboral !== []) {
+            $items = [];
+            foreach ($laboral as $fila) {
+                $items[] = [
+                    'proyecto' => $fila['proyecto'] ?? null,
+                    'vigente_desde' => $fila['vigente_desde'] ?? null,
+                    'vigente_hasta' => $fila['vigente_hasta'] ?? null,
+                    'fuente' => 'laboral',
+                    'origen' => $fila['origen'] ?? null,
+                ];
+            }
+
+            return $items;
+        }
+
+        $items = [];
+        foreach ($this->historial->proyectosDesdeAsignaciones($personaId) as $fila) {
+            $items[] = [
+                'proyecto' => $fila['proyecto'] ?? null,
+                'vigente_desde' => $fila['primera_asignacion'] ?? null,
+                'vigente_hasta' => $fila['ultima_asignacion'] ?? null,
+                'fuente' => 'asignaciones',
+                'origen' => null,
+            ];
+        }
+
+        return $items;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function historialProceso(int $personaId): array
+    {
+        $items = [];
+        foreach ($this->historial->procesosDesdeAsignaciones($personaId) as $fila) {
+            $items[] = [
+                'proceso' => $fila['proceso_nombre'] ?? null,
+                'vigente_desde' => $fila['primera_asignacion'] ?? null,
+                'vigente_hasta' => $fila['ultima_asignacion'] ?? null,
+                'fuente' => 'asignaciones',
+                'origen' => null,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $items
+     * @return list<array{proyecto:string,asignadas:int,items:list<array<string,mixed>>}>
+     */
+    private function agruparPorProyecto(array $items): array
+    {
+        $grupos = [];
+        foreach ($items as $item) {
+            $clave = isset($item['proyecto']) && is_string($item['proyecto']) && $item['proyecto'] !== ''
+                ? $item['proyecto']
+                : '(Sin proyecto)';
+            if (!isset($grupos[$clave])) {
+                $grupos[$clave] = ['proyecto' => $clave, 'asignadas' => 0, 'items' => []];
+            }
+            $grupos[$clave]['items'][] = $item;
+            $grupos[$clave]['asignadas']++;
+        }
+
+        return array_values($grupos);
+    }
+
+    /** @param array<string,mixed> $periodo */
+    private function rangoPeriodo(array $periodo): string
+    {
+        $desde = $this->fechaExcel(isset($periodo['vigente_desde']) && is_string($periodo['vigente_desde'])
+            ? $periodo['vigente_desde']
+            : null);
+        $hasta = isset($periodo['vigente_hasta']) && is_string($periodo['vigente_hasta']) && $periodo['vigente_hasta'] !== ''
+            ? $this->fechaExcel($periodo['vigente_hasta'])
+            : 'Actual';
+        $desde = $desde !== '' ? $desde : '—';
+
+        return $desde . ' – ' . $hasta;
+    }
+
+    private function evaluacionAprobada(?float $nota, bool $requiere, float $minima): ?bool
+    {
+        if (!$requiere || $nota === null) {
+            return null;
+        }
+
+        return $nota >= $minima;
     }
 
     private function fechaONulo(mixed $valor): ?string

@@ -26,6 +26,11 @@ class ReporteController extends Controller
         $this->success($this->service->opciones());
     }
 
+    public function trabajadores(Request $request): void
+    {
+        $this->success($this->service->buscarTrabajadores(nullable_trimmed_string($request->query('buscar'))));
+    }
+
     public function evidenciasFaltantes(Request $request): void
     {
         $resultado = $this->service->evidenciasFaltantes(
@@ -46,7 +51,7 @@ class ReporteController extends Controller
             (int)$request->query('per_page', 20)
         );
 
-        $this->success([
+        $payload = [
             'items' => $resultado['items'],
             'pagination' => [
                 'total' => $resultado['total'],
@@ -57,7 +62,16 @@ class ReporteController extends Controller
             'totales' => $resultado['totales'],
             'titulo' => $resultado['titulo'],
             'filtros_etiqueta' => $resultado['filtros_etiqueta'],
-        ]);
+        ];
+        if (isset($resultado['trabajador'])) {
+            $payload['trabajador'] = $resultado['trabajador'];
+            $payload['historial_cargo'] = $resultado['historial_cargo'] ?? [];
+            $payload['historial_proyecto'] = $resultado['historial_proyecto'] ?? [];
+            $payload['historial_proceso'] = $resultado['historial_proceso'] ?? [];
+            $payload['grupos'] = $resultado['grupos'] ?? [];
+        }
+
+        $this->success($payload);
     }
 
     public function excel(Request $request, string $tipo): void
@@ -91,6 +105,8 @@ class ReporteController extends Controller
         $procesoRaw = $request->query('proceso_id');
         $cargoRaw = $request->query('cargo_id_ext');
         $personaRaw = $request->query('persona_id');
+        $capRaw = $request->query('capacitacion_id');
+        $tipoCapRaw = $request->query('tipo_capacitacion_id');
 
         return [
             'desde' => $request->query('desde'),
@@ -102,6 +118,8 @@ class ReporteController extends Controller
             'buscar' => nullable_trimmed_string($request->query('buscar')),
             'estado' => nullable_trimmed_string($request->query('estado')),
             'asistencia' => nullable_trimmed_string($request->query('asistencia')),
+            'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
+            'tipo_capacitacion_id' => ($tipoCapRaw !== null && $tipoCapRaw !== '') ? (int)$tipoCapRaw : null,
         ];
     }
 }

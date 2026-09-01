@@ -273,6 +273,8 @@ export type OpcionesAlertas = {
   procesos: { proceso_id: number; nombre: string }[];
   proyectos: string[];
   cargos: { cargo_id: number; nombre_cargo: string }[];
+  capacitaciones?: { capacitacion_id: number; codigo: string; nombre: string }[];
+  tipos_capacitacion?: { tipo_capacitacion_id: number; nombre: string }[];
 };
 
 export type Asignacion = {
@@ -423,6 +425,38 @@ export type ResultadoReporte = {
   totales: TotalesReporte;
   titulo: string;
   filtros_etiqueta: Record<string, string>;
+  trabajador?: FichaTrabajadorReporte;
+  historial_cargo?: PeriodoHistorial[];
+  historial_proyecto?: PeriodoHistorial[];
+  historial_proceso?: PeriodoHistorial[];
+  grupos?: GrupoHistorial[];
+};
+
+export type FichaTrabajadorReporte = {
+  persona_id: number;
+  documento: string | null;
+  nombre: string | null;
+  correo: string | null;
+  cargo: string | null;
+  proyecto: string | null;
+  fecha_ingreso: string | null;
+  estado: string | null;
+};
+
+export type PeriodoHistorial = {
+  cargo?: string | null;
+  proyecto?: string | null;
+  proceso?: string | null;
+  vigente_desde: string | null;
+  vigente_hasta: string | null;
+  fuente: "laboral" | "asignaciones";
+  origen?: string | null;
+};
+
+export type GrupoHistorial = {
+  proyecto: string;
+  asignadas: number;
+  items: Record<string, unknown>[];
 };
 
 export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
@@ -431,6 +465,7 @@ export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
   { id: "cumplimiento_cargo", etiqueta: "Cumplimiento por cargo" },
   { id: "cumplimiento_proceso", etiqueta: "Cumplimiento por proceso" },
   { id: "cumplimiento_proyecto", etiqueta: "Cumplimiento por proyecto" },
+  { id: "historial_trabajador", etiqueta: "Historial del trabajador" },
   { id: "vencidas", etiqueta: "Capacitaciones vencidas" },
   { id: "proximas", etiqueta: "Próximas a vencer" },
   { id: "pendientes", etiqueta: "Capacitaciones pendientes" },

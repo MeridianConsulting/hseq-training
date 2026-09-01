@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Core\Logger;
+use App\Repositories\HistorialContextoRepository;
 use App\Repositories\PersonalRepository;
 use PDOException;
 use Throwable;
@@ -17,11 +18,13 @@ class PersonalService
     public const MAX_DOCUMENTO = 15;
 
     private PersonalRepository $repo;
+    private HistorialContextoRepository $historial;
     private ?MotorAsignacionService $motor = null;
 
     public function __construct()
     {
         $this->repo = new PersonalRepository();
+        $this->historial = new HistorialContextoRepository();
     }
 
     private function motorAsignacion(): MotorAsignacionService
@@ -209,6 +212,7 @@ class PersonalService
         $proyectoAntes = $this->normalizarTexto($actual['proyecto'] ?? '');
         $proyectoAhora = $proyecto ?? '';
         if ($cargoCambio || strcasecmp($proyectoAntes, $proyectoAhora) !== 0) {
+            $this->historial->registrarCambio($personaId, $cargoId, $proyecto);
             $actualizado['sincronizacion'] = $this->sincronizarAsignaciones($actualizado);
         }
 
@@ -340,7 +344,7 @@ class PersonalService
     public function persistirAlta(array $datos): int
     {
         try {
-            return $this->repo->transaccion(function () use ($datos): int {
+            $personaId = $this->repo->transaccion(function () use ($datos): int {
                 $personaId = $this->repo->insertarPersona([
                     'numero_documento' => $datos['numero_documento'],
                     'tipo_documento_id' => $datos['tipo_documento_id'],
@@ -368,7 +372,20 @@ class PersonalService
             $this->falloPersonal($e, 'No fue posible registrar el trabajador');
         }
 
-        throw new HttpException('No fue posible registrar el trabajador', 500);
+        $fecha = is_string($datos['fecha_ingreso'] ?? null) && $datos['fecha_ingreso'] !== ''
+            ? (string)$datos['fecha_ingreso']
+            : date('Y-m-d');
+        $proyecto = isset($datos['proyecto']) && is_string($datos['proyecto']) && $datos['proyecto'] !== ''
+            ? (string)$datos['proyecto']
+            : null;
+        $this->historial->registrarAlta(
+            $personaId,
+            isset($datos['cargo_id']) ? (int)$datos['cargo_id'] : null,
+            $proyecto,
+            $fecha
+        );
+
+        return $personaId;
     }
 
     /**
