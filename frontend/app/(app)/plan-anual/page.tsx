@@ -37,6 +37,8 @@ function tonoEstado(estado: string) {
 function origenEtiqueta(origen: string): string {
   if (origen === "AUTOMATICA") return "Automática";
   if (origen === "MANUAL") return "Manual";
+  if (origen === "INDUCCION") return "Inducción";
+  if (origen === "REINDUCCION") return "Reinducción";
   return origen;
 }
 

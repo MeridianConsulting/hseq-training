@@ -192,11 +192,30 @@ class PersonalController extends Controller
             return "El trabajador fue {$verbo}, pero ocurrió un problema al generar sus asignaciones de capacitación. Consulte el historial o contacte al administrador.";
         }
 
-        $creadas = (int)($sync['creadas'] ?? 0);
-        if ($creadas > 0) {
-            return $base . ". {$creadas} asignaciones automáticas creadas.";
+        $especiales = [];
+        foreach ($sync['creadas_especiales'] ?? [] as $nombre) {
+            if (is_string($nombre) && trim($nombre) !== '') {
+                $especiales[] = trim($nombre);
+            }
         }
 
-        return $base . '. No se encontraron capacitaciones aplicables nuevas para este trabajador.';
+        $partes = [$base];
+        if ($especiales !== []) {
+            $partes[] = 'Se asignó automáticamente: ' . implode(', ', $especiales);
+        }
+
+        $creadas = (int)($sync['creadas'] ?? 0);
+        $deMatriz = $creadas - count($especiales);
+        if ($deMatriz > 0) {
+            $partes[] = $deMatriz === $creadas
+                ? "{$creadas} asignaciones automáticas creadas."
+                : "{$deMatriz} asignaciones de matriz creadas.";
+        }
+
+        if (count($partes) === 1) {
+            return $base . '. No se encontraron capacitaciones aplicables nuevas para este trabajador.';
+        }
+
+        return implode('. ', $partes);
     }
 }

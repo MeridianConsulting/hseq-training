@@ -101,6 +101,65 @@ class CapacitacionRepository
         );
     }
 
+    /**
+     * Cursos ACTIVA cuyo tipo normalizado es INDUCCION o REINDUCCION.
+     *
+     * @return list<array{
+     *   capacitacion_id:int,
+     *   codigo:string,
+     *   nombre:string,
+     *   origen:string,
+     *   per_cantidad:?int,
+     *   per_unidad:?string
+     * }>
+     */
+    public function activasInduccionReinduccion(): array
+    {
+        $filas = $this->db->fetchAll(
+            $this->selectBase() . " WHERE c.estado = 'ACTIVA' AND tip.nombre IS NOT NULL"
+        );
+
+        $salida = [];
+        foreach ($filas as $fila) {
+            $origen = $this->origenEspecial($fila['tipo_nombre'] ?? null);
+            if ($origen === null) {
+                continue;
+            }
+
+            $salida[] = [
+                'capacitacion_id' => (int)$fila['capacitacion_id'],
+                'codigo' => (string)$fila['codigo'],
+                'nombre' => (string)$fila['nombre'],
+                'origen' => $origen,
+                'per_cantidad' => $fila['periodicidad_cantidad'] !== null ? (int)$fila['periodicidad_cantidad'] : null,
+                'per_unidad' => $fila['periodicidad_unidad'] !== null ? (string)$fila['periodicidad_unidad'] : null,
+            ];
+        }
+
+        return $salida;
+    }
+
+    public static function normalizarTipoNombre(?string $nombre): string
+    {
+        $texto = strtoupper(trim((string)$nombre));
+        $texto = strtr($texto, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U',
+            'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U', 'ü' => 'U',
+        ]);
+
+        return preg_replace('/\s+/', ' ', $texto) ?? $texto;
+    }
+
+    private function origenEspecial(mixed $nombre): ?string
+    {
+        $tipo = self::normalizarTipoNombre(is_string($nombre) ? $nombre : null);
+        if ($tipo === 'INDUCCION' || $tipo === 'REINDUCCION') {
+            return $tipo;
+        }
+
+        return null;
+    }
+
     private function selectBase(): string
     {
         return 'SELECT c.*,

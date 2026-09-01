@@ -136,6 +136,62 @@ class AsignacionRepository
     }
 
     /**
+     * Mapa "personaId:capacitacionId" de cualquier asignación (pendiente o con cumplimiento).
+     *
+     * @return array<string, true>
+     */
+    public function paresExistentes(?int $personaId = null): array
+    {
+        $sql = 'SELECT a.persona_id_ext, a.capacitacion_id FROM asignaciones_capacitacion a';
+        $params = [];
+        if ($personaId !== null && $personaId > 0) {
+            $sql .= ' WHERE a.persona_id_ext = ?';
+            $params[] = $personaId;
+        }
+
+        $mapa = [];
+        foreach ($this->db->fetchAll($sql, $params) as $fila) {
+            $mapa[(int)$fila['persona_id_ext'] . ':' . (int)$fila['capacitacion_id']] = true;
+        }
+
+        return $mapa;
+    }
+
+    /**
+     * Última fecha_vencimiento por persona+capacitación (cumplimiento más reciente).
+     *
+     * @return array<string, string|null>
+     */
+    public function ultimasFechasVencimiento(?int $personaId = null): array
+    {
+        $sql = 'SELECT a.persona_id_ext, a.capacitacion_id, c.fecha_vencimiento
+                FROM cumplimientos_capacitacion c
+                INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
+                INNER JOIN (
+                    SELECT a2.persona_id_ext, a2.capacitacion_id, MAX(c2.cumplimiento_id) AS max_id
+                    FROM cumplimientos_capacitacion c2
+                    INNER JOIN asignaciones_capacitacion a2 ON a2.asignacion_id = c2.asignacion_id';
+        $params = [];
+        if ($personaId !== null && $personaId > 0) {
+            $sql .= ' WHERE a2.persona_id_ext = ?';
+            $params[] = $personaId;
+        }
+        $sql .= ' GROUP BY a2.persona_id_ext, a2.capacitacion_id
+                ) u ON u.max_id = c.cumplimiento_id';
+
+        $mapa = [];
+        foreach ($this->db->fetchAll($sql, $params) as $fila) {
+            $clave = (int)$fila['persona_id_ext'] . ':' . (int)$fila['capacitacion_id'];
+            $fecha = $fila['fecha_vencimiento'] !== null && $fila['fecha_vencimiento'] !== ''
+                ? (string)$fila['fecha_vencimiento']
+                : null;
+            $mapa[$clave] = $fecha;
+        }
+
+        return $mapa;
+    }
+
+    /**
      * Bloqueo nominado por trabajador para que dos sincronizaciones no dupliquen pendientes.
      *
      * @param callable():mixed $operacion

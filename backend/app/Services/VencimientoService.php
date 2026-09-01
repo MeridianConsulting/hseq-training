@@ -22,8 +22,8 @@ use DateTimeImmutable;
  *
  * fecha_limite_cumplimiento (asignacion pendiente) != fecha_vencimiento (vigencia del curso tomado).
  *
- * TODO induccion/reinduccion: asignaciones.origen ya admite INDUCCION y REINDUCCION.
- * No inventar reglas de disparo hasta definirlas con HSEQ.
+ * Inducción / reinducción: el disparo está en MotorAsignacionService.
+ * Este servicio solo calcula fecha_vencimiento con la periodicidad resuelta.
  */
 class VencimientoService
 {

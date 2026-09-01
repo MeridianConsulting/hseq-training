@@ -68,8 +68,8 @@ class AsignacionService
             throw new HttpException('El filtro de alerta debe ser proximas o vencidas', 422);
         }
 
-        if ($origen !== null && $origen !== '' && !in_array($origen, ['AUTOMATICA', 'MANUAL'], true)) {
-            throw new HttpException('El origen debe ser AUTOMATICA o MANUAL', 422);
+        if ($origen !== null && $origen !== '' && !in_array($origen, ['AUTOMATICA', 'MANUAL', 'INDUCCION', 'REINDUCCION'], true)) {
+            throw new HttpException('El origen debe ser AUTOMATICA, MANUAL, INDUCCION o REINDUCCION', 422);
         }
 
         $filas = $this->repo->listar($porPagina, $offset, $personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);

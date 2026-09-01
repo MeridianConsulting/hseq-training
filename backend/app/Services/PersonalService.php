@@ -17,10 +17,16 @@ class PersonalService
     public const MAX_DOCUMENTO = 15;
 
     private PersonalRepository $repo;
+    private ?MotorAsignacionService $motor = null;
 
     public function __construct()
     {
         $this->repo = new PersonalRepository();
+    }
+
+    private function motorAsignacion(): MotorAsignacionService
+    {
+        return $this->motor ??= new MotorAsignacionService();
     }
 
     public function listar(int $pagina, int $porPagina, ?string $buscar, ?string $estado, ?int $cargoId): array
@@ -367,16 +373,23 @@ class PersonalService
 
     /**
      * @param array<string,mixed> $persona
-     * @return array{creadas:int, omitidas:int, error:?string}
+     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>, error:?string}
      */
     public function sincronizarAsignaciones(array $persona): array
     {
         try {
-            $resultado = (new MotorAsignacionService())->sincronizarPersona($persona, null);
+            $resultado = $this->motorAsignacion()->sincronizarPersona($persona, null);
+            $especiales = [];
+            foreach ($resultado['creadas_especiales'] ?? [] as $nombre) {
+                if (is_string($nombre) && $nombre !== '') {
+                    $especiales[] = $nombre;
+                }
+            }
 
             return [
                 'creadas' => (int)$resultado['creadas'],
                 'omitidas' => (int)$resultado['omitidas'],
+                'creadas_especiales' => $especiales,
                 'error' => null,
             ];
         } catch (Throwable $e) {
@@ -390,6 +403,7 @@ class PersonalService
             return [
                 'creadas' => 0,
                 'omitidas' => 0,
+                'creadas_especiales' => [],
                 'error' => 'El trabajador fue registrado, pero ocurrió un problema al generar sus asignaciones de capacitación. Consulte el historial o contacte al administrador.',
             ];
         }

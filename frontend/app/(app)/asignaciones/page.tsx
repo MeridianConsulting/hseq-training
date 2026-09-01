@@ -76,6 +76,8 @@ function formatoFecha(valor: string | null): string {
 function etiquetaOrigen(origen: string): string {
   if (origen === "AUTOMATICA") return "Automática";
   if (origen === "MANUAL") return "Manual";
+  if (origen === "INDUCCION") return "Inducción";
+  if (origen === "REINDUCCION") return "Reinducción";
   return origen;
 }
 
@@ -623,6 +625,8 @@ function Contenido() {
             <option value="">Todos</option>
             <option value="AUTOMATICA">Automática</option>
             <option value="MANUAL">Manual</option>
+            <option value="INDUCCION">Inducción</option>
+            <option value="REINDUCCION">Reinducción</option>
           </select>
         </Field>
         <Field etiqueta="Estado">

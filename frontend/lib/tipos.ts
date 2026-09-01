@@ -422,6 +422,7 @@ export type PersonaCorporativa = {
   sincronizacion?: {
     creadas: number;
     omitidas: number;
+    creadas_especiales?: string[];
     error: string | null;
   };
 };
