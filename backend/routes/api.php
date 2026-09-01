@@ -14,6 +14,7 @@ use App\Controllers\MatrizController;
 use App\Controllers\PersonalController;
 use App\Controllers\PlanAnualController;
 use App\Controllers\CumplimientoController;
+use App\Controllers\ReporteController;
 use App\Controllers\SesionController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\PermisoMiddleware;
@@ -42,6 +43,8 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     });
 
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);
+
+    $router->get('/reportes/evidencias-faltantes', [ReporteController::class, 'evidenciasFaltantes'], [[PermisoMiddleware::class, 'reportes.ver']]);
 
     $router->get('/cronograma', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
 

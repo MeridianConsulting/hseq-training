@@ -341,6 +341,19 @@ export type ResultadoMasivoCumplimiento = {
   items: Cumplimiento[];
 };
 
+export type EvidenciaFaltante = {
+  cumplimiento_id: number;
+  asignacion_id: number;
+  persona_id_ext: number | null;
+  trabajador: string | null;
+  documento: string | null;
+  capacitacion: string | null;
+  fecha_realizacion: string | null;
+  estado: string;
+  requiere_certificado: boolean;
+  soportes_count: number;
+};
+
 export type ProximasAsignaciones = {
   total: number;
   items: Asignacion[];

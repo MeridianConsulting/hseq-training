@@ -113,10 +113,15 @@ export function FormularioCumplimiento({
   return (
     <form className="space-y-4" onSubmit={enviar}>
       {requiere ? (
-        <Alert tono="aviso">
-          Requiere certificado. La evidencia (PDF o imagen) es obligatoria para marcar este
-          cumplimiento como completado.
-        </Alert>
+        <>
+          <p className="text-sm text-slate-700">
+            <span className="font-medium">Requiere certificado:</span> Sí
+          </p>
+          <Alert tono="aviso">
+            Evidencia obligatoria. Debe adjuntar al menos un PDF o imagen antes de completar este
+            cumplimiento.
+          </Alert>
+        </>
       ) : null}
       <Field etiqueta="Fecha de realización">
         <input

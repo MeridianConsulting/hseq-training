@@ -4,7 +4,7 @@ import { apiDelete, apiDownload, apiPostForm } from "@/lib/api";
 import type { SoporteCumplimiento } from "@/lib/tipos";
 
 const MENSAJE_SIN_ARCHIVO =
-  "Debe adjuntar al menos un archivo para completar este cumplimiento.";
+  "Debe adjuntar al menos un archivo antes de completar este cumplimiento.";
 
 export async function subirSoportes(
   cumplimientoId: number,

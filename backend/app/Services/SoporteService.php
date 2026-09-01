@@ -12,7 +12,7 @@ use App\Repositories\SoporteRepository;
 class SoporteService
 {
     public const MENSAJE_REQUIERE_CERTIFICADO =
-        'Este cumplimiento requiere certificado. Adjunte al menos un archivo antes de marcarlo como completado.';
+        'Este cumplimiento requiere certificado. Debe adjuntar al menos un archivo antes de marcarlo como completado.';
     public const MENSAJE_MASIVO_CERTIFICADO =
         'Esta capacitación requiere certificado. Complete cada trabajador de forma individual y adjunte su archivo.';
     public const MENSAJE_NO_ENCONTRADO = 'No fue posible encontrar el archivo solicitado.';

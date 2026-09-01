@@ -59,6 +59,10 @@ function etiquetaOrigen(origen: string): string {
   return origen;
 }
 
+function etiquetaCierreCumplimiento(resultado: string | null): string {
+  return resultado === "APROBADO" ? "Completado" : "Pendiente";
+}
+
 function etiquetaAsistencia(estado: string): string {
   if (estado === "ASISTIO") return "Asistió";
   if (estado === "TARDE") return "Llegó tarde";
@@ -141,6 +145,8 @@ function Contenido() {
   const [cumpAbierto, setCumpAbierto] = useState(false);
   const [cumpAsignacion, setCumpAsignacion] = useState<Asignacion | null>(null);
   const [enviandoCump, setEnviandoCump] = useState(false);
+  const [evidenciaFaltante, setEvidenciaFaltante] = useState(false);
+  const [faltantes, setFaltantes] = useState<Cumplimiento[]>([]);
 
   async function cargarListado(paginaActual = 1) {
     const respuesta = await apiGet<ListaPaginada<Asignacion>>(
@@ -220,6 +226,35 @@ function Contenido() {
       abortado.actual = true;
     };
   }, [personaHistorial]);
+
+  useEffect(() => {
+    if (!evidenciaFaltante) {
+      setFaltantes([]);
+      return;
+    }
+    const abortado = { actual: false };
+    void (async () => {
+      const r = await apiGet<ListaPaginada<Cumplimiento>>(
+        withQuery("/api/cumplimientos", {
+          evidencia_faltante: 1,
+          per_page: 50,
+          persona_id: personaHistorial?.id,
+        }),
+      );
+      if (abortado.actual) {
+        return;
+      }
+      if (!r.success || !r.data) {
+        setError(r.message || "No fue posible cargar las evidencias faltantes.");
+        setFaltantes([]);
+        return;
+      }
+      setFaltantes(r.data.items);
+    })();
+    return () => {
+      abortado.actual = true;
+    };
+  }, [evidenciaFaltante, personaHistorial]);
 
   useEffect(() => {
     void cargarProximas();
@@ -442,6 +477,8 @@ function Contenido() {
               { clave: "res", etiqueta: "Resultado" },
               { clave: "horas", etiqueta: "Horas" },
               { clave: "vence", etiqueta: "Vencimiento" },
+              { clave: "cert", etiqueta: "Requiere certificado" },
+              { clave: "estado", etiqueta: "Estado" },
               { clave: "evid", etiqueta: "Evidencia" },
             ]}
             filas={cumplimientosPersona.map((c) => [
@@ -450,6 +487,8 @@ function Contenido() {
               c.resultado === "APROBADO" ? "Aprobado" : (c.resultado ?? "—"),
               c.horas_efectivas ?? "—",
               c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
+              c.requiere_certificado ? "Sí" : "No",
+              etiquetaCierreCumplimiento(c.resultado),
               <ListaEvidencias key={`ev-${c.cumplimiento_id}`} soportes={c.soportes ?? []} onError={setError} />,
             ])}
           />
@@ -563,7 +602,44 @@ function Contenido() {
             <option value="VENCIDA">Vigencia vencida</option>
           </select>
         </Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={evidenciaFaltante}
+            onChange={(e) => setEvidenciaFaltante(e.target.checked)}
+          />
+          Evidencia faltante
+        </label>
       </Filters>
+
+      {evidenciaFaltante ? (
+        <Card className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Evidencias faltantes</h2>
+          <Table
+            columnas={[
+              { clave: "persona", etiqueta: "Trabajador" },
+              { clave: "doc", etiqueta: "Documento" },
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "fecha", etiqueta: "Fecha de realización" },
+              { clave: "estado", etiqueta: "Estado" },
+              { clave: "cert", etiqueta: "Requiere certificado" },
+              { clave: "cant", etiqueta: "Cantidad de evidencias" },
+            ]}
+            filas={faltantes.map((c) => [
+              c.persona_nombre ?? `Persona ${c.persona_id_ext}`,
+              c.numero_documento ?? "—",
+              c.capacitacion_codigo
+                ? `${c.capacitacion_codigo} — ${c.capacitacion_nombre}`
+                : (c.capacitacion_nombre ?? "—"),
+              formatoFecha(c.fecha_realizacion),
+              etiquetaCierreCumplimiento(c.resultado),
+              "Sí",
+              c.soportes_count ?? 0,
+            ])}
+            vacio="No hay cumplimientos con evidencia faltante."
+          />
+        </Card>
+      ) : null}
 
       <Table
         columnas={[

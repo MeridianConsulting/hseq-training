@@ -20,6 +20,7 @@ use App\Services\PersonalService;
 use App\Services\PlanAnualService;
 use App\Services\SesionService;
 use App\Services\SoporteService;
+use App\Services\ReporteService;
 
 Env::load(BASE_PATH);
 
@@ -140,6 +141,7 @@ $planes = new PlanAnualService();
 $sesiones = new SesionService();
 $cumplimientos = new CumplimientoService();
 $soportes = new SoporteService();
+$reportes = new ReporteService();
 
 $anioPrueba = 2032;
 $personasT = Database::personalTable('personas');
@@ -287,7 +289,7 @@ $msg = esperaRechazo(function () use ($cumplimientos, $asignacionId, $sesionId) 
         'horas_efectivas' => 8,
     ], 1);
 }, 'APROBADO sin archivo rechazado');
-ok(str_contains($msg, 'requiere certificado'), 'Mensaje de certificado obligatorio');
+ok($msg === SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 'Mensaje de certificado obligatorio');
 $sigue = $db->fetch('SELECT resultado FROM cumplimientos_capacitacion WHERE cumplimiento_id = ?', [$cumplimientoId]);
 ok(strtoupper((string)$sigue['resultado']) === 'ASISTIO', 'Resultado sigue ASISTIO');
 
@@ -325,6 +327,20 @@ echo "\n== 9. Evidencia faltante lista el borrador ==\n";
 $faltantes = $cumplimientos->listar(1, 20, ['evidencia_faltante' => 1]);
 $idsFaltantes = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $faltantes['items']);
 ok(in_array($cumplimientoId, $idsFaltantes, true), 'Borrador aparece en evidencia_faltante');
+
+$rep = $reportes->evidenciasFaltantes(1, 20, []);
+$idsRep = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $rep['items']);
+ok(in_array($cumplimientoId, $idsRep, true), 'Reporte incluye el borrador sin archivo');
+$filaRep = null;
+foreach ($rep['items'] as $item) {
+    if ((int)$item['cumplimiento_id'] === $cumplimientoId) {
+        $filaRep = $item;
+        break;
+    }
+}
+ok($filaRep !== null && $filaRep['estado'] === 'Pendiente', 'Reporte marca estado Pendiente');
+ok($filaRep !== null && $filaRep['requiere_certificado'] === true, 'Reporte marca requiere certificado');
+ok($filaRep !== null && (int)$filaRep['soportes_count'] === 0, 'Reporte cantidad de evidencias 0');
 
 echo "\n== 2. Cargar PDF y APROBADO ==\n";
 $pdfBytes = "%PDF-1.4\n%Certificado Juan Perez\n";
@@ -364,6 +380,9 @@ ok(count($soportes->listar($cumplimientoId)) === 2, 'Dos soportes en el cumplimi
 $faltantesDespues = $cumplimientos->listar(1, 20, ['evidencia_faltante' => 1]);
 $idsDespues = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $faltantesDespues['items']);
 ok(!in_array($cumplimientoId, $idsDespues, true), 'Tras cargar, sale de evidencia_faltante');
+$repDespues = $reportes->evidenciasFaltantes(1, 20, []);
+$idsRepDespues = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $repDespues['items']);
+ok(!in_array($cumplimientoId, $idsRepDespues, true), 'Tras cargar, sale del reporte');
 
 echo "\n== 4. Cap certificado=0 permite APROBADO sin archivo ==\n";
 $sesionLibre = $sesiones->crear([
