@@ -246,6 +246,32 @@ export type AlertaVencimiento = {
   fecha_alerta: string | null;
 };
 
+export type AlertaProximaVencer = {
+  cumplimiento_id: number;
+  asignacion_id: number;
+  persona_id_ext: number | null;
+  trabajador: string | null;
+  documento: string | null;
+  cargo: string | null;
+  cargo_id_ext: number | null;
+  proceso: string | null;
+  proceso_id: number | null;
+  proyecto: string | null;
+  capacitacion_id: number | null;
+  capacitacion_codigo: string | null;
+  capacitacion_nombre: string | null;
+  fecha_realizacion: string | null;
+  fecha_vencimiento: string | null;
+  dias_restantes: number;
+  estado: string;
+};
+
+export type OpcionesAlertas = {
+  procesos: { proceso_id: number; nombre: string }[];
+  proyectos: string[];
+  cargos: { cargo_id: number; nombre_cargo: string }[];
+};
+
 export type Asignacion = {
   asignacion_id: number;
   persona_id_ext: number;

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS rol_permisos (
 INSERT IGNORE INTO permisos (codigo, descripcion) VALUES
 ('dashboard.ver', 'Ver panel de control'),
 ('reportes.ver', 'Ver reportes'),
+('alertas.ver', 'Ver alertas de capacitaciones próximas a vencer'),
 ('capacitaciones.ver', 'Ver capacitaciones'),
 ('capacitaciones.crear', 'Crear capacitaciones'),
 ('capacitaciones.editar', 'Editar capacitaciones'),

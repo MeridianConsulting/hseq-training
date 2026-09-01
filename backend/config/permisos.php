@@ -10,6 +10,7 @@ return [
     'codigos' => [
         'dashboard.ver',
         'reportes.ver',
+        'alertas.ver',
         'capacitaciones.ver',
         'capacitaciones.crear',
         'capacitaciones.editar',

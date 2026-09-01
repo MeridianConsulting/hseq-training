@@ -23,6 +23,7 @@ export const MENU: GrupoMenu[] = [
     titulo: "Seguimiento",
     entradas: [
       { ruta: "/dashboard", etiqueta: "Panel de control", permiso: "dashboard.ver" },
+      { ruta: "/alertas", etiqueta: "Alertas", permiso: "alertas.ver" },
       { ruta: "/reportes", etiqueta: "Reportes", permiso: "reportes.ver" },
     ],
   },

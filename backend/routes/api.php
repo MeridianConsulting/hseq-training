@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\AlertaController;
 use App\Controllers\AsignacionController;
 use App\Controllers\AuditoriaController;
 use App\Controllers\AuthController;
@@ -45,6 +46,11 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);
 
     $router->get('/reportes/evidencias-faltantes', [ReporteController::class, 'evidenciasFaltantes'], [[PermisoMiddleware::class, 'reportes.ver']]);
+
+    $router->group(['prefix' => '/alertas'], function ($router) {
+        $router->get('/opciones', [AlertaController::class, 'opciones'], [[PermisoMiddleware::class, 'alertas.ver']]);
+        $router->get('', [AlertaController::class, 'index'], [[PermisoMiddleware::class, 'alertas.ver']]);
+    });
 
     $router->get('/cronograma', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
 
