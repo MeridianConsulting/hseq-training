@@ -14,13 +14,11 @@ class AsignacionController extends Controller
 {
     private AsignacionService $service;
     private MotorAsignacionService $motor;
-    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->service = new AsignacionService();
         $this->motor = new MotorAsignacionService();
-        $this->auditoria = new AuditoriaService();
     }
 
     public function index(Request $request): void
@@ -61,14 +59,6 @@ class AsignacionController extends Controller
 
         $resultado = $this->motor->generar($request->userId() ?: null, $filtro);
 
-        $this->auditoria->dePeticion(
-            $request,
-            'generar_automaticas',
-            'asignaciones_capacitacion',
-            null,
-            $resultado
-        );
-
         $this->success($resultado, $this->motor->mensaje($resultado));
     }
 
@@ -80,15 +70,7 @@ class AsignacionController extends Controller
     public function store(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglas());
-        $creado = $this->service->crear($datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'crear',
-            'asignaciones_capacitacion',
-            (int)$creado['asignacion_id'],
-            $creado
-        );
+        $creado = $this->service->crear($datos, $request->userId(), AuditoriaService::actorDe($request));
 
         $this->created($creado, 'Capacitación asignada');
     }
@@ -96,15 +78,7 @@ class AsignacionController extends Controller
     public function storeMasivo(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasMasiva());
-        $resultado = $this->service->crearMasivo($datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'asignar_masivo',
-            'asignaciones_capacitacion',
-            null,
-            $resultado
-        );
+        $resultado = $this->service->crearMasivo($datos, $request->userId(), AuditoriaService::actorDe($request));
 
         $this->success($resultado, $this->service->mensajeMasivo($resultado));
     }
@@ -112,30 +86,14 @@ class AsignacionController extends Controller
     public function update(Request $request, string $id): void
     {
         $datos = $this->validate($request, $this->service->reglas(true));
-        $actualizado = $this->service->actualizar((int)$id, $datos);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'actualizar',
-            'asignaciones_capacitacion',
-            (int)$id,
-            $actualizado
-        );
+        $actualizado = $this->service->actualizar((int)$id, $datos, AuditoriaService::actorDe($request));
 
         $this->success($actualizado, 'Asignación actualizada');
     }
 
     public function destroy(Request $request, string $id): void
     {
-        $mensaje = $this->service->eliminar((int)$id);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'eliminar',
-            'asignaciones_capacitacion',
-            (int)$id,
-            ['mensaje' => $mensaje]
-        );
+        $mensaje = $this->service->eliminar((int)$id, AuditoriaService::actorDe($request));
 
         $this->success(null, $mensaje);
     }

@@ -153,14 +153,18 @@ function Contenido() {
           return;
         }
       }
-      const respuesta = await apiPut<Cumplimiento>(`/api/cumplimientos/${editando.cumplimiento_id}`, {
+      const cuerpo: Record<string, unknown> = {
         fecha_realizacion: datos.fecha_realizacion,
         resultado: datos.resultado,
         horas_efectivas: Number(datos.horas_efectivas),
         observaciones: datos.observaciones.trim() || null,
         nota_evaluacion:
           datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
-      });
+      };
+      if (datos.fecha_vencimiento.trim() !== "") {
+        cuerpo.fecha_vencimiento = datos.fecha_vencimiento;
+      }
+      const respuesta = await apiPut<Cumplimiento>(`/api/cumplimientos/${editando.cumplimiento_id}`, cuerpo);
       setEnviando(false);
       if (!respuesta.success) {
         setError(respuesta.message || "No fue posible actualizar el cumplimiento.");
@@ -407,6 +411,12 @@ function Contenido() {
             fechaDefault={
               (editando?.fecha_realizacion ?? asignacionAlta?.fecha_realizacion ?? "").slice(0, 10)
             }
+            venceDefault={(editando?.fecha_vencimiento ?? "").slice(0, 10)}
+            horasDefault={
+              editando?.horas_efectivas != null ? String(editando.horas_efectivas) : ""
+            }
+            observacionesDefault={editando?.observaciones ?? ""}
+            notaDefault={editando?.nota_evaluacion != null ? String(editando.nota_evaluacion) : ""}
             enviando={enviando}
             modoEdicion={Boolean(editando)}
             onError={setError}

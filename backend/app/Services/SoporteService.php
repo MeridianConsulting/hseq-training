@@ -30,11 +30,13 @@ class SoporteService
 
     private SoporteRepository $repo;
     private CumplimientoRepository $cumplimientos;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->repo = new SoporteRepository();
         $this->cumplimientos = new CumplimientoRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function tamanoMaximo(): int
@@ -86,11 +88,17 @@ class SoporteService
 
     /**
      * @param array<string,mixed> $archivo $_FILES item
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array<string,mixed>
      */
-    public function cargar(int $cumplimientoId, array $archivo, ?string $tipoSoporte, ?int $usuarioId): array
-    {
-        $cump = $this->exigirCumplimiento($cumplimientoId);
+    public function cargar(
+        int $cumplimientoId,
+        array $archivo,
+        ?string $tipoSoporte,
+        ?int $usuarioId,
+        ?array $actor = null
+    ): array {
+        $this->exigirCumplimiento($cumplimientoId);
         $tipo = $this->normalizarTipo($tipoSoporte);
         $validado = $this->validarArchivo($archivo);
 
@@ -109,15 +117,45 @@ class SoporteService
             throw new HttpException(self::MENSAJE_CARGA, 500);
         }
 
-        $id = $this->repo->crear([
-            'cumplimiento_id' => $cumplimientoId,
-            'tipo_soporte' => $tipo,
-            'nombre_archivo' => $validado['nombre_original'],
-            'ruta_archivo' => $relativo . '/' . $nombreDisco,
-            'mime_type' => $validado['mime'],
-            'tamano_bytes' => $validado['tamano'],
-            'cargado_por_usuario_id_ext' => $usuarioId,
-        ]);
+        try {
+            $id = $this->cumplimientos->transaccion(function () use (
+                $cumplimientoId,
+                $tipo,
+                $validado,
+                $relativo,
+                $nombreDisco,
+                $usuarioId,
+                $actor
+            ): int {
+                $id = $this->repo->crear([
+                    'cumplimiento_id' => $cumplimientoId,
+                    'tipo_soporte' => $tipo,
+                    'nombre_archivo' => $validado['nombre_original'],
+                    'ruta_archivo' => $relativo . '/' . $nombreDisco,
+                    'mime_type' => $validado['mime'],
+                    'tamano_bytes' => $validado['tamano'],
+                    'cargado_por_usuario_id_ext' => $usuarioId,
+                ]);
+                if ($actor !== null) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        'cargar',
+                        'soportes_cumplimiento',
+                        $id,
+                        [
+                            'cumplimiento_id' => $cumplimientoId,
+                            'nombre_archivo' => $validado['nombre_original'],
+                            'tipo_soporte' => $tipo,
+                        ]
+                    );
+                }
+
+                return $id;
+            });
+        } catch (\Throwable $e) {
+            $this->borrarArchivo($destino);
+            throw $e;
+        }
 
         $fila = $this->repo->buscarPorId($id);
 
@@ -152,9 +190,10 @@ class SoporteService
     }
 
     /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array{eliminado:true,resultado:?string}
      */
-    public function eliminar(int $soporteId): array
+    public function eliminar(int $soporteId, ?array $actor = null): array
     {
         $fila = $this->repo->buscarPorId($soporteId);
         if ($fila === null) {
@@ -163,15 +202,48 @@ class SoporteService
 
         $cumplimientoId = (int)$fila['cumplimiento_id'];
         $ruta = $this->rutaAbsoluta((string)$fila['ruta_archivo']);
-        $this->repo->eliminar($soporteId);
-        $this->borrarArchivo($ruta);
+        $nombre = (string)($fila['nombre_archivo'] ?? '');
+        $tipo = (string)($fila['tipo_soporte'] ?? '');
 
-        $resultado = null;
-        $requiere = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
-        $eraAprobado = strtoupper((string)($fila['resultado'] ?? '')) === CumplimientoService::RESULTADO_APROBADO;
-        if ($requiere && $eraAprobado && $this->repo->contarPorCumplimiento($cumplimientoId) === 0) {
-            $resultado = $this->revertirAprobado($cumplimientoId, $fila);
-        }
+        $resultado = $this->cumplimientos->transaccion(function () use (
+            $soporteId,
+            $cumplimientoId,
+            $fila,
+            $actor,
+            $nombre,
+            $tipo
+        ): ?string {
+            $this->repo->eliminar($soporteId);
+            if ($actor !== null) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'eliminar',
+                    'soportes_cumplimiento',
+                    $soporteId,
+                    [
+                        'soporte_id' => $soporteId,
+                        'cumplimiento_id' => $cumplimientoId,
+                        'nombre_archivo' => $nombre,
+                        'tipo_soporte' => $tipo,
+                    ],
+                    [
+                        'soporte_id' => $soporteId,
+                        'cumplimiento_id' => $cumplimientoId,
+                        'nombre_archivo' => $nombre,
+                    ]
+                );
+            }
+
+            $requiere = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
+            $eraAprobado = strtoupper((string)($fila['resultado'] ?? '')) === CumplimientoService::RESULTADO_APROBADO;
+            if ($requiere && $eraAprobado && $this->repo->contarPorCumplimiento($cumplimientoId) === 0) {
+                return $this->revertirAprobado($cumplimientoId, $fila);
+            }
+
+            return null;
+        });
+
+        $this->borrarArchivo($ruta);
 
         return ['eliminado' => true, 'resultado' => $resultado];
     }

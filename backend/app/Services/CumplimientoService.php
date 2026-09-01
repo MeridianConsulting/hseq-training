@@ -26,12 +26,24 @@ class CumplimientoService
     private CumplimientoRepository $repo;
     private VencimientoService $vencimiento;
     private SoporteService $soportes;
+    private AuditoriaService $auditoria;
+
+    /** @var array<string,string> */
+    public const CAMPOS_AUDITABLES = [
+        'fecha_realizacion' => 'Fecha de realización',
+        'resultado' => 'Resultado',
+        'horas_efectivas' => 'Horas efectivas',
+        'fecha_vencimiento' => 'Fecha de vencimiento',
+        'observaciones' => 'Observaciones',
+        'nota_evaluacion' => 'Nota de evaluación',
+    ];
 
     public function __construct()
     {
         $this->repo = new CumplimientoRepository();
         $this->vencimiento = new VencimientoService();
         $this->soportes = new SoporteService();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function reglasIndividual(): array
@@ -68,6 +80,7 @@ class CumplimientoService
             'horas_efectivas' => 'required|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
             'nota_evaluacion' => 'nullable',
+            'fecha_vencimiento' => 'nullable|date',
         ];
     }
 
@@ -89,6 +102,7 @@ class CumplimientoService
             'horas_efectivas.required' => 'Las horas efectivas son obligatorias.',
             'horas_efectivas.numeric' => 'Las horas efectivas deben ser un valor numérico.',
             'horas_efectivas.gt' => 'Las horas efectivas deben ser mayores que cero.',
+            'fecha_vencimiento.date' => 'La fecha de vencimiento no es válida.',
             'asignacion_id.required' => 'Debe indicar la asignación.',
             'sesion_id.required' => 'Debe indicar la sesión.',
             'asignacion_ids.required' => 'Debe seleccionar al menos un trabajador.',
@@ -165,28 +179,50 @@ class CumplimientoService
 
     /**
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
-    public function registrar(array $datos, ?int $usuarioId): array
+    public function registrar(array $datos, ?int $usuarioId, ?array $actor = null): array
     {
+        $datos = $this->ignorarCliente($datos);
         unset($datos['fecha_vencimiento']);
         $campos = $this->exigirCampos($datos, false);
         $campos['nota_evaluacion'] = array_key_exists('nota_evaluacion', $datos)
             ? $datos['nota_evaluacion']
             : null;
         $campos['nota_enviada'] = array_key_exists('nota_evaluacion', $datos);
-        $this->completarUno($campos, $usuarioId);
 
-        $fila = $this->repo->buscarPorAsignacion((int)$campos['asignacion_id']);
+        return $this->repo->transaccion(function () use ($campos, $usuarioId, $actor): array {
+            $this->completarUno($campos, $usuarioId);
+            $fila = $this->repo->buscarPorAsignacion((int)$campos['asignacion_id']);
+            $normalizado = $fila === null ? [] : $this->normalizarConSoportes([$fila])[0];
+            if ($actor !== null && $normalizado !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'crear',
+                    'cumplimientos_capacitacion',
+                    (int)$normalizado['cumplimiento_id'],
+                    [
+                        'origen' => AuditoriaService::ORIGEN_SISTEMA,
+                        'fecha_realizacion' => $normalizado['fecha_realizacion'] ?? null,
+                        'resultado' => $normalizado['resultado'] ?? null,
+                        'horas_efectivas' => $normalizado['horas_efectivas'] ?? null,
+                        'fecha_vencimiento' => $normalizado['fecha_vencimiento'] ?? null,
+                    ]
+                );
+            }
 
-        return $fila === null ? [] : $this->normalizarConSoportes([$fila])[0];
+            return $normalizado;
+        });
     }
 
     /**
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array{procesados:int,completados:int,errores:int,items:list<array<string,mixed>>,errores_detalle:list<array<string,mixed>>}
      */
-    public function registrarMasivo(array $datos, ?int $usuarioId): array
+    public function registrarMasivo(array $datos, ?int $usuarioId, ?array $actor = null): array
     {
+        $datos = $this->ignorarCliente($datos);
         unset($datos['fecha_vencimiento']);
         $sesionId = (int)($datos['sesion_id'] ?? 0);
         $sesion = $this->exigirSesion($sesionId);
@@ -251,6 +287,7 @@ class CumplimientoService
                 $notas,
                 $requiereEval,
                 $minima,
+                $actor,
                 &$completados
             ): void {
                 foreach ($pendientes as $asignacionId) {
@@ -279,6 +316,25 @@ class CumplimientoService
                         $completados[] = $fila;
                     }
                 }
+                if ($actor !== null && $completados !== []) {
+                    $ids = [];
+                    foreach ($completados as $fila) {
+                        $ids[] = (int)$fila['cumplimiento_id'];
+                    }
+                    $this->auditoria->deActor(
+                        $actor,
+                        'registrar_masivo',
+                        'cumplimientos_capacitacion',
+                        $sesionId,
+                        [
+                            'origen' => AuditoriaService::ORIGEN_SISTEMA,
+                            'sesion_id' => $sesionId,
+                            'completados' => count($completados),
+                            'cumplimiento_ids' => $ids,
+                            'fecha_realizacion' => $fecha,
+                        ]
+                    );
+                }
             });
         } catch (HttpException $e) {
             throw $e;
@@ -300,10 +356,11 @@ class CumplimientoService
 
     /**
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
-    public function actualizar(int $id, array $datos, ?int $usuarioId): array
+    public function actualizar(int $id, array $datos, ?int $usuarioId, ?array $actor = null): array
     {
-        unset($datos['fecha_vencimiento']);
+        $datos = $this->ignorarCliente($datos);
         $actual = $this->repo->buscarPorId($id);
         if ($actual === null) {
             throw new HttpException('El cumplimiento no existe.', 404);
@@ -333,7 +390,12 @@ class CumplimientoService
             (int)$actual['asignacion_id']
         );
         $observaciones = nullable_trimmed_string($datos['observaciones'] ?? null);
-        $vence = $this->vencimiento->fechaVencimientoDeAsignacion((int)$actual['asignacion_id'], $fecha);
+        $venceManual = array_key_exists('fecha_vencimiento', $datos)
+            && $datos['fecha_vencimiento'] !== null
+            && trim((string)$datos['fecha_vencimiento']) !== '';
+        $vence = $venceManual
+            ? $this->exigirFechaVencimiento($datos['fecha_vencimiento'])
+            : $this->vencimiento->fechaVencimientoDeAsignacion((int)$actual['asignacion_id'], $fecha);
 
         $campos = [
             'fecha_realizacion' => $fecha,
@@ -349,9 +411,37 @@ class CumplimientoService
             $campos['nota_evaluacion'] = $nota;
         }
 
-        $this->repo->actualizar($id, $campos);
+        $antes = $this->recorteAuditable($actual);
 
-        return $this->ver($id);
+        return $this->repo->transaccion(function () use ($id, $campos, $antes, $actor, $venceManual): array {
+            $this->repo->actualizar($id, $campos);
+            $despuesFila = $this->ver($id);
+            if ($actor !== null) {
+                $cambios = $this->auditoria->diff($antes, $despuesFila, self::CAMPOS_AUDITABLES);
+                if ($cambios !== []) {
+                    $venceEnDiff = false;
+                    foreach ($cambios as $cambio) {
+                        if (($cambio['campo'] ?? '') === 'fecha_vencimiento') {
+                            $venceEnDiff = true;
+                            break;
+                        }
+                    }
+                    $origen = $venceManual || !$venceEnDiff
+                        ? AuditoriaService::ORIGEN_USUARIO
+                        : AuditoriaService::ORIGEN_SISTEMA;
+                    $this->auditoria->deActor(
+                        $actor,
+                        'actualizar',
+                        'cumplimientos_capacitacion',
+                        $id,
+                        $this->auditoria->payloadNuevo($cambios, $origen),
+                        $antes
+                    );
+                }
+            }
+
+            return $despuesFila;
+        });
     }
 
     public function mensajeMasivo(array $resultado): string
@@ -366,9 +456,10 @@ class CumplimientoService
 
     /**
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array{procesados:int,items:list<array<string,mixed>>}
      */
-    public function registrarEvaluaciones(array $datos, ?int $usuarioId): array
+    public function registrarEvaluaciones(array $datos, ?int $usuarioId, ?array $actor = null): array
     {
         $sesionId = (int)($datos['sesion_id'] ?? 0);
         $sesion = $this->exigirSesion($sesionId);
@@ -418,7 +509,7 @@ class CumplimientoService
 
         $filas = [];
         try {
-            $this->repo->transaccion(function () use ($preparados, $usuarioId, &$filas): void {
+            $this->repo->transaccion(function () use ($preparados, $usuarioId, $actor, $sesionId, &$filas): void {
                 foreach ($preparados as $item) {
                     $this->repo->actualizar((int)$item['cumplimiento_id'], [
                         'nota_evaluacion' => $item['nota'],
@@ -428,6 +519,23 @@ class CumplimientoService
                     if ($fila !== null) {
                         $filas[] = $fila;
                     }
+                }
+                if ($actor !== null && $preparados !== []) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        'registrar_evaluaciones',
+                        'cumplimientos_capacitacion',
+                        $sesionId,
+                        [
+                            'origen' => AuditoriaService::ORIGEN_USUARIO,
+                            'sesion_id' => $sesionId,
+                            'procesados' => count($preparados),
+                            'cumplimiento_ids' => array_map(
+                                static fn (array $item): int => (int)$item['cumplimiento_id'],
+                                $preparados
+                            ),
+                        ]
+                    );
                 }
             });
         } catch (HttpException $e) {
@@ -849,6 +957,53 @@ class CumplimientoService
         }
 
         return $ids;
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     * @return array<string,mixed>
+     */
+    private function ignorarCliente(array $datos): array
+    {
+        unset(
+            $datos['usuario_id'],
+            $datos['usuario_id_ext'],
+            $datos['valor_anterior'],
+            $datos['valor_nuevo'],
+            $datos['created_at'],
+            $datos['ip']
+        );
+
+        return $datos;
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function recorteAuditable(array $fila): array
+    {
+        $recorte = [];
+        foreach (self::CAMPOS_AUDITABLES as $campo => $etiqueta) {
+            $recorte[$campo] = $fila[$campo] ?? null;
+        }
+
+        return $recorte;
+    }
+
+    private function exigirFechaVencimiento(mixed $valor): string
+    {
+        $texto = is_string($valor) ? trim($valor) : '';
+        if ($texto === '') {
+            throw new HttpException('La fecha de vencimiento no es válida.', 422);
+        }
+        $texto = substr($texto, 0, 10);
+        $dt = \DateTimeImmutable::createFromFormat('Y-m-d', $texto);
+        if (!$dt instanceof \DateTimeImmutable || $dt->format('Y-m-d') !== $texto) {
+            throw new HttpException('La fecha de vencimiento no es válida.', 422);
+        }
+
+        return $texto;
     }
 
     /**

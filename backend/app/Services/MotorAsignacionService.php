@@ -18,6 +18,7 @@ class MotorAsignacionService
     private AsignacionRepository $asignaciones;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
+    private AuditoriaService $auditoria;
 
     /** @var list<array<string,mixed>>|null */
     private ?array $especialesCache = null;
@@ -28,6 +29,7 @@ class MotorAsignacionService
         $this->asignaciones = new AsignacionRepository();
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
+        $this->auditoria = new AuditoriaService();
     }
 
     /**
@@ -46,6 +48,8 @@ class MotorAsignacionService
         $creadas = 0;
         $omitidas = 0;
         $nombres = [];
+        $ids = [];
+        $origenes = [];
 
         foreach ($personas as $persona) {
             $personaId = (int)($persona['persona_id'] ?? 0);
@@ -60,6 +64,8 @@ class MotorAsignacionService
                 &$creadas,
                 &$omitidas,
                 &$nombres,
+                &$ids,
+                &$origenes,
                 $usuarioId
             ): void {
                 $this->asignaciones->transaccion(function () use (
@@ -73,6 +79,8 @@ class MotorAsignacionService
                     &$creadas,
                     &$omitidas,
                     &$nombres,
+                    &$ids,
+                    &$origenes,
                     $usuarioId
                 ): int {
                     foreach ($this->asignaciones->paresPendientes($personaId > 0 ? $personaId : null) as $clave => $valor) {
@@ -98,30 +106,38 @@ class MotorAsignacionService
                     foreach ($r['creadas_especiales'] as $nombre) {
                         $nombres[] = $nombre;
                     }
+                    foreach ($r['asignacion_ids'] as $id) {
+                        $ids[] = $id;
+                    }
+                    foreach ($r['origenes'] as $origen => $cantidad) {
+                        $origenes[$origen] = ($origenes[$origen] ?? 0) + $cantidad;
+                    }
 
                     return $r['creadas'];
                 });
             });
         }
 
-        return [
+        return $this->auditarAutomaticas([
             'creadas' => $creadas,
             'omitidas' => $omitidas,
             'creadas_especiales' => $nombres,
-        ];
+            'asignacion_ids' => $ids,
+            'origenes' => $origenes,
+        ]);
     }
 
     /**
      * Sincroniza un solo trabajador. Idempotente.
      *
      * @param array<string,mixed> $persona
-     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>}
+     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>, asignacion_ids?:list<int>, origenes?:array<string,int>}
      */
     public function sincronizarPersona(array $persona, ?int $usuarioId = null): array
     {
         $personaId = (int)($persona['persona_id'] ?? 0);
         if ($personaId <= 0) {
-            return ['creadas' => 0, 'omitidas' => 0, 'creadas_especiales' => []];
+            return ['creadas' => 0, 'omitidas' => 0, 'creadas_especiales' => [], 'asignacion_ids' => [], 'origenes' => []];
         }
 
         $reglas = $this->matriz->reglasActivasParaMotor();
@@ -162,6 +178,13 @@ class MotorAsignacionService
                 $creadas = $r['creadas'];
                 $omitidas = $r['omitidas'];
                 $nombres = $r['creadas_especiales'];
+                $this->auditarAutomaticas([
+                    'creadas' => $r['creadas'],
+                    'omitidas' => $r['omitidas'],
+                    'creadas_especiales' => $r['creadas_especiales'],
+                    'asignacion_ids' => $r['asignacion_ids'],
+                    'origenes' => $r['origenes'],
+                ]);
 
                 return $creadas;
             });
@@ -223,7 +246,7 @@ class MotorAsignacionService
      * @param array<string,true> $pendientes
      * @param array<string,true> $existentes
      * @param array<string,string|null> $vencimientos
-     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>}
+     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>, asignacion_ids:list<int>, origenes:array<string,int>}
      */
     private function aplicarTodo(
         array $persona,
@@ -237,22 +260,34 @@ class MotorAsignacionService
         $creadas = 0;
         $omitidas = 0;
         $nombres = [];
+        $ids = [];
+        $origenes = [];
 
         if ($incluirEspeciales) {
             $esp = $this->aplicarEspeciales($persona, $pendientes, $existentes, $vencimientos, $usuarioId);
             $creadas += $esp['creadas'];
             $omitidas += $esp['omitidas'];
             $nombres = $esp['creadas_especiales'];
+            $ids = $esp['asignacion_ids'];
+            $origenes = $esp['origenes'];
         }
 
         $mat = $this->aplicarMatriz($persona, $reglas, $pendientes, $usuarioId);
         $creadas += $mat['creadas'];
         $omitidas += $mat['omitidas'];
+        foreach ($mat['asignacion_ids'] as $id) {
+            $ids[] = $id;
+        }
+        foreach ($mat['origenes'] as $origen => $cantidad) {
+            $origenes[$origen] = ($origenes[$origen] ?? 0) + $cantidad;
+        }
 
         return [
             'creadas' => $creadas,
             'omitidas' => $omitidas,
             'creadas_especiales' => $nombres,
+            'asignacion_ids' => $ids,
+            'origenes' => $origenes,
         ];
     }
 
@@ -261,7 +296,7 @@ class MotorAsignacionService
      * @param array<string,true> $pendientes
      * @param array<string,true> $existentes
      * @param array<string,string|null> $vencimientos
-     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>}
+     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>, asignacion_ids:list<int>, origenes:array<string,int>}
      */
     private function aplicarEspeciales(
         array $persona,
@@ -272,13 +307,15 @@ class MotorAsignacionService
     ): array {
         $personaId = (int)($persona['persona_id'] ?? 0);
         if ($personaId <= 0 || !$this->tieneFechaIngreso($persona)) {
-            return ['creadas' => 0, 'omitidas' => 0, 'creadas_especiales' => []];
+            return ['creadas' => 0, 'omitidas' => 0, 'creadas_especiales' => [], 'asignacion_ids' => [], 'origenes' => []];
         }
 
         $hoy = (new DateTimeImmutable('today'))->format('Y-m-d');
         $creadas = 0;
         $omitidas = 0;
         $nombres = [];
+        $ids = [];
+        $origenes = [];
         $cargoId = (int)($persona['cargo_id'] ?? 0);
         $contratoId = $persona['contrato_id'] ?? null;
         $proyectoPersona = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
@@ -304,7 +341,7 @@ class MotorAsignacionService
                 }
             }
 
-            $this->asignaciones->crear([
+            $id = $this->asignaciones->crear([
                 'persona_id_ext' => $personaId,
                 'contrato_id_ext' => $contratoId !== null ? (int)$contratoId : null,
                 'capacitacion_id' => $capacitacionId,
@@ -326,6 +363,8 @@ class MotorAsignacionService
             $pendientes[$clave] = true;
             $existentes[$clave] = true;
             $creadas++;
+            $ids[] = $id;
+            $origenes[$origen] = ($origenes[$origen] ?? 0) + 1;
             $nombres[] = (string)$cap['nombre'];
         }
 
@@ -333,6 +372,8 @@ class MotorAsignacionService
             'creadas' => $creadas,
             'omitidas' => $omitidas,
             'creadas_especiales' => $nombres,
+            'asignacion_ids' => $ids,
+            'origenes' => $origenes,
         ];
     }
 
@@ -340,20 +381,21 @@ class MotorAsignacionService
      * @param array<string,mixed> $persona
      * @param list<array<string,mixed>> $reglas
      * @param array<string,true> $pendientes
-     * @return array{creadas:int, omitidas:int}
+     * @return array{creadas:int, omitidas:int, asignacion_ids:list<int>, origenes:array<string,int>}
      */
     private function aplicarMatriz(array $persona, array $reglas, array &$pendientes, ?int $usuarioId): array
     {
         $personaId = (int)($persona['persona_id'] ?? 0);
         $cargoId = (int)($persona['cargo_id'] ?? 0);
         if ($personaId <= 0 || $cargoId <= 0) {
-            return ['creadas' => 0, 'omitidas' => 0];
+            return ['creadas' => 0, 'omitidas' => 0, 'asignacion_ids' => [], 'origenes' => []];
         }
 
         $proyectoPersona = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
         $hoy = (new DateTimeImmutable('today'))->format('Y-m-d');
         $creadas = 0;
         $omitidas = 0;
+        $ids = [];
         $contratoId = $persona['contrato_id'] ?? null;
 
         foreach ($reglas as $regla) {
@@ -369,7 +411,7 @@ class MotorAsignacionService
                 continue;
             }
 
-            $this->asignaciones->crear([
+            $id = $this->asignaciones->crear([
                 'persona_id_ext' => $personaId,
                 'contrato_id_ext' => $contratoId !== null ? (int)$contratoId : null,
                 'capacitacion_id' => $capacitacionId,
@@ -387,9 +429,15 @@ class MotorAsignacionService
 
             $pendientes[$clave] = true;
             $creadas++;
+            $ids[] = $id;
         }
 
-        return ['creadas' => $creadas, 'omitidas' => $omitidas];
+        return [
+            'creadas' => $creadas,
+            'omitidas' => $omitidas,
+            'asignacion_ids' => $ids,
+            'origenes' => $creadas > 0 ? ['AUTOMATICA' => $creadas] : [],
+        ];
     }
 
     /**
@@ -477,5 +525,37 @@ class MotorAsignacionService
         }
 
         return substr($fechaVencimiento, 0, 10) >= $hoy;
+    }
+
+    /**
+     * @param array{creadas:int, omitidas:int, creadas_especiales:list<string>, asignacion_ids:list<int>, origenes:array<string,int>} $resultado
+     * @return array{creadas:int, omitidas:int, creadas_especiales:list<string>}
+     */
+    private function auditarAutomaticas(array $resultado): array
+    {
+        if ((int)$resultado['creadas'] > 0) {
+            $origenes = $resultado['origenes'];
+            $origen = count($origenes) === 1 ? (string)array_key_first($origenes) : 'MIXTO';
+            $ids = $resultado['asignacion_ids'];
+            $this->auditoria->registrarSistema(
+                'generar_automaticas',
+                'asignaciones_capacitacion',
+                $ids !== [] ? (int)$ids[0] : null,
+                [
+                    'origen' => $origen,
+                    'origenes' => $origenes,
+                    'creadas' => (int)$resultado['creadas'],
+                    'omitidas' => (int)$resultado['omitidas'],
+                    'asignacion_ids' => $ids,
+                    'creadas_especiales' => $resultado['creadas_especiales'],
+                ]
+            );
+        }
+
+        return [
+            'creadas' => (int)$resultado['creadas'],
+            'omitidas' => (int)$resultado['omitidas'],
+            'creadas_especiales' => $resultado['creadas_especiales'],
+        ];
     }
 }

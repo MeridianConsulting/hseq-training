@@ -102,6 +102,27 @@ class CapacitacionRepository
     }
 
     /**
+     * @param callable():mixed $operacion
+     */
+    public function transaccion(callable $operacion): mixed
+    {
+        $this->db->beginTransaction();
+
+        try {
+            $resultado = $operacion();
+            $this->db->commit();
+
+            return $resultado;
+        } catch (\PDOException $e) {
+            $this->db->rollBack();
+            throw $e;
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Cursos ACTIVA cuyo tipo normalizado es INDUCCION o REINDUCCION.
      *
      * @return list<array{

@@ -14,6 +14,8 @@ export type DatosCumplimiento = {
   horas_efectivas: string;
   observaciones: string;
   nota_evaluacion: string;
+  fecha_vencimiento: string;
+  vence_manual: boolean;
   archivos: File[];
 };
 
@@ -24,6 +26,8 @@ export function vacioCumplimiento(fechaDefault = ""): DatosCumplimiento {
     horas_efectivas: "",
     observaciones: "",
     nota_evaluacion: "",
+    fecha_vencimiento: "",
+    vence_manual: false,
     archivos: [],
   };
 }
@@ -41,6 +45,10 @@ export function FormularioCumplimiento({
   cumplimientoId,
   soportes = [],
   fechaDefault,
+  venceDefault,
+  horasDefault,
+  observacionesDefault,
+  notaDefault,
   onSubmit,
   onCancelar,
   onSoporteEliminado,
@@ -53,6 +61,10 @@ export function FormularioCumplimiento({
   cumplimientoId?: number | null;
   soportes?: SoporteCumplimiento[];
   fechaDefault?: string;
+  venceDefault?: string;
+  horasDefault?: string;
+  observacionesDefault?: string;
+  notaDefault?: string;
   onSubmit: (evento: FormEvent, datos: DatosCumplimiento) => void;
   onCancelar: () => void;
   onSoporteEliminado?: (soporteId: number) => void;
@@ -60,7 +72,13 @@ export function FormularioCumplimiento({
   enviando?: boolean;
   modoEdicion?: boolean;
 }) {
-  const [datos, setDatos] = useState<DatosCumplimiento>(vacioCumplimiento(fechaDefault ?? ""));
+  const [datos, setDatos] = useState<DatosCumplimiento>(() => ({
+    ...vacioCumplimiento(fechaDefault ?? ""),
+    horas_efectivas: horasDefault ?? "",
+    observaciones: observacionesDefault ?? "",
+    nota_evaluacion: notaDefault ?? "",
+    fecha_vencimiento: (venceDefault ?? "").slice(0, 10),
+  }));
   const [preview, setPreview] = useState<PreviewCumplimiento | null>(null);
   const [cargados, setCargados] = useState<SoporteCumplimiento[]>(soportes);
   const [avisoLocal, setAvisoLocal] = useState<string | null>(null);
@@ -141,7 +159,10 @@ export function FormularioCumplimiento({
         return;
       }
     }
-    onSubmit(evento, datos);
+    onSubmit(
+      evento,
+      modoEdicion && !datos.vence_manual ? { ...datos, fecha_vencimiento: "" } : datos,
+    );
   }
 
   return (
@@ -221,18 +242,38 @@ export function FormularioCumplimiento({
         />
       </Field>
       <Field etiqueta="Fecha de vencimiento">
-        <input
-          className={inputClass}
-          readOnly
-          disabled
-          value={
-            item
-              ? item.fecha_vencimiento
-                ? `${formatoFecha(item.fecha_vencimiento)} · ${item.etiqueta_periodicidad}`
-                : "Sin vencimiento"
-              : "Se calcula al elegir la fecha"
-          }
-        />
+        {modoEdicion ? (
+          <>
+            <input
+              type="date"
+              className={inputClass}
+              value={datos.fecha_vencimiento}
+              onChange={(e) =>
+                setDatos((prev) => ({
+                  ...prev,
+                  fecha_vencimiento: e.target.value,
+                  vence_manual: true,
+                }))
+              }
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Si no modifica esta fecha, se recalcula según la periodicidad al guardar.
+            </p>
+          </>
+        ) : (
+          <input
+            className={inputClass}
+            readOnly
+            disabled
+            value={
+              item
+                ? item.fecha_vencimiento
+                  ? `${formatoFecha(item.fecha_vencimiento)} · ${item.etiqueta_periodicidad}`
+                  : "Sin vencimiento"
+                : "Se calcula al guardar"
+            }
+          />
+        )}
       </Field>
       <Field etiqueta={requiere ? "Evidencia (obligatoria)" : "Evidencia (opcional)"}>
         <input

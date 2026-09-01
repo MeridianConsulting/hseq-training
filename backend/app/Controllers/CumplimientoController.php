@@ -68,14 +68,10 @@ class CumplimientoController extends Controller
     public function store(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasIndividual(), $this->service->mensajes());
-        $creado = $this->service->registrar($datos, $request->userId() ?: null);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'crear',
-            'cumplimientos_capacitacion',
-            (int)($creado['cumplimiento_id'] ?? 0),
-            $creado
+        $creado = $this->service->registrar(
+            $datos,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
         );
 
         $this->created($creado, 'Cumplimiento registrado');
@@ -84,14 +80,10 @@ class CumplimientoController extends Controller
     public function storeMasivo(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasMasivo(), $this->service->mensajes());
-        $resultado = $this->service->registrarMasivo($datos, $request->userId() ?: null);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'registrar_masivo',
-            'cumplimientos_capacitacion',
-            (int)($datos['sesion_id'] ?? 0),
-            $resultado
+        $resultado = $this->service->registrarMasivo(
+            $datos,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
         );
 
         $this->success($resultado, $this->service->mensajeMasivo($resultado));
@@ -100,14 +92,10 @@ class CumplimientoController extends Controller
     public function storeEvaluaciones(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasEvaluaciones(), $this->service->mensajes());
-        $resultado = $this->service->registrarEvaluaciones($datos, $request->userId() ?: null);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'registrar_evaluaciones',
-            'cumplimientos_capacitacion',
-            (int)($datos['sesion_id'] ?? 0),
-            $resultado
+        $resultado = $this->service->registrarEvaluaciones(
+            $datos,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
         );
 
         $this->success($resultado, $this->service->mensajeEvaluaciones($resultado));
@@ -116,14 +104,11 @@ class CumplimientoController extends Controller
     public function update(Request $request, string $id): void
     {
         $datos = $this->validate($request, $this->service->reglasEditar(), $this->service->mensajes());
-        $actualizado = $this->service->actualizar((int)$id, $datos, $request->userId() ?: null);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'actualizar',
-            'cumplimientos_capacitacion',
+        $actualizado = $this->service->actualizar(
             (int)$id,
-            $actualizado
+            $datos,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
         );
 
         $this->success($actualizado, 'Cumplimiento actualizado');
@@ -143,18 +128,12 @@ class CumplimientoController extends Controller
         }
 
         $tipo = nullable_trimmed_string($request->input('tipo_soporte'));
-        $creado = $this->soportes->cargar((int)$id, $archivo, $tipo, $request->userId() ?: null);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'cargar',
-            'soportes_cumplimiento',
-            (int)($creado['soporte_id'] ?? 0),
-            [
-                'cumplimiento_id' => (int)$id,
-                'nombre_archivo' => $creado['nombre_archivo'] ?? null,
-                'tipo_soporte' => $creado['tipo_soporte'] ?? null,
-            ]
+        $creado = $this->soportes->cargar(
+            (int)$id,
+            $archivo,
+            $tipo,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
         );
 
         $this->created($creado, 'Archivo cargado');
@@ -177,15 +156,7 @@ class CumplimientoController extends Controller
 
     public function destroySoporte(Request $request, string $id): void
     {
-        $resultado = $this->soportes->eliminar((int)$id);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'eliminar',
-            'soportes_cumplimiento',
-            (int)$id,
-            $resultado
-        );
+        $resultado = $this->soportes->eliminar((int)$id, AuditoriaService::actorDe($request));
 
         $this->success($resultado, 'Archivo eliminado');
     }

@@ -633,6 +633,13 @@ export type ItemCatalogo = {
   [clave: string]: unknown;
 };
 
+export type CambioAuditoria = {
+  campo: string;
+  etiqueta: string;
+  anterior: unknown;
+  nuevo: unknown;
+};
+
 export type RegistroAuditoria = {
   auditoria_id: number;
   usuario_id_ext: number | null;
@@ -641,6 +648,10 @@ export type RegistroAuditoria = {
   entidad: string | null;
   entidad_id: number | null;
   detalle: unknown;
+  valor_anterior: unknown;
+  valor_nuevo: unknown;
+  cambios: CambioAuditoria[];
+  origen: string | null;
   ip_origen: string | null;
   created_at: string | null;
 };

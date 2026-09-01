@@ -424,14 +424,20 @@ esperaRechazo(
     'NO_APROBADO no permitido'
 );
 
-echo "\n== PUT recálculo e ignore cliente ==\n";
+echo "\n== PUT recálculo y override de vencimiento ==\n";
 $editado = $cumplimientos->actualizar((int)$uno['cumplimiento_id'], [
     'fecha_realizacion' => '2031-10-15',
     'horas_efectivas' => 6,
     'fecha_vencimiento' => '2099-12-31',
 ], 1);
 ok((string)$editado['fecha_realizacion'] === '2031-10-15', 'PUT cambia fecha de realización');
-ok((string)$editado['fecha_vencimiento'] === '2032-10-15', 'PUT recálculo +12 meses, ignora 2099');
+ok((string)$editado['fecha_vencimiento'] === '2099-12-31', 'PUT respeta vencimiento enviado por el usuario');
+
+$recalc = $cumplimientos->actualizar((int)$uno['cumplimiento_id'], [
+    'fecha_realizacion' => '2031-10-15',
+    'horas_efectivas' => 6,
+], 1);
+ok((string)$recalc['fecha_vencimiento'] === '2032-10-15', 'PUT sin fecha_vencimiento recálculo +12 meses');
 
 $listado = $cumplimientos->listar(1, 50, ['persona_id' => $personaIds[0]]);
 ok($listado['total'] >= 1, 'Historial GET por persona');

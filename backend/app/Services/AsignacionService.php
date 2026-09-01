@@ -13,12 +13,14 @@ class AsignacionService
     private AsignacionRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->repo = new AsignacionRepository();
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function reglas(bool $esActualizacion = false): array
@@ -104,7 +106,10 @@ class AsignacionService
         return $this->normalizar($fila);
     }
 
-    public function crear(array $datos, int $usuarioId): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function crear(array $datos, int $usuarioId, ?array $actor = null): array
     {
         $personaId = (int)$datos['persona_id_ext'];
         $capacitacionId = (int)$datos['capacitacion_id'];
@@ -133,32 +138,52 @@ class AsignacionService
             throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
         }
 
-        $id = $this->repo->crear([
-            'persona_id_ext' => $personaId,
-            'contrato_id_ext' => $persona['contrato_id'],
-            'capacitacion_id' => $capacitacionId,
-            'matriz_aplicabilidad_id' => null,
-            'fecha_asignacion' => $fechaAsignacion,
-            'fecha_limite_cumplimiento' => $fechaLimite,
-            'origen' => 'MANUAL',
-            'cargo_id_ext' => $persona['cargo_id'],
-            'area_id' => null,
-            'proceso_id' => null,
-            'ambito' => null,
-            'proyecto' => $persona['proyecto'],
-            'creada_por_usuario_id_ext' => $usuarioId,
-        ]);
+        return $this->repo->transaccion(function () use (
+            $personaId,
+            $persona,
+            $capacitacionId,
+            $fechaAsignacion,
+            $fechaLimite,
+            $usuarioId,
+            $actor
+        ): array {
+            $id = $this->repo->crear([
+                'persona_id_ext' => $personaId,
+                'contrato_id_ext' => $persona['contrato_id'],
+                'capacitacion_id' => $capacitacionId,
+                'matriz_aplicabilidad_id' => null,
+                'fecha_asignacion' => $fechaAsignacion,
+                'fecha_limite_cumplimiento' => $fechaLimite,
+                'origen' => 'MANUAL',
+                'cargo_id_ext' => $persona['cargo_id'],
+                'area_id' => null,
+                'proceso_id' => null,
+                'ambito' => null,
+                'proyecto' => $persona['proyecto'],
+                'creada_por_usuario_id_ext' => $usuarioId,
+            ]);
+            $creado = $this->ver($id);
+            if ($actor !== null) {
+                $this->auditoria->deActor($actor, 'crear', 'asignaciones_capacitacion', $id, [
+                    'origen' => 'MANUAL',
+                    'persona_id_ext' => $personaId,
+                    'capacitacion_id' => $capacitacionId,
+                    'asignacion' => $creado,
+                ]);
+            }
 
-        return $this->ver($id);
+            return $creado;
+        });
     }
 
     /**
      * Asignación MANUAL a varios trabajadores. No toca la matriz.
      *
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array{seleccionados:int, creadas:int, omitidas:int, errores:int, items:list<array<string,mixed>>, omitidas_detalle:list<array<string,mixed>>}
      */
-    public function crearMasivo(array $datos, int $usuarioId): array
+    public function crearMasivo(array $datos, int $usuarioId, ?array $actor = null): array
     {
         $ids = $this->normalizarPersonaIds($datos['persona_ids_ext'] ?? []);
         $capacitacionId = (int)$datos['capacitacion_id'];
@@ -213,6 +238,7 @@ class AsignacionService
             $fechaLimite,
             $hoy,
             $usuarioId,
+            $actor,
             &$creadasIds,
             &$omitidas,
             &$omitidasDetalle
@@ -243,6 +269,22 @@ class AsignacionService
                     'proyecto' => $persona['proyecto'],
                     'creada_por_usuario_id_ext' => $usuarioId,
                 ]);
+            }
+
+            if ($actor !== null && $creadasIds !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'asignar_masivo',
+                    'asignaciones_capacitacion',
+                    (int)$creadasIds[0],
+                    [
+                        'tipo' => 'MASIVA',
+                        'origen' => 'MANUAL',
+                        'capacitacion_id' => $capacitacionId,
+                        'trabajadores' => count($creadasIds),
+                        'asignacion_ids' => $creadasIds,
+                    ]
+                );
             }
 
             return count($creadasIds);
@@ -306,25 +348,48 @@ class AsignacionService
         return array_values($ids);
     }
 
-    public function actualizar(int $id, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function actualizar(int $id, array $datos, ?array $actor = null): array
     {
-        $this->ver($id);
+        $antes = $this->ver($id);
         $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
 
         if ($fechaLimite === null) {
             throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
         }
 
-        $this->repo->actualizar($id, [
-            'fecha_limite_cumplimiento' => $fechaLimite,
-        ]);
+        return $this->repo->transaccion(function () use ($id, $fechaLimite, $antes, $actor): array {
+            $this->repo->actualizar($id, [
+                'fecha_limite_cumplimiento' => $fechaLimite,
+            ]);
+            $despues = $this->ver($id);
+            if ($actor !== null) {
+                $campos = ['fecha_limite_cumplimiento' => 'Fecha límite'];
+                $cambios = $this->auditoria->diff($antes, $despues, $campos);
+                if ($cambios !== []) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        'actualizar',
+                        'asignaciones_capacitacion',
+                        $id,
+                        $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                        ['fecha_limite_cumplimiento' => $antes['fecha_limite_cumplimiento'] ?? null]
+                    );
+                }
+            }
 
-        return $this->ver($id);
+            return $despues;
+        });
     }
 
-    public function eliminar(int $id): string
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function eliminar(int $id, ?array $actor = null): string
     {
-        $this->ver($id);
+        $antes = $this->ver($id);
 
         if ($this->repo->tieneCumplimiento($id)) {
             throw new HttpException(
@@ -333,9 +398,21 @@ class AsignacionService
             );
         }
 
-        $this->repo->eliminar($id);
+        return $this->repo->transaccion(function () use ($id, $antes, $actor): string {
+            $this->repo->eliminar($id);
+            if ($actor !== null) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'eliminar',
+                    'asignaciones_capacitacion',
+                    $id,
+                    ['mensaje' => 'Asignación eliminada'],
+                    $antes
+                );
+            }
 
-        return 'Asignación eliminada';
+            return 'Asignación eliminada';
+        });
     }
 
     /** @param array<string,mixed> $fila */

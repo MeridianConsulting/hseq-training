@@ -37,9 +37,13 @@ class AuditoriaRepository
         ]);
     }
 
-    public function listar(int $limite, int $offset, ?string $entidad, ?string $accion): array
+    /**
+     * @param array<string,mixed> $filtros
+     * @return list<array<string,mixed>>
+     */
+    public function listar(int $limite, int $offset, array $filtros): array
     {
-        [$where, $params] = $this->filtros($entidad, $accion);
+        [$where, $params] = $this->filtros($filtros);
 
         return $this->db->fetchAll(
             "SELECT a.auditoria_id, a.usuario_id_ext, a.usuario_nombre, a.accion, a.entidad, a.entidad_id,
@@ -54,28 +58,72 @@ class AuditoriaRepository
         );
     }
 
-    public function contar(?string $entidad, ?string $accion): int
+    /** @param array<string,mixed> $filtros */
+    public function contar(array $filtros): int
     {
-        [$where, $params] = $this->filtros($entidad, $accion);
-        $fila = $this->db->fetch("SELECT COUNT(*) AS total FROM auditoria a {$where}", $params);
+        [$where, $params] = $this->filtros($filtros);
+        $fila = $this->db->fetch(
+            "SELECT COUNT(*) AS total
+             FROM auditoria a
+             LEFT JOIN usuarios u ON u.usuario_id = a.usuario_id_ext
+             {$where}",
+            $params
+        );
 
         return (int)($fila['total'] ?? 0);
     }
 
-    /** @return array{0:string,1:list<mixed>} */
-    private function filtros(?string $entidad, ?string $accion): array
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{0:string,1:list<mixed>}
+     */
+    private function filtros(array $filtros): array
     {
         $condiciones = [];
         $params = [];
 
-        if ($entidad !== null && $entidad !== '') {
+        $entidad = trim((string)($filtros['entidad'] ?? ''));
+        if ($entidad !== '') {
             $condiciones[] = 'a.entidad = ?';
             $params[] = $entidad;
         }
 
-        if ($accion !== null && $accion !== '') {
+        $accion = trim((string)($filtros['accion'] ?? ''));
+        if ($accion !== '') {
             $condiciones[] = 'a.accion = ?';
             $params[] = $accion;
+        }
+
+        $usuarioId = (int)($filtros['usuario_id'] ?? 0);
+        if ($usuarioId > 0) {
+            $condiciones[] = 'a.usuario_id_ext = ?';
+            $params[] = $usuarioId;
+        }
+
+        $usuario = trim((string)($filtros['usuario'] ?? ''));
+        if ($usuario !== '') {
+            $condiciones[] = '(a.usuario_nombre LIKE ? OR u.nombre_usuario LIKE ?)';
+            $like = '%' . $usuario . '%';
+            $params[] = $like;
+            $params[] = $like;
+        }
+
+        $entidadId = (int)($filtros['entidad_id'] ?? 0);
+        if ($entidadId > 0) {
+            $condiciones[] = 'a.entidad_id = ?';
+            $params[] = $entidadId;
+        }
+
+        $desde = trim((string)($filtros['desde'] ?? ''));
+        if ($desde !== '') {
+            $condiciones[] = 'a.created_at >= ?';
+            $params[] = strlen($desde) === 10 ? $desde . ' 00:00:00' : $desde;
+        }
+
+        $hasta = trim((string)($filtros['hasta'] ?? ''));
+        if ($hasta !== '') {
+            $condiciones[] = 'a.created_at <= ?';
+            $params[] = strlen($hasta) === 10 ? $hasta . ' 23:59:59' : $hasta;
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

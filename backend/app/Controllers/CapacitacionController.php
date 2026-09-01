@@ -12,12 +12,10 @@ use App\Services\CapacitacionService;
 class CapacitacionController extends Controller
 {
     private CapacitacionService $service;
-    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->service = new CapacitacionService();
-        $this->auditoria = new AuditoriaService();
     }
 
     public function index(Request $request): void
@@ -43,15 +41,7 @@ class CapacitacionController extends Controller
     public function store(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglas(), $this->service->mensajes());
-        $creado = $this->service->crear($datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'crear',
-            'capacitaciones',
-            (int)$creado['capacitacion_id'],
-            $creado
-        );
+        $creado = $this->service->crear($datos, $request->userId(), AuditoriaService::actorDe($request));
 
         $this->created($creado, 'Capacitación creada');
     }
@@ -59,30 +49,14 @@ class CapacitacionController extends Controller
     public function update(Request $request, string $id): void
     {
         $datos = $this->validate($request, $this->service->reglas(true), $this->service->mensajes());
-        $actualizado = $this->service->actualizar((int)$id, $datos);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'actualizar',
-            'capacitaciones',
-            (int)$id,
-            $actualizado
-        );
+        $actualizado = $this->service->actualizar((int)$id, $datos, AuditoriaService::actorDe($request));
 
         $this->success($actualizado, 'Capacitación actualizada');
     }
 
     public function destroy(Request $request, string $id): void
     {
-        $mensaje = $this->service->eliminar((int)$id);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'eliminar',
-            'capacitaciones',
-            (int)$id,
-            ['mensaje' => $mensaje]
-        );
+        $mensaje = $this->service->eliminar((int)$id, AuditoriaService::actorDe($request));
 
         $this->success(null, $mensaje);
     }

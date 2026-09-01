@@ -12,6 +12,20 @@ class CapacitacionService
 {
     private const SQLSTATE_INTEGRIDAD = '23000';
 
+    /** @var array<string,string> */
+    public const CAMPOS_AUDITABLES = [
+        'codigo' => 'Código',
+        'nombre' => 'Nombre',
+        'objetivo' => 'Objetivo',
+        'duracion_estimada_horas' => 'Duración',
+        'criticidad' => 'Criticidad',
+        'es_tarea_critica' => 'Tarea crítica',
+        'evaluacion' => 'Evaluación',
+        'nota_minima' => 'Nota mínima',
+        'certificado' => 'Certificado',
+        'estado' => 'Estado',
+    ];
+
     private const FKS = [
         'categoria_id' => ['tabla' => 'categorias_capacitacion', 'pk' => 'categoria_id', 'etiqueta' => 'categoría'],
         'tipo_capacitacion_id' => ['tabla' => 'tipos_capacitacion', 'pk' => 'tipo_capacitacion_id', 'etiqueta' => 'tipo'],
@@ -23,10 +37,12 @@ class CapacitacionService
     ];
 
     private CapacitacionRepository $repo;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->repo = new CapacitacionRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function reglas(bool $esActualizacion = false): array
@@ -98,7 +114,10 @@ class CapacitacionService
         return $this->normalizar($fila);
     }
 
-    public function crear(array $datos, int $usuarioId): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function crear(array $datos, int $usuarioId, ?array $actor = null): array
     {
         $datos = $this->preparar($datos);
 
@@ -109,14 +128,24 @@ class CapacitacionService
         $this->validarFks($datos);
 
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
-        $id = $this->repo->crear($datos);
 
-        return $this->ver($id);
+        return $this->repo->transaccion(function () use ($datos, $actor): array {
+            $id = $this->repo->crear($datos);
+            $creado = $this->ver($id);
+            if ($actor !== null) {
+                $this->auditoria->deActor($actor, 'crear', 'capacitaciones', $id, $creado);
+            }
+
+            return $creado;
+        });
     }
 
-    public function actualizar(int $id, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function actualizar(int $id, array $datos, ?array $actor = null): array
     {
-        $this->ver($id);
+        $antes = $this->ver($id);
         $datos = $this->preparar($datos, true);
 
         if (isset($datos['codigo']) && $this->repo->codigoDuplicado((string)$datos['codigo'], $id)) {
@@ -126,31 +155,89 @@ class CapacitacionService
         $this->validarFks($datos);
 
         if ($datos === []) {
-            return $this->ver($id);
+            return $antes;
         }
 
-        $this->repo->actualizar($id, $datos);
+        return $this->repo->transaccion(function () use ($id, $datos, $antes, $actor): array {
+            $this->repo->actualizar($id, $datos);
+            $despues = $this->ver($id);
+            if ($actor !== null) {
+                $cambios = $this->auditoria->diff($antes, $despues, self::CAMPOS_AUDITABLES);
+                if ($cambios !== []) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        'actualizar',
+                        'capacitaciones',
+                        $id,
+                        $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                        $this->recorte($antes, self::CAMPOS_AUDITABLES)
+                    );
+                }
+            }
 
-        return $this->ver($id);
+            return $despues;
+        });
     }
 
-    public function eliminar(int $id): string
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function eliminar(int $id, ?array $actor = null): string
     {
-        $this->ver($id);
+        $antes = $this->ver($id);
 
         try {
-            $this->repo->eliminar($id);
+            return $this->repo->transaccion(function () use ($id, $antes, $actor): string {
+                $this->repo->eliminar($id);
+                if ($actor !== null) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        'eliminar',
+                        'capacitaciones',
+                        $id,
+                        ['mensaje' => 'Capacitación eliminada'],
+                        $antes
+                    );
+                }
 
-            return 'Capacitación eliminada';
+                return 'Capacitación eliminada';
+            });
         } catch (PDOException $e) {
             if ($e->getCode() === self::SQLSTATE_INTEGRIDAD) {
                 $this->repo->inactivar($id);
+                if ($actor !== null) {
+                    $despues = $this->ver($id);
+                    $cambios = $this->auditoria->diff($antes, $despues, ['estado' => 'Estado']);
+                    $this->auditoria->deActor(
+                        $actor,
+                        'inactivar',
+                        'capacitaciones',
+                        $id,
+                        $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                        ['estado' => $antes['estado'] ?? null]
+                    );
+                }
 
                 return 'La capacitación está en uso; se inactivó para conservar el histórico';
             }
 
             throw $e;
         }
+    }
+
+    /**
+     * @param array<string,string> $campos
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function recorte(array $fila, array $campos): array
+    {
+        $out = [];
+        foreach (array_keys($campos) as $clave) {
+            $out[$clave] = $fila[$clave] ?? null;
+        }
+
+        return $out;
     }
 
     private function preparar(array $datos, bool $parcial = false): array
