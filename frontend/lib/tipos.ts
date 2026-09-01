@@ -398,6 +398,50 @@ export type EvidenciaFaltante = {
   soportes_count: number;
 };
 
+export type TotalesReporte = {
+  asignadas: number;
+  completadas: number;
+  pendientes: number;
+  vencidas: number;
+  proximas: number;
+  porcentaje: number | null;
+  horas: number;
+  asistieron?: number;
+  tarde?: number;
+  ausentes?: number;
+  convocados?: number;
+};
+
+export type ResultadoReporte = {
+  items: Record<string, unknown>[];
+  pagination: {
+    total: number;
+    per_page: number;
+    current_page: number;
+    last_page: number;
+  };
+  totales: TotalesReporte;
+  titulo: string;
+  filtros_etiqueta: Record<string, string>;
+};
+
+export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
+  { id: "cumplimiento_general", etiqueta: "Cumplimiento general" },
+  { id: "cumplimiento_trabajador", etiqueta: "Cumplimiento por trabajador" },
+  { id: "cumplimiento_cargo", etiqueta: "Cumplimiento por cargo" },
+  { id: "cumplimiento_proceso", etiqueta: "Cumplimiento por proceso" },
+  { id: "cumplimiento_proyecto", etiqueta: "Cumplimiento por proyecto" },
+  { id: "vencidas", etiqueta: "Capacitaciones vencidas" },
+  { id: "proximas", etiqueta: "Próximas a vencer" },
+  { id: "pendientes", etiqueta: "Capacitaciones pendientes" },
+  { id: "horas", etiqueta: "Horas de capacitación" },
+  { id: "asistencia", etiqueta: "Asistencia" },
+  { id: "inducciones", etiqueta: "Inducciones" },
+  { id: "reinducciones", etiqueta: "Reinducciones" },
+  { id: "tareas_criticas", etiqueta: "Tareas críticas" },
+  { id: "evidencias_faltantes", etiqueta: "Evidencias faltantes" },
+];
+
 export type ProximasAsignaciones = {
   total: number;
   items: Asignacion[];

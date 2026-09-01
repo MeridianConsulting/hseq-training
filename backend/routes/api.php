@@ -45,7 +45,12 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);
 
-    $router->get('/reportes/evidencias-faltantes', [ReporteController::class, 'evidenciasFaltantes'], [[PermisoMiddleware::class, 'reportes.ver']]);
+    $router->group(['prefix' => '/reportes'], function ($router) {
+        $router->get('/opciones', [ReporteController::class, 'opciones'], [[PermisoMiddleware::class, 'reportes.ver']]);
+        $router->get('/evidencias-faltantes', [ReporteController::class, 'evidenciasFaltantes'], [[PermisoMiddleware::class, 'reportes.ver']]);
+        $router->get('/{tipo}/excel', [ReporteController::class, 'excel'], [[PermisoMiddleware::class, 'reportes.ver']]);
+        $router->get('/{tipo}', [ReporteController::class, 'show'], [[PermisoMiddleware::class, 'reportes.ver']]);
+    });
 
     $router->group(['prefix' => '/alertas'], function ($router) {
         $router->get('/opciones', [AlertaController::class, 'opciones'], [[PermisoMiddleware::class, 'alertas.ver']]);

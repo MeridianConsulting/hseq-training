@@ -54,6 +54,23 @@ class AlertaService
     }
 
     /**
+     * @param array{proceso_id?:?int, proyecto?:?string, cargo_id_ext?:?int} $filtros
+     * @return array{items:list<array<string,mixed>>,total:int}
+     */
+    public function listarTodos(array $filtros): array
+    {
+        $limpios = $this->normalizarFiltros($filtros);
+        $total = $this->repo->contar($limpios);
+        $filas = $total === 0 ? [] : $this->repo->listar(max(1, $total), 0, $limpios);
+        $items = [];
+        foreach ($filas as $fila) {
+            $items[] = $this->normalizar($fila);
+        }
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
      * @return array{procesos:list<array<string,mixed>>,proyectos:list<string>,cargos:list<array<string,mixed>>}
      */
     public function opciones(): array
