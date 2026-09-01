@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Repositories\DashboardRepository;
+use App\Repositories\PersonalRepository;
 
 class DashboardService
 {
@@ -52,6 +53,7 @@ class DashboardService
             'cumplimiento_tareas_criticas' => $critica,
             'eficacia_por_tema' => $this->repo->eficaciaPorTema($periodo),
             'horas_por_tema' => $this->repo->horasPorTema($periodo),
+            'poblacion' => (new PersonalRepository())->contarPorEstado(),
         ];
     }
 

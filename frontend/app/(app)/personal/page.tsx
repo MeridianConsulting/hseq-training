@@ -59,6 +59,8 @@ function Contenido() {
   const [resultadoCarga, setResultadoCarga] = useState<ResultadoCargaPersonal | null>(null);
   const [cargandoImportacion, setCargandoImportacion] = useState(false);
   const [personaHistorial, setPersonaHistorial] = useState<PersonaCorporativa | null>(null);
+  const [inactivarDe, setInactivarDe] = useState<PersonaCorporativa | null>(null);
+  const [inactivando, setInactivando] = useState(false);
 
   async function cargar(paginaActual = 1) {
     const respuesta = await apiGet<ListaPaginada<PersonaCorporativa>>(
@@ -201,6 +203,23 @@ function Contenido() {
     await cargar(1);
   }
 
+  async function confirmarInactivar() {
+    if (!inactivarDe) {
+      return;
+    }
+    setInactivando(true);
+    setError(null);
+    const respuesta = await apiPost<PersonaCorporativa>(`/api/personal/${inactivarDe.persona_id}/inactivar`);
+    setInactivando(false);
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible inactivar el trabajador.");
+      return;
+    }
+    setMensaje(respuesta.message || "Trabajador inactivado correctamente.");
+    setInactivarDe(null);
+    await cargar(pagina);
+  }
+
   function descargarErrores() {
     if (!resultadoCarga || resultadoCarga.rechazados.length === 0) {
       return;
@@ -312,7 +331,7 @@ function Contenido() {
           item.cargo ?? "—",
           item.proyecto ?? "—",
           item.contrato_fecha_inicio ?? "—",
-          <Badge key="e" tono={item.estado === "Activo" ? "ok" : "neutral"}>
+          <Badge key="e" tono={item.estado === "Activo" ? "ok" : "aviso"}>
             {item.estado}
           </Badge>,
           <div key="a" className="flex justify-end gap-1">
@@ -323,6 +342,18 @@ function Contenido() {
               >
                 Historial
               </Link>
+            ) : null}
+            {puede("personal.editar") && item.estado === "Activo" ? (
+              <Button
+                type="button"
+                variante="ghost"
+                onClick={() => {
+                  setError(null);
+                  setInactivarDe(item);
+                }}
+              >
+                Inactivar
+              </Button>
             ) : null}
             {puede("personal.editar") ? (
               <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
@@ -409,6 +440,50 @@ function Contenido() {
                 />
               </>
             ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        abierto={inactivarDe !== null}
+        titulo="Inactivar trabajador"
+        onCerrar={() => {
+          if (!inactivando) {
+            setInactivarDe(null);
+          }
+        }}
+      >
+        {inactivarDe ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">¿Desea inactivar este trabajador?</p>
+            <p className="text-sm text-slate-600">
+              {inactivarDe.nombre_completo} · Documento: {inactivarDe.numero_documento}
+            </p>
+            <p className="text-sm text-slate-600">
+              El trabajador no será eliminado. Su historial de capacitaciones, asistencias y
+              evaluaciones se conservará para consultas y auditorías.
+            </p>
+            <p className="text-sm text-slate-600">
+              El trabajador dejará de participar en los indicadores de cumplimiento vigente.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variante="secondary"
+                disabled={inactivando}
+                onClick={() => setInactivarDe(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variante="danger"
+                disabled={inactivando}
+                onClick={() => void confirmarInactivar()}
+              >
+                {inactivando ? "Inactivando…" : "Inactivar"}
+              </Button>
+            </div>
           </div>
         ) : null}
       </Modal>

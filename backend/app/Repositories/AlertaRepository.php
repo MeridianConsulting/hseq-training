@@ -46,7 +46,7 @@ class AlertaRepository
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
              LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
-             LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             INNER JOIN {$personas} per ON per.persona_id = a.persona_id_ext AND per.estado = 'Activo'
              LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
              {$where}
              ORDER BY c.fecha_vencimiento ASC, c.cumplimiento_id ASC
@@ -65,6 +65,7 @@ class AlertaRepository
             "SELECT COUNT(*) AS total
              FROM cumplimientos_capacitacion c
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
+             INNER JOIN " . Database::personalTable('personas') . " per ON per.persona_id = a.persona_id_ext AND per.estado = 'Activo'
              {$where}",
             $params
         );

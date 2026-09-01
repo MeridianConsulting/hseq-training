@@ -285,6 +285,39 @@ class PersonalRepository
         );
     }
 
+    public function actualizarEstado(int $personaId, string $estado): void
+    {
+        $tabla = Database::personalTable('personas');
+
+        $this->db->update(
+            $tabla,
+            ['estado' => $estado],
+            'persona_id = ?',
+            [$personaId]
+        );
+    }
+
+    /** @return array{activos:int, inactivos:int} */
+    public function contarPorEstado(): array
+    {
+        $tabla = Database::personalTable('personas');
+        $filas = $this->db->fetchAll(
+            "SELECT estado, COUNT(*) AS total FROM {$tabla} GROUP BY estado"
+        );
+        $activos = 0;
+        $inactivos = 0;
+        foreach ($filas as $fila) {
+            $n = (int)($fila['total'] ?? 0);
+            if (($fila['estado'] ?? '') === 'Activo') {
+                $activos = $n;
+            } elseif (($fila['estado'] ?? '') === 'Inactivo') {
+                $inactivos = $n;
+            }
+        }
+
+        return ['activos' => $activos, 'inactivos' => $inactivos];
+    }
+
     /**
      * @param array{fecha_inicio?:string, proyecto?:?string} $datos
      */

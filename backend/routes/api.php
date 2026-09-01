@@ -106,6 +106,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->post('/importar', [PersonalController::class, 'importar'], [[PermisoMiddleware::class, 'personal.importar']]);
         $router->get('', [PersonalController::class, 'index'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->post('', [PersonalController::class, 'store'], [[PermisoMiddleware::class, 'personal.crear']]);
+        $router->post('/{id}/inactivar', [PersonalController::class, 'inactivar'], [[PermisoMiddleware::class, 'personal.editar']]);
         $router->get('/{id}', [PersonalController::class, 'show'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->put('/{id}', [PersonalController::class, 'update'], [[PermisoMiddleware::class, 'personal.editar']]);
     });

@@ -292,9 +292,10 @@ class VencimientoService
 
         try {
             $filas = $this->db->fetchAll(
-                'SELECT estado_calculado, COUNT(*) AS total
-                 FROM vw_estado_asignaciones
-                 GROUP BY estado_calculado'
+                'SELECT e.estado_calculado, COUNT(*) AS total
+                 FROM vw_estado_asignaciones e
+                 INNER JOIN ' . Database::personalTable('personas') . " per ON per.persona_id = e.persona_id_ext AND per.estado = 'Activo'
+                 GROUP BY e.estado_calculado"
             );
         } catch (\Throwable $e) {
             return $conteos;
@@ -316,11 +317,12 @@ class VencimientoService
 
         try {
             return $this->db->fetchAll(
-                "SELECT asignacion_id, persona_id_ext, capacitacion_id, proyecto,
-                        fecha_limite_cumplimiento, fecha_realizacion, fecha_vencimiento,
-                        estado_calculado, tipo_alerta, fecha_alerta
-                 FROM vw_alertas_vencimiento
-                 ORDER BY fecha_alerta ASC
+                "SELECT v.asignacion_id, v.persona_id_ext, v.capacitacion_id, v.proyecto,
+                        v.fecha_limite_cumplimiento, v.fecha_realizacion, v.fecha_vencimiento,
+                        v.estado_calculado, v.tipo_alerta, v.fecha_alerta
+                 FROM vw_alertas_vencimiento v
+                 INNER JOIN " . Database::personalTable('personas') . " per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
+                 ORDER BY v.fecha_alerta ASC
                  LIMIT {$limite}"
             );
         } catch (\Throwable $e) {

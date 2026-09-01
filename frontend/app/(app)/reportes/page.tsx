@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
@@ -439,7 +440,8 @@ function Contenido() {
                         setSugerencias([]);
                       }}
                     >
-                      {p.numero_documento} — {p.nombre_completo}
+                      {p.numero_documento} — {p.nombre_completo}{" "}
+                      <Badge tono={p.estado === "Activo" ? "ok" : "aviso"}>{p.estado}</Badge>
                     </button>
                   </li>
                 ))}

@@ -617,6 +617,14 @@ class ReporteRepository
             $params[] = $tipoCapId;
         }
 
+        if ($tipo !== 'historial_trabajador') {
+            $personas = Database::personalTable('personas');
+            $condiciones[] = "EXISTS (
+                SELECT 1 FROM {$personas} per_vig
+                WHERE per_vig.persona_id = a.persona_id_ext AND per_vig.estado = 'Activo'
+            )";
+        }
+
         $where = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones);
 
         return [$where, $params];

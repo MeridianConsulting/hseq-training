@@ -114,6 +114,7 @@ class AsignacionService
         $personaId = (int)$datos['persona_id_ext'];
         $capacitacionId = (int)$datos['capacitacion_id'];
         $persona = $this->personal->ver($personaId);
+        $this->exigirPersonaActiva($persona);
 
         $cap = $this->capacitaciones->buscarPorId($capacitacionId);
         if ($cap === null) {
@@ -245,6 +246,14 @@ class AsignacionService
         ): int {
             foreach ($personas as $persona) {
                 $personaId = (int)$persona['persona_id'];
+                if (($persona['estado'] ?? '') !== 'Activo') {
+                    $omitidas++;
+                    $omitidasDetalle[] = [
+                        'persona_id_ext' => $personaId,
+                        'motivo' => 'No es posible asignar a un trabajador inactivo.',
+                    ];
+                    continue;
+                }
                 if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {
                     $omitidas++;
                     $omitidasDetalle[] = [
@@ -460,6 +469,13 @@ class AsignacionService
             'dias_restantes' => $dias,
             'etiqueta_dias' => VencimientoService::etiquetaDias($dias),
         ];
+    }
+
+    private function exigirPersonaActiva(array $persona): void
+    {
+        if (($persona['estado'] ?? '') !== 'Activo') {
+            throw new HttpException('No es posible asignar a un trabajador inactivo.', 422);
+        }
     }
 
     private function fechaONulo(mixed $valor): ?string

@@ -19,12 +19,14 @@ class PersonalService
 
     private PersonalRepository $repo;
     private HistorialContextoRepository $historial;
+    private AuditoriaService $auditoria;
     private ?MotorAsignacionService $motor = null;
 
     public function __construct()
     {
         $this->repo = new PersonalRepository();
         $this->historial = new HistorialContextoRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     private function motorAsignacion(): MotorAsignacionService
@@ -219,6 +221,59 @@ class PersonalService
         }
 
         return $actualizado;
+    }
+
+    /**
+     * Inactivación lógica. No elimina el registro ni su historial.
+     *
+     * @param array{usuario_id:?int,nombre:?string,ip:?string} $actor
+     * @return array<string,mixed>
+     */
+    public function inactivar(int $personaId, array $actor): array
+    {
+        $persona = $this->ver($personaId);
+        if (($persona['estado'] ?? '') === 'Inactivo') {
+            $persona['ya_inactivo'] = true;
+
+            return $persona;
+        }
+
+        try {
+            $this->repo->transaccion(function () use ($personaId, $persona, $actor): int {
+                $this->repo->actualizarEstado($personaId, 'Inactivo');
+                $despues = $this->ver($personaId);
+                $cambios = $this->auditoria->diff($persona, $despues, ['estado' => 'Estado laboral']);
+                $this->auditoria->deActor(
+                    $actor,
+                    'inactivar',
+                    'personal',
+                    $personaId,
+                    $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                    ['estado' => $persona['estado'] ?? null]
+                );
+
+                return $personaId;
+            });
+        } catch (PDOException $e) {
+            $this->interpretarEscritura($e);
+        } catch (Throwable $e) {
+            $this->falloPersonal($e, 'No fue posible inactivar el trabajador');
+        }
+
+        $actualizado = $this->ver($personaId);
+        $actualizado['ya_inactivo'] = false;
+
+        return $actualizado;
+    }
+
+    /** @return array{activos:int, inactivos:int} */
+    public function contarPorEstado(): array
+    {
+        try {
+            return $this->repo->contarPorEstado();
+        } catch (Throwable $e) {
+            $this->falloPersonal($e);
+        }
     }
 
     /**

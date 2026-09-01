@@ -85,6 +85,17 @@ class PersonalController extends Controller
         $this->success($actualizado, $this->mensajeSincronizacion('Trabajador actualizado', $actualizado));
     }
 
+    public function inactivar(Request $request, string $id): void
+    {
+        $resultado = $this->service->inactivar((int)$id, AuditoriaService::actorDe($request));
+        $yaInactivo = !empty($resultado['ya_inactivo']);
+        unset($resultado['ya_inactivo']);
+        $this->success(
+            $resultado,
+            $yaInactivo ? 'El trabajador ya se encuentra inactivo.' : 'Trabajador inactivado correctamente.'
+        );
+    }
+
     public function plantilla(Request $request): void
     {
         $contenido = $this->importacion->generarPlantilla();

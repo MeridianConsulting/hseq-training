@@ -118,6 +118,19 @@ function Contenido() {
             {cargando ? " · Actualizando…" : null}
           </p>
 
+          <div className="mb-6 grid gap-4 sm:grid-cols-2">
+            <Card>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Trabajadores activos</p>
+              <p className="mt-1 text-3xl font-semibold text-hseq-900">{resumen.poblacion?.activos ?? 0}</p>
+              <p className="mt-1 text-xs text-slate-500">Población laboral vigente. Los inactivos no entran en el cumplimiento actual.</p>
+            </Card>
+            <Card>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Trabajadores inactivos</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-700">{resumen.poblacion?.inactivos ?? 0}</p>
+              <p className="mt-1 text-xs text-slate-500">Conservan historial y se consultan desde el reporte del trabajador.</p>
+            </Card>
+          </div>
+
           <div className="mb-6 grid gap-4 lg:grid-cols-3">
             <GraficaCumplimiento
               titulo="Cumplimiento general"

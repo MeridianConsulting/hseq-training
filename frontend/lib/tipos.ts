@@ -84,6 +84,10 @@ export type ResumenDashboard = {
   pendientes: number;
   alertas_activas: number;
   alertas: AlertaVencimiento[];
+  poblacion: {
+    activos: number;
+    inactivos: number;
+  };
 };
 
 export type ProcesoCronograma = {

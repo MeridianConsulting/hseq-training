@@ -54,6 +54,7 @@ class DashboardRepository
                 FROM cumplimientos_capacitacion cump
                 INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = cump.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+                {$this->joinPersonaActiva()}
                 {$extraJoin}
                 WHERE cump.fecha_realizacion BETWEEN ? AND ?
                   AND (a.ambito IN ('ADMINISTRACION', 'PROYECTO') OR a.ambito IS NULL)
@@ -77,6 +78,7 @@ class DashboardRepository
              FROM cumplimientos_capacitacion cump
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = cump.asignacion_id
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+             {$this->joinPersonaActiva()}
              WHERE cump.fecha_realizacion BETWEEN ? AND ?
                AND cump.nota_evaluacion IS NOT NULL
                AND (a.ambito IN ('ADMINISTRACION', 'PROYECTO') OR a.ambito IS NULL)
@@ -111,6 +113,7 @@ class DashboardRepository
              FROM cumplimientos_capacitacion cump
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = cump.asignacion_id
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+             {$this->joinPersonaActiva()}
              WHERE cump.fecha_realizacion BETWEEN ? AND ?
                AND (a.ambito IN ('ADMINISTRACION', 'PROYECTO') OR a.ambito IS NULL)
              GROUP BY cap.capacitacion_id, cap.codigo, cap.nombre
@@ -190,5 +193,12 @@ class DashboardRepository
         }
 
         return [implode(',', array_fill(0, count($meses), '?')), $meses];
+    }
+
+    private function joinPersonaActiva(): string
+    {
+        $personas = Database::personalTable('personas');
+
+        return "INNER JOIN {$personas} per_vig ON per_vig.persona_id = a.persona_id_ext AND per_vig.estado = 'Activo'";
     }
 }
