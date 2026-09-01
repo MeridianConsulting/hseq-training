@@ -811,6 +811,10 @@ class SesionService
             'cupo_completo' => $cupo > 0 && $convocados >= $cupo,
             'estado' => (string)($fila['estado'] ?? 'PROGRAMADA'),
             'requiere_certificado' => (int)($fila['capacitacion_certificado'] ?? 0) === 1,
+            'requiere_evaluacion' => (int)($fila['capacitacion_evaluacion'] ?? 0) === 1,
+            'nota_minima' => isset($fila['capacitacion_nota_minima'])
+                ? round((float)$fila['capacitacion_nota_minima'], 2)
+                : 0.0,
         ];
     }
 
@@ -844,6 +848,9 @@ class SesionService
                 ? (float)$fila['horas_efectivas']
                 : null,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
+                ? (float)$fila['nota_evaluacion']
+                : null,
         ];
     }
 

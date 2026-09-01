@@ -97,6 +97,22 @@ class CumplimientoController extends Controller
         $this->success($resultado, $this->service->mensajeMasivo($resultado));
     }
 
+    public function storeEvaluaciones(Request $request): void
+    {
+        $datos = $this->validate($request, $this->service->reglasEvaluaciones(), $this->service->mensajes());
+        $resultado = $this->service->registrarEvaluaciones($datos, $request->userId() ?: null);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'registrar_evaluaciones',
+            'cumplimientos_capacitacion',
+            (int)($datos['sesion_id'] ?? 0),
+            $resultado
+        );
+
+        $this->success($resultado, $this->service->mensajeEvaluaciones($resultado));
+    }
+
     public function update(Request $request, string $id): void
     {
         $datos = $this->validate($request, $this->service->reglasEditar(), $this->service->mensajes());

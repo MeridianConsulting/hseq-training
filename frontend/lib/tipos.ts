@@ -113,6 +113,8 @@ export type SesionCronograma = {
   cupo_completo: boolean;
   estado: string;
   requiere_certificado?: boolean;
+  requiere_evaluacion?: boolean;
+  nota_minima?: number | null;
 };
 
 export type ParticipanteSesion = {
@@ -132,6 +134,7 @@ export type ParticipanteSesion = {
   fecha_realizacion: string | null;
   horas_efectivas: number | null;
   fecha_vencimiento: string | null;
+  nota_evaluacion?: number | null;
 };
 
 export type ResumenAsistencia = {
@@ -323,6 +326,10 @@ export type Cumplimiento = {
   capacitacion_codigo: string | null;
   capacitacion_nombre: string | null;
   requiere_certificado?: boolean;
+  requiere_evaluacion?: boolean;
+  nota_minima?: number | null;
+  nota_evaluacion?: number | null;
+  evaluacion_aprobada?: boolean | null;
   fecha_realizacion: string | null;
   resultado: string | null;
   horas_efectivas: number | null;
@@ -352,6 +359,10 @@ export type PreviewItemCumplimiento = {
   motivo: string | null;
   requiere_certificado?: boolean;
   soportes_count?: number;
+  requiere_evaluacion?: boolean;
+  nota_minima?: number | null;
+  nota_evaluacion?: number | null;
+  evaluacion_aprobada?: boolean | null;
 };
 
 export type PreviewCumplimiento = {
@@ -366,6 +377,11 @@ export type ResultadoMasivoCumplimiento = {
   procesados: number;
   completados: number;
   errores: number;
+  items: Cumplimiento[];
+};
+
+export type ResultadoEvaluaciones = {
+  procesados: number;
   items: Cumplimiento[];
 };
 

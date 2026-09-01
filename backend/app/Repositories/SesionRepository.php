@@ -139,7 +139,8 @@ class SesionRepository
                     c.resultado AS cumplimiento_resultado,
                     c.fecha_realizacion,
                     c.horas_efectivas,
-                    c.fecha_vencimiento
+                    c.fecha_vencimiento,
+                    c.nota_evaluacion
              FROM sesion_participantes sp
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = sp.asignacion_id
              LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
@@ -407,6 +408,8 @@ class SesionRepository
                        c.codigo AS capacitacion_codigo,
                        c.nombre AS capacitacion_nombre,
                        c.certificado AS capacitacion_certificado,
+                       c.evaluacion AS capacitacion_evaluacion,
+                       c.nota_minima AS capacitacion_nota_minima,
                        p.plan_anual_id,
                        p.anio,
                        p.estado AS plan_estado,

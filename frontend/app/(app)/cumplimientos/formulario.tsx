@@ -13,6 +13,7 @@ export type DatosCumplimiento = {
   resultado: string;
   horas_efectivas: string;
   observaciones: string;
+  nota_evaluacion: string;
   archivos: File[];
 };
 
@@ -22,6 +23,7 @@ export function vacioCumplimiento(fechaDefault = ""): DatosCumplimiento {
     resultado: "APROBADO",
     horas_efectivas: "",
     observaciones: "",
+    nota_evaluacion: "",
     archivos: [],
   };
 }
@@ -98,7 +100,20 @@ export function FormularioCumplimiento({
 
   const item = preview?.items[0];
   const requiere = Boolean(item?.requiere_certificado);
+  const requiereEval = Boolean(item?.requiere_evaluacion);
+  const minima = item?.nota_minima ?? 0;
   const countExistentes = cargados.length || item?.soportes_count || 0;
+  const notaNumero = datos.nota_evaluacion.trim() === "" ? null : Number(datos.nota_evaluacion);
+  const evalAprobada =
+    requiereEval && notaNumero !== null && !Number.isNaN(notaNumero) ? notaNumero >= minima : null;
+
+  useEffect(() => {
+    if (item?.nota_evaluacion == null || datos.nota_evaluacion !== "") {
+      return;
+    }
+    setDatos((prev) => ({ ...prev, nota_evaluacion: String(item.nota_evaluacion) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.nota_evaluacion]);
 
   function enviar(evento: FormEvent) {
     setAvisoLocal(null);
@@ -106,6 +121,25 @@ export function FormularioCumplimiento({
       evento.preventDefault();
       setAvisoLocal(MENSAJE_SIN_ARCHIVO);
       return;
+    }
+    if (requiereEval) {
+      const texto = datos.nota_evaluacion.trim();
+      if (texto === "") {
+        evento.preventDefault();
+        setAvisoLocal("La nota es obligatoria.");
+        return;
+      }
+      const n = Number(texto);
+      if (Number.isNaN(n)) {
+        evento.preventDefault();
+        setAvisoLocal("La nota debe ser numérica.");
+        return;
+      }
+      if (n < 0 || n > 5) {
+        evento.preventDefault();
+        setAvisoLocal("La nota está fuera del rango permitido.");
+        return;
+      }
     }
     onSubmit(evento, datos);
   }
@@ -152,6 +186,33 @@ export function FormularioCumplimiento({
           onChange={(e) => setDatos((prev) => ({ ...prev, horas_efectivas: e.target.value }))}
         />
       </Field>
+      {requiereEval ? (
+        <>
+          <Field etiqueta={`Nota (mínima ${minima.toFixed(2).replace(".", ",")})`}>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              step="0.01"
+              className={inputClass}
+              required
+              value={datos.nota_evaluacion}
+              onChange={(e) => setDatos((prev) => ({ ...prev, nota_evaluacion: e.target.value }))}
+            />
+            <p className="mt-1 text-xs text-slate-500">Escala 0 a 5.</p>
+          </Field>
+          <Field etiqueta="Resultado de la evaluación">
+            <input
+              className={inputClass}
+              readOnly
+              disabled
+              value={
+                evalAprobada === null ? "—" : evalAprobada ? "Aprobado" : "No aprobado"
+              }
+            />
+          </Field>
+        </>
+      ) : null}
       <Field etiqueta="Observaciones">
         <input
           className={inputClass}

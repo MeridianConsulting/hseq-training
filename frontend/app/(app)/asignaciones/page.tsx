@@ -83,6 +83,14 @@ function etiquetaCierreCumplimiento(resultado: string | null): string {
   return resultado === "APROBADO" ? "Completado" : "Pendiente";
 }
 
+function etiquetaNotaCumplimiento(c: Cumplimiento): string {
+  if (c.nota_evaluacion == null) return "—";
+  const n = c.nota_evaluacion.toFixed(2).replace(".", ",");
+  if (c.evaluacion_aprobada === true) return `${n} · Aprobado`;
+  if (c.evaluacion_aprobada === false) return `${n} · No aprobado`;
+  return n;
+}
+
 function etiquetaAsistencia(estado: string): string {
   if (estado === "ASISTIO") return "Asistió";
   if (estado === "TARDE") return "Llegó tarde";
@@ -394,6 +402,8 @@ function Contenido() {
       resultado: datos.resultado,
       horas_efectivas: Number(datos.horas_efectivas),
       observaciones: datos.observaciones.trim() || null,
+      nota_evaluacion:
+        datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
     });
     setEnviandoCump(false);
     if (!respuesta.success) {
@@ -496,6 +506,7 @@ function Contenido() {
               { clave: "real", etiqueta: "Realización" },
               { clave: "res", etiqueta: "Resultado" },
               { clave: "horas", etiqueta: "Horas" },
+              { clave: "nota", etiqueta: "Nota" },
               { clave: "vence", etiqueta: "Vencimiento" },
               { clave: "cert", etiqueta: "Requiere certificado" },
               { clave: "estado", etiqueta: "Estado" },
@@ -506,6 +517,7 @@ function Contenido() {
               formatoFecha(c.fecha_realizacion),
               c.resultado === "APROBADO" ? "Aprobado" : (c.resultado ?? "—"),
               c.horas_efectivas ?? "—",
+              etiquetaNotaCumplimiento(c),
               c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
               c.requiere_certificado ? "Sí" : "No",
               <Badge key={`vig-${c.cumplimiento_id}`} tono={tonoVigencia(c)}>

@@ -116,7 +116,9 @@ class CumplimientoRepository
     {
         return $this->db->fetch(
             'SELECT s.sesion_id, s.capacitacion_id, s.fecha_hora, s.estado,
-                    cap.certificado AS capacitacion_certificado
+                    cap.certificado AS capacitacion_certificado,
+                    cap.evaluacion AS capacitacion_evaluacion,
+                    cap.nota_minima AS capacitacion_nota_minima
              FROM sesiones_capacitacion s
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = s.capacitacion_id
              WHERE s.sesion_id = ?
@@ -155,6 +157,8 @@ class CumplimientoRepository
                     cap.codigo AS capacitacion_codigo,
                     cap.nombre AS capacitacion_nombre,
                     cap.certificado AS capacitacion_certificado,
+                    cap.evaluacion AS capacitacion_evaluacion,
+                    cap.nota_minima AS capacitacion_nota_minima,
                     per.numero_documento,
                     per.nombre_completo_nombres_primero AS persona_nombre,
                     e.estado_calculado

@@ -12,6 +12,13 @@ class CumplimientoService
 {
     public const RESULTADO_APROBADO = 'APROBADO';
     public const MENSAJE_YA_REGISTRADO = 'El cumplimiento ya fue registrado.';
+    public const MENSAJE_NOTA_OBLIGATORIA = 'La nota es obligatoria.';
+    public const MENSAJE_NOTA_NUMERICA = 'La nota debe ser numérica.';
+    public const MENSAJE_NOTA_RANGO = 'La nota está fuera del rango permitido.';
+    public const MENSAJE_NOTA_NO_REQUERIDA = 'Esta capacitación no requiere evaluación.';
+    public const MENSAJE_NOTA_MINIMA = 'La nota no alcanza la mínima aprobatoria.';
+    public const NOTA_MIN = 0.0;
+    public const NOTA_MAX = 5.0;
 
     private const SQLSTATE_INTEGRIDAD = '23000';
     private const ASISTENCIAS_VALIDAS = ['ASISTIO', 'TARDE'];
@@ -36,6 +43,7 @@ class CumplimientoService
             'resultado' => 'required|in:' . self::RESULTADO_APROBADO,
             'horas_efectivas' => 'required|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
+            'nota_evaluacion' => 'nullable',
         ];
     }
 
@@ -48,6 +56,7 @@ class CumplimientoService
             'resultado' => 'required|in:' . self::RESULTADO_APROBADO,
             'horas_efectivas' => 'required|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
+            'notas' => 'nullable',
         ];
     }
 
@@ -58,6 +67,15 @@ class CumplimientoService
             'resultado' => 'nullable|in:' . self::RESULTADO_APROBADO,
             'horas_efectivas' => 'required|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
+            'nota_evaluacion' => 'nullable',
+        ];
+    }
+
+    public function reglasEvaluaciones(): array
+    {
+        return [
+            'sesion_id' => 'required|integer|min:1',
+            'items' => 'required|array',
         ];
     }
 
@@ -74,6 +92,8 @@ class CumplimientoService
             'asignacion_id.required' => 'Debe indicar la asignación.',
             'sesion_id.required' => 'Debe indicar la sesión.',
             'asignacion_ids.required' => 'Debe seleccionar al menos un trabajador.',
+            'items.required' => 'Debe indicar las evaluaciones.',
+            'nota_evaluacion.required' => self::MENSAJE_NOTA_OBLIGATORIA,
         ];
     }
 
@@ -150,6 +170,10 @@ class CumplimientoService
     {
         unset($datos['fecha_vencimiento']);
         $campos = $this->exigirCampos($datos, false);
+        $campos['nota_evaluacion'] = array_key_exists('nota_evaluacion', $datos)
+            ? $datos['nota_evaluacion']
+            : null;
+        $campos['nota_enviada'] = array_key_exists('nota_evaluacion', $datos);
         $this->completarUno($campos, $usuarioId);
 
         $fila = $this->repo->buscarPorAsignacion((int)$campos['asignacion_id']);
@@ -174,9 +198,22 @@ class CumplimientoService
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
         $observaciones = nullable_trimmed_string($datos['observaciones'] ?? null);
         $ids = $this->normalizarIds($datos['asignacion_ids'] ?? []);
+        $notas = $this->mapaNotas($datos['notas'] ?? []);
+        $requiereEval = (int)($sesion['capacitacion_evaluacion'] ?? 0) === 1;
+        $minima = round((float)($sesion['capacitacion_nota_minima'] ?? 0), 2);
 
         if ($ids === []) {
             throw new HttpException('Debe seleccionar al menos un trabajador.', 422);
+        }
+        if ($requiereEval) {
+            foreach ($ids as $asignacionId) {
+                if (!array_key_exists($asignacionId, $notas)) {
+                    throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
+                }
+                $this->exigirNota($notas[$asignacionId]);
+            }
+        } elseif ($notas !== []) {
+            throw new HttpException(self::MENSAJE_NOTA_NO_REQUERIDA, 422);
         }
 
         $pendientes = [];
@@ -211,17 +248,31 @@ class CumplimientoService
                 $horas,
                 $observaciones,
                 $usuarioId,
+                $notas,
+                $requiereEval,
+                $minima,
                 &$completados
             ): void {
                 foreach ($pendientes as $asignacionId) {
+                    $nota = $requiereEval ? $this->exigirNota($notas[$asignacionId] ?? null) : null;
+                    $resultadoFila = $resultado;
+                    if ($requiereEval && $nota < $minima) {
+                        $existente = $this->repo->buscarPorAsignacion($asignacionId);
+                        $actual = strtoupper((string)($existente['resultado'] ?? ''));
+                        $resultadoFila = $actual !== '' && $actual !== self::RESULTADO_APROBADO
+                            ? $actual
+                            : 'ASISTIO';
+                    }
                     $this->persistir(
                         $sesionId,
                         $asignacionId,
                         $fecha,
-                        $resultado,
+                        $resultadoFila,
                         $horas,
                         $observaciones,
-                        $usuarioId
+                        $usuarioId,
+                        $nota,
+                        $requiereEval
                     );
                     $fila = $this->repo->buscarPorAsignacion($asignacionId);
                     if ($fila !== null) {
@@ -260,7 +311,21 @@ class CumplimientoService
 
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
-        $resultado = $this->exigirResultado($datos['resultado'] ?? self::RESULTADO_APROBADO);
+        $resultadoEnviado = array_key_exists('resultado', $datos)
+            && $datos['resultado'] !== null
+            && $datos['resultado'] !== '';
+        $resultado = $resultadoEnviado
+            ? $this->exigirResultado($datos['resultado'])
+            : strtoupper((string)($actual['resultado'] ?? ''));
+        $notaEnviada = array_key_exists('nota_evaluacion', $datos);
+        $meta = $this->metaEvaluacion($actual, (int)($actual['sesion_id'] ?? 0));
+        $nota = $this->resolverNota(
+            $datos['nota_evaluacion'] ?? null,
+            $notaEnviada,
+            $meta,
+            $actual['nota_evaluacion'] ?? null
+        );
+        $this->exigirNotaParaAprobado($resultado, $nota, $meta);
         $this->exigirEvidenciaParaAprobado(
             $resultado,
             $actual,
@@ -272,13 +337,16 @@ class CumplimientoService
 
         $campos = [
             'fecha_realizacion' => $fecha,
-            'resultado' => $resultado,
+            'resultado' => $resultado !== '' ? $resultado : ($actual['resultado'] ?? null),
             'horas_efectivas' => $horas,
             'fecha_vencimiento' => $vence,
             'registrado_por_usuario_id_ext' => $usuarioId,
         ];
         if ($observaciones !== null || array_key_exists('observaciones', $datos)) {
             $campos['observaciones'] = $observaciones;
+        }
+        if ($notaEnviada || ($meta['requiere'] && $nota !== null)) {
+            $campos['nota_evaluacion'] = $nota;
         }
 
         $this->repo->actualizar($id, $campos);
@@ -294,6 +362,94 @@ class CumplimientoService
         }
 
         return "{$n} cumplimientos registrados.";
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     * @return array{procesados:int,items:list<array<string,mixed>>}
+     */
+    public function registrarEvaluaciones(array $datos, ?int $usuarioId): array
+    {
+        $sesionId = (int)($datos['sesion_id'] ?? 0);
+        $sesion = $this->exigirSesion($sesionId);
+        $requiere = (int)($sesion['capacitacion_evaluacion'] ?? 0) === 1;
+        if (!$requiere) {
+            throw new HttpException(self::MENSAJE_NOTA_NO_REQUERIDA, 422);
+        }
+
+        $items = is_array($datos['items'] ?? null) ? $datos['items'] : [];
+        if ($items === []) {
+            throw new HttpException('Debe indicar las evaluaciones.', 422);
+        }
+
+        $preparados = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $asignacionId = (int)($item['asignacion_id'] ?? 0);
+            if ($asignacionId < 1) {
+                throw new HttpException('Debe indicar la asignación.', 422);
+            }
+            $this->validarParticipante($sesionId, $asignacionId, false);
+            $nota = $this->exigirNota($item['nota'] ?? $item['nota_evaluacion'] ?? null);
+            $existente = $this->repo->buscarPorAsignacion($asignacionId);
+            if ($existente === null) {
+                throw new HttpException(
+                    'Solo se puede registrar la evaluación si el trabajador asistió o llegó tarde.',
+                    422
+                );
+            }
+            $resultado = strtoupper((string)($existente['resultado'] ?? ''));
+            $minima = round((float)($sesion['capacitacion_nota_minima'] ?? 0), 2);
+            if ($resultado === self::RESULTADO_APROBADO && $nota < $minima) {
+                throw new HttpException(self::MENSAJE_NOTA_MINIMA, 422);
+            }
+            $preparados[] = [
+                'cumplimiento_id' => (int)$existente['cumplimiento_id'],
+                'asignacion_id' => $asignacionId,
+                'nota' => $nota,
+            ];
+        }
+
+        if ($preparados === []) {
+            throw new HttpException('Debe indicar las evaluaciones.', 422);
+        }
+
+        $filas = [];
+        try {
+            $this->repo->transaccion(function () use ($preparados, $usuarioId, &$filas): void {
+                foreach ($preparados as $item) {
+                    $this->repo->actualizar((int)$item['cumplimiento_id'], [
+                        'nota_evaluacion' => $item['nota'],
+                        'registrado_por_usuario_id_ext' => $usuarioId,
+                    ]);
+                    $fila = $this->repo->buscarPorAsignacion((int)$item['asignacion_id']);
+                    if ($fila !== null) {
+                        $filas[] = $fila;
+                    }
+                }
+            });
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (PDOException $e) {
+            throw new HttpException('No fue posible registrar la evaluación.', 500);
+        }
+
+        return [
+            'procesados' => count($preparados),
+            'items' => $this->normalizarConSoportes($filas),
+        ];
+    }
+
+    public function mensajeEvaluaciones(array $resultado): string
+    {
+        $n = (int)$resultado['procesados'];
+        if ($n === 1) {
+            return '1 evaluación registrada.';
+        }
+
+        return "{$n} evaluaciones registradas.";
     }
 
     /**
@@ -328,6 +484,8 @@ class CumplimientoService
     {
         $this->exigirSesion((int)$campos['sesion_id']);
         $this->validarParticipante((int)$campos['sesion_id'], (int)$campos['asignacion_id'], true);
+        $notaEnviada = !empty($campos['nota_enviada']);
+        $notaBruta = $campos['nota_evaluacion'] ?? null;
         $this->persistir(
             (int)$campos['sesion_id'],
             (int)$campos['asignacion_id'],
@@ -335,7 +493,9 @@ class CumplimientoService
             $campos['resultado'],
             $campos['horas_efectivas'],
             $campos['observaciones'],
-            $usuarioId
+            $usuarioId,
+            $notaEnviada || $notaBruta !== null ? $notaBruta : null,
+            $notaEnviada || $notaBruta !== null
         );
     }
 
@@ -346,9 +506,19 @@ class CumplimientoService
         string $resultado,
         float $horas,
         ?string $observaciones,
-        ?int $usuarioId
+        ?int $usuarioId,
+        mixed $notaBruta = null,
+        bool $escribirNota = false
     ): void {
         $existente = $this->repo->buscarPorAsignacion($asignacionId);
+        $meta = $this->metaEvaluacion($existente, $sesionId);
+        $nota = $this->resolverNota(
+            $notaBruta,
+            $escribirNota,
+            $meta,
+            $existente['nota_evaluacion'] ?? null
+        );
+        $this->exigirNotaParaAprobado($resultado, $nota, $meta);
         $this->exigirEvidenciaParaAprobado($resultado, $existente, $sesionId, $asignacionId);
         $vence = $this->vencimiento->fechaVencimientoDeAsignacion($asignacionId, $fecha);
         $campos = [
@@ -360,6 +530,9 @@ class CumplimientoService
             'observaciones' => $observaciones,
             'registrado_por_usuario_id_ext' => $usuarioId,
         ];
+        if ($escribirNota || ($meta['requiere'] && $nota !== null)) {
+            $campos['nota_evaluacion'] = $nota;
+        }
 
         if ($existente === null) {
             $campos['asignacion_id'] = $asignacionId;
@@ -445,7 +618,11 @@ class CumplimientoService
         }
 
         $capId = (int)($part['capacitacion_id'] ?? $existente['capacitacion_id'] ?? 0);
-        $requiere = $capId > 0 && $this->soportes->requiereCertificadoPorCapacitacion($capId);
+        $requiereCert = $capId > 0 && $this->soportes->requiereCertificadoPorCapacitacion($capId);
+        $meta = $this->metaEvaluacion($existente, $sesionId);
+        $nota = $existente !== null && $existente['nota_evaluacion'] !== null
+            ? (float)$existente['nota_evaluacion']
+            : null;
         $cumplimientoId = $existente !== null ? (int)$existente['cumplimiento_id'] : null;
         $soportesCount = $cumplimientoId !== null ? $this->soportes->contar($cumplimientoId) : 0;
 
@@ -465,8 +642,12 @@ class CumplimientoService
             'etiqueta_vencimiento' => $vence === null ? 'Sin vencimiento' : $vence,
             'puede_registrar' => $puede,
             'motivo' => $motivo,
-            'requiere_certificado' => $requiere,
+            'requiere_certificado' => $requiereCert,
             'soportes_count' => $soportesCount,
+            'requiere_evaluacion' => $meta['requiere'],
+            'nota_minima' => $meta['minima'],
+            'nota_evaluacion' => $nota,
+            'evaluacion_aprobada' => $this->evaluacionAprobada($nota, $meta['requiere'], $meta['minima']),
         ];
     }
 
@@ -539,6 +720,108 @@ class CumplimientoService
         }
 
         return round($horas, 2);
+    }
+
+    private function exigirNota(mixed $valor): float
+    {
+        if ($valor === null || $valor === '') {
+            throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
+        }
+        if (!is_numeric($valor)) {
+            throw new HttpException(self::MENSAJE_NOTA_NUMERICA, 422);
+        }
+        $nota = round((float)$valor, 2);
+        if ($nota < self::NOTA_MIN || $nota > self::NOTA_MAX) {
+            throw new HttpException(self::MENSAJE_NOTA_RANGO, 422);
+        }
+
+        return $nota;
+    }
+
+    /**
+     * @param array{requiere:bool,minima:float} $meta
+     */
+    private function resolverNota(mixed $valor, bool $enviada, array $meta, mixed $actual): ?float
+    {
+        if (!$meta['requiere']) {
+            if ($enviada && $valor !== null && $valor !== '') {
+                throw new HttpException(self::MENSAJE_NOTA_NO_REQUERIDA, 422);
+            }
+
+            return $actual !== null && $actual !== '' ? (float)$actual : null;
+        }
+
+        if ($enviada) {
+            return $this->exigirNota($valor);
+        }
+
+        return $actual !== null && $actual !== '' ? round((float)$actual, 2) : null;
+    }
+
+    /**
+     * @param array{requiere:bool,minima:float} $meta
+     */
+    private function exigirNotaParaAprobado(string $resultado, ?float $nota, array $meta): void
+    {
+        if ($resultado !== self::RESULTADO_APROBADO || !$meta['requiere']) {
+            return;
+        }
+        if ($nota === null) {
+            throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
+        }
+        if ($nota < $meta['minima']) {
+            throw new HttpException(self::MENSAJE_NOTA_MINIMA, 422);
+        }
+    }
+
+    /**
+     * @return array{requiere:bool,minima:float}
+     */
+    private function metaEvaluacion(?array $existente, int $sesionId): array
+    {
+        if ($existente !== null && array_key_exists('capacitacion_evaluacion', $existente)) {
+            return [
+                'requiere' => (int)($existente['capacitacion_evaluacion'] ?? 0) === 1,
+                'minima' => round((float)($existente['capacitacion_nota_minima'] ?? 0), 2),
+            ];
+        }
+
+        $sesion = $sesionId > 0 ? $this->repo->sesionPorId($sesionId) : null;
+
+        return [
+            'requiere' => (int)($sesion['capacitacion_evaluacion'] ?? 0) === 1,
+            'minima' => round((float)($sesion['capacitacion_nota_minima'] ?? 0), 2),
+        ];
+    }
+
+    private function evaluacionAprobada(?float $nota, bool $requiere, float $minima): ?bool
+    {
+        if (!$requiere || $nota === null) {
+            return null;
+        }
+
+        return $nota >= $minima;
+    }
+
+    /**
+     * @return array<int,mixed>
+     */
+    private function mapaNotas(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $mapa = [];
+        foreach ($raw as $clave => $valor) {
+            $id = (int)$clave;
+            if ($id < 1) {
+                continue;
+            }
+            $mapa[$id] = $valor;
+        }
+
+        return $mapa;
     }
 
     /**
@@ -622,6 +905,16 @@ class CumplimientoService
             'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? null,
             'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? null,
             'requiere_certificado' => (int)($fila['capacitacion_certificado'] ?? 0) === 1,
+            'requiere_evaluacion' => (int)($fila['capacitacion_evaluacion'] ?? 0) === 1,
+            'nota_minima' => isset($fila['capacitacion_nota_minima'])
+                ? round((float)$fila['capacitacion_nota_minima'], 2)
+                : 0.0,
+            'nota_evaluacion' => $fila['nota_evaluacion'] !== null ? (float)$fila['nota_evaluacion'] : null,
+            'evaluacion_aprobada' => $this->evaluacionAprobada(
+                $fila['nota_evaluacion'] !== null ? (float)$fila['nota_evaluacion'] : null,
+                (int)($fila['capacitacion_evaluacion'] ?? 0) === 1,
+                round((float)($fila['capacitacion_nota_minima'] ?? 0), 2)
+            ),
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'resultado' => $fila['resultado'] ?? null,
             'horas_efectivas' => $fila['horas_efectivas'] !== null ? (float)$fila['horas_efectivas'] : null,

@@ -34,6 +34,14 @@ function etiquetaResultado(valor: string | null): string {
   return valor || "—";
 }
 
+function etiquetaNota(item: Cumplimiento): string {
+  if (item.nota_evaluacion == null) return "—";
+  const n = item.nota_evaluacion.toFixed(2).replace(".", ",");
+  if (item.evaluacion_aprobada === true) return `${n} · Aprobado`;
+  if (item.evaluacion_aprobada === false) return `${n} · No aprobado`;
+  return n;
+}
+
 const ETIQUETAS_VIGENCIA: Record<string, string> = {
   PENDIENTE: "Pendiente",
   COMPLETADA: "Completado",
@@ -150,6 +158,8 @@ function Contenido() {
         resultado: datos.resultado,
         horas_efectivas: Number(datos.horas_efectivas),
         observaciones: datos.observaciones.trim() || null,
+        nota_evaluacion:
+          datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
       });
       setEnviando(false);
       if (!respuesta.success) {
@@ -191,6 +201,8 @@ function Contenido() {
       resultado: datos.resultado,
       horas_efectivas: Number(datos.horas_efectivas),
       observaciones: datos.observaciones.trim() || null,
+      nota_evaluacion:
+        datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
     });
     setEnviando(false);
     if (!respuesta.success) {
@@ -254,6 +266,7 @@ function Contenido() {
           { clave: "fecha", etiqueta: "Realización" },
           { clave: "resultado", etiqueta: "Resultado" },
           { clave: "horas", etiqueta: "Horas" },
+          { clave: "nota", etiqueta: "Nota" },
           { clave: "vence", etiqueta: "Vencimiento" },
           { clave: "estado", etiqueta: "Estado" },
           { clave: "evidencia", etiqueta: "Evidencia" },
@@ -270,6 +283,7 @@ function Contenido() {
             {etiquetaResultado(item.resultado)}
           </Badge>,
           item.horas_efectivas ?? "—",
+          etiquetaNota(item),
           item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : "Sin vencimiento",
           <Badge key="v" tono={tonoVigencia(item)}>
             {etiquetaVigencia(item)}

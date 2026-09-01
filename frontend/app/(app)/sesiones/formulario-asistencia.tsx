@@ -13,6 +13,7 @@ import type {
   ParticipanteSesion,
   PreviewCumplimiento,
   ResultadoMasivoCumplimiento,
+  ResultadoEvaluaciones,
   ResumenAsistencia,
   SesionCronograma,
 } from "@/lib/tipos";
@@ -80,6 +81,8 @@ export function FormularioAsistencia({
   const [horasCump, setHorasCump] = useState("");
   const [previewCump, setPreviewCump] = useState<PreviewCumplimiento | null>(null);
   const [guardandoCump, setGuardandoCump] = useState(false);
+  const [notasEval, setNotasEval] = useState<Record<number, string>>({});
+  const [guardandoEval, setGuardandoEval] = useState(false);
 
   useEffect(() => {
     setFilas(filasDesde(sesion.participantes));
@@ -176,11 +179,28 @@ export function FormularioAsistencia({
   }
 
   const ausentesGuardados = sesion.participantes.filter((p) => p.estado_asistencia === "AUSENTE");
+  const evaluables = sesion.participantes.filter(
+    (p) => p.estado_asistencia === "ASISTIO" || p.estado_asistencia === "TARDE",
+  );
   const elegiblesCump = sesion.participantes.filter(
     (p) =>
       (p.estado_asistencia === "ASISTIO" || p.estado_asistencia === "TARDE") &&
       p.cumplimiento_resultado !== "APROBADO",
   );
+
+  useEffect(() => {
+    setNotasEval((prev) => {
+      const siguiente: Record<number, string> = { ...prev };
+      for (const p of evaluables) {
+        if (siguiente[p.asignacion_id] === undefined) {
+          siguiente[p.asignacion_id] =
+            p.nota_evaluacion != null ? String(p.nota_evaluacion) : "";
+        }
+      }
+      return siguiente;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion.participantes]);
 
   useEffect(() => {
     setSeleccionCump((prev) => {
@@ -226,6 +246,27 @@ export function FormularioAsistencia({
       setError("Las horas efectivas deben ser un número mayor que cero.");
       return;
     }
+    let notasPayload: Record<number, number> | undefined;
+    if (sesion.requiere_evaluacion) {
+      notasPayload = {};
+      for (const id of seleccionCump) {
+        const texto = (notasEval[id] ?? "").trim();
+        if (texto === "") {
+          setError("La nota es obligatoria.");
+          return;
+        }
+        const n = Number(texto);
+        if (Number.isNaN(n)) {
+          setError("La nota debe ser numérica.");
+          return;
+        }
+        if (n < 0 || n > 5) {
+          setError("La nota está fuera del rango permitido.");
+          return;
+        }
+        notasPayload[id] = n;
+      }
+    }
     if (!window.confirm(`¿Registrar para ${seleccionCump.length} trabajadores?`)) {
       return;
     }
@@ -237,6 +278,7 @@ export function FormularioAsistencia({
       fecha_realizacion: fechaCump,
       resultado: "APROBADO",
       horas_efectivas: Number(horasCump),
+      notas: notasPayload,
     });
     setGuardandoCump(false);
     if (!respuesta.success) {
@@ -244,6 +286,50 @@ export function FormularioAsistencia({
       return;
     }
 
+    const recarga = await apiGet<DetalleSesion>(`/api/sesiones/${sesion.sesion_id}`);
+    if (recarga.success && recarga.data) {
+      onGuardado(recarga.data, respuesta.message);
+    } else {
+      onGuardado(sesion, respuesta.message);
+    }
+  }
+
+  async function guardarEvaluaciones(evento: FormEvent) {
+    evento.preventDefault();
+    setError(null);
+    if (evaluables.length === 0) {
+      setError("No hay asistentes para evaluar.");
+      return;
+    }
+    const items: { asignacion_id: number; nota: number }[] = [];
+    for (const p of evaluables) {
+      const texto = (notasEval[p.asignacion_id] ?? "").trim();
+      if (texto === "") {
+        setError("La nota es obligatoria.");
+        return;
+      }
+      const n = Number(texto);
+      if (Number.isNaN(n)) {
+        setError("La nota debe ser numérica.");
+        return;
+      }
+      if (n < 0 || n > 5) {
+        setError("La nota está fuera del rango permitido.");
+        return;
+      }
+      items.push({ asignacion_id: p.asignacion_id, nota: n });
+    }
+
+    setGuardandoEval(true);
+    const respuesta = await apiPost<ResultadoEvaluaciones>("/api/cumplimientos/evaluaciones", {
+      sesion_id: sesion.sesion_id,
+      items,
+    });
+    setGuardandoEval(false);
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible registrar la evaluación.");
+      return;
+    }
     const recarga = await apiGet<DetalleSesion>(`/api/sesiones/${sesion.sesion_id}`);
     if (recarga.success && recarga.data) {
       onGuardado(recarga.data, respuesta.message);
@@ -417,6 +503,55 @@ export function FormularioAsistencia({
               </Button>
             </form>
           ) : null}
+        </div>
+      ) : null}
+
+      {puede("cumplimientos.crear") && sesion.requiere_evaluacion && evaluables.length > 0 && !cerrada ? (
+        <div className="rounded-lg border border-slate-200 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registro de evaluaciones</h3>
+          <p className="mb-3 text-sm text-slate-600">
+            Nota mínima aprobatoria: {(sesion.nota_minima ?? 0).toFixed(2).replace(".", ",")} (escala 0 a 5).
+            Solo asistentes y llegadas tarde.
+          </p>
+          <form className="space-y-3" onSubmit={(e) => void guardarEvaluaciones(e)}>
+            <Table
+              columnas={[
+                { clave: "persona", etiqueta: "Trabajador" },
+                { clave: "nota", etiqueta: "Nota" },
+                { clave: "res", etiqueta: "Resultado" },
+              ]}
+              filas={evaluables.map((p) => {
+                const texto = notasEval[p.asignacion_id] ?? "";
+                const n = texto.trim() === "" ? null : Number(texto);
+                const minima = sesion.nota_minima ?? 0;
+                const ok = n !== null && !Number.isNaN(n) ? n >= minima : null;
+                return [
+                  <span key="n">
+                    <span className="font-medium">{p.persona_nombre}</span>
+                    {p.numero_documento ? (
+                      <span className="ml-1 text-slate-500">{p.numero_documento}</span>
+                    ) : null}
+                  </span>,
+                  <input
+                    key="i"
+                    type="number"
+                    min={0}
+                    max={5}
+                    step="0.01"
+                    className={inputClass}
+                    value={texto}
+                    onChange={(e) =>
+                      setNotasEval((prev) => ({ ...prev, [p.asignacion_id]: e.target.value }))
+                    }
+                  />,
+                  ok === null ? "—" : ok ? "Aprobado" : "No aprobado",
+                ];
+              })}
+            />
+            <Button type="submit" disabled={guardandoEval}>
+              {guardandoEval ? "Guardando…" : "Guardar evaluaciones"}
+            </Button>
+          </form>
         </div>
       ) : null}
 
