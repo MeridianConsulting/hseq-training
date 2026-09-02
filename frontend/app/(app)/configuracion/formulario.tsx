@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
+import { etiquetaCampoCatalogo } from "@/lib/catalogos";
 import type { ItemCatalogo } from "@/lib/tipos";
 
 export function FormularioCatalogo({
@@ -46,7 +47,7 @@ export function FormularioCatalogo({
       }}
     >
       {campos.map((campo) => (
-        <Field key={campo} etiqueta={campo.replaceAll("_", " ")}>
+        <Field key={campo} etiqueta={etiquetaCampoCatalogo(campo)}>
           {campo === "unidad" ? (
             <select
               className={inputClass}

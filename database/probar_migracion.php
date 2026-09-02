@@ -531,33 +531,81 @@ $asigMotor = $asignaciones->buscarPorPersonaYCapacitacion((int)$alta['persona_id
 ok($asigMotor !== null, 'El motor asigna la capacitación de la matriz migrada al alta posterior');
 ok(($asigMotor['origen'] ?? '') === 'AUTOMATICA', 'El alta posterior recibe origen AUTOMATICA');
 
-echo "\n== Corrida informativa contra el Excel Frontera ==\n";
+echo "\n== Sin columna de fecha de ingreso usa el 1 de enero del programa ==\n";
+$rutaSinFecha = $tmpDir . DIRECTORY_SEPARATOR . 'fixture_mig_sin_fecha.xlsx';
+escribirFixture(
+    $rutaSinFecha,
+    capsPrueba(91, 1, true),
+    [[
+        'documento' => '88190301',
+        'nombre' => 'Sin Fecha Ingreso Prueba',
+        'correo' => 'sinfecha@hseq.test',
+        'cargo' => $cargoNombre,
+        'estados' => ['N/A'],
+    ]],
+    $cargoNombre,
+    $proyecto,
+    $procesoNombre,
+    false
+);
+$jobSinFecha = $migracion->validar(archivoDesdeRuta($rutaSinFecha, 'fixture_mig_sin_fecha.xlsx'), 2024, $actor);
+ok((int)$jobSinFecha['resumen']['trabajadores']['validos'] === 1, 'Sin fecha de ingreso el trabajador sigue siendo válido');
+ok((int)$jobSinFecha['resumen']['advertencias'] >= 1, 'Advertencia de fecha de ingreso por defecto');
+$incSinFecha = $migracion->inconsistencias((int)$jobSinFecha['migracion_id'], 1, 50);
+$errFechaCol = 0;
+$advFechaCol = 0;
+foreach ($incSinFecha['items'] as $item) {
+    if (($item['campo'] ?? '') !== 'fecha_ingreso') {
+        continue;
+    }
+    if (($item['severidad'] ?? '') === 'Error') {
+        $errFechaCol++;
+    }
+    if (($item['severidad'] ?? '') === 'Advertencia') {
+        $advFechaCol++;
+    }
+}
+ok($errFechaCol === 0, 'Sin columna de ingreso no genera error por fila');
+ok($advFechaCol >= 1, 'Hay advertencia de archivo por fecha ausente');
+$confSinFecha = $migracion->confirmar((int)$jobSinFecha['migracion_id'], $actor);
+ok(($confSinFecha['estado'] ?? '') === 'CONFIRMADA', 'Confirma migración sin columna de ingreso');
+$contratoSinFecha = $personalDb->fetch(
+    "SELECT ct.fecha_inicio FROM {$contratosT} ct
+     INNER JOIN {$personasT} p ON p.persona_id = ct.persona_id
+     WHERE p.numero_documento = ? LIMIT 1",
+    ['88190301']
+);
+ok(($contratoSinFecha['fecha_inicio'] ?? '') === '2024-01-01', 'Fecha por defecto = 1 de enero del año del programa');
+
+echo "\n== Corrida contra el Excel Frontera ==\n";
 $frontera = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR
     . '02_HSEQ_PRG_10_Capacitacion_entrenamiento_Frontera.xlsx';
 if (is_file($frontera)) {
-    try {
-        $jobF = $migracion->validar(archivoDesdeRuta($frontera, 'frontera.xlsx'), 2023, $actor);
-        $errFecha = 0;
-        $page = 1;
-        $total = 1;
-        do {
-            $lote = $migracion->inconsistencias((int)$jobF['migracion_id'], $page, 100);
-            $total = (int)($lote['total'] ?? 0);
-            foreach ($lote['items'] as $item) {
-                if (($item['campo'] ?? '') === 'fecha_ingreso' && ($item['severidad'] ?? '') === 'Error') {
-                    $errFecha++;
-                }
+    $jobF = $migracion->validar(archivoDesdeRuta($frontera, 'frontera.xlsx'), 2023, $actor);
+    $errFecha = 0;
+    $page = 1;
+    $total = 1;
+    do {
+        $lote = $migracion->inconsistencias((int)$jobF['migracion_id'], $page, 100);
+        $total = (int)($lote['total'] ?? 0);
+        foreach ($lote['items'] as $item) {
+            if (($item['campo'] ?? '') === 'fecha_ingreso' && ($item['severidad'] ?? '') === 'Error') {
+                $errFecha++;
             }
-            $page++;
-        } while (($page - 1) * 100 < $total);
-        echo 'INFORMATIVO: Frontera trabajadores detectados=' . (int)$jobF['resumen']['trabajadores']['detectados']
-            . ' errores_fecha_ingreso=' . $errFecha
-            . ' validos=' . (int)$jobF['resumen']['trabajadores']['validos'] . "\n";
-        if (($jobF['estado'] ?? '') === 'VALIDADA') {
-            $migracion->cancelar((int)$jobF['migracion_id']);
         }
-    } catch (Throwable $e) {
-        echo 'INFORMATIVO: no se pudo validar Frontera (' . $e->getMessage() . ").\n";
+        $page++;
+    } while (($page - 1) * 100 < $total);
+    echo 'Frontera trabajadores detectados=' . (int)$jobF['resumen']['trabajadores']['detectados']
+        . ' validos=' . (int)$jobF['resumen']['trabajadores']['validos']
+        . ' matriz_validos=' . (int)$jobF['resumen']['matriz']['validos']
+        . ' cumplimientos_validos=' . (int)$jobF['resumen']['cumplimientos']['validos']
+        . ' errores_fecha_ingreso=' . $errFecha . "\n";
+    ok((int)$jobF['resumen']['trabajadores']['validos'] > 0, 'Frontera tiene trabajadores válidos');
+    ok($errFecha === 0, 'Frontera no reporta error de fecha de ingreso');
+    ok((int)$jobF['resumen']['matriz']['validos'] > 0, 'Frontera matriz con filas válidas');
+    ok((int)$jobF['resumen']['cumplimientos']['validos'] > 0, 'Frontera cumplimientos E válidos');
+    if (($jobF['estado'] ?? '') === 'VALIDADA') {
+        $migracion->cancelar((int)$jobF['migracion_id']);
     }
 } else {
     echo "INFORMATIVO: no está el xlsx Frontera en docs/; se omite.\n";
@@ -571,5 +619,6 @@ limpiarMigracion($db, $personalDb, $personasT, $contratosT, $codigos, $prefijo);
 @unlink($rutaCan);
 @unlink($rutaRoll);
 @unlink($tmpRep);
+@unlink($rutaSinFecha);
 
 echo "\nTodas las pruebas de migración OK.\n";

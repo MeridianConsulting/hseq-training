@@ -20,6 +20,8 @@ class MigracionService
 {
     public const MSG_ARCHIVO = 'No fue posible procesar el archivo. Verifique que corresponde a la matriz HSEQ requerida.';
     public const ACCION_AUDITORIA = 'migracion_inicial';
+    private const ID_TEMPORAL_PROCESO = 800000;
+    private const ID_TEMPORAL_CARGO = 900000;
 
     /** @var bool Solo pruebas: el siguiente confirmar() lanza tras insertar. */
     public static bool $fallarImportacion = false;
@@ -335,6 +337,9 @@ class MigracionService
         $trabajadores = is_array($leido['trabajadores'] ?? null) ? $leido['trabajadores'] : [];
         $personasOk = 0;
         $personasExistentes = 0;
+        $cargosNuevos = [];
+        $procesosNuevos = [];
+        $advirtioFecha = false;
         $docsExistentesBd = $this->personal->repositorio()->documentosExistentes(
             array_values(array_filter(array_map(
                 fn ($t) => $this->personal->normalizarDocumento($t['documento'] ?? ''),
@@ -346,17 +351,22 @@ class MigracionService
             $fila = (int)($t['fila'] ?? 0);
             $doc = $this->personal->normalizarDocumento($t['documento'] ?? '');
             $tieneIngreso = !empty($t['tiene_columna_ingreso']);
+            $fechaIngreso = $t['fecha_ingreso'] ?? '';
             if (!$tieneIngreso) {
-                $agregar(
-                    'SEGUIMIENTO_PERSONAL',
-                    $fila,
-                    'trabajador',
-                    $doc !== '' ? $doc : (string)($t['nombre'] ?? ''),
-                    'fecha_ingreso',
-                    '',
-                    'Campo obligatorio vacío.'
-                );
-                continue;
+                if (!$advirtioFecha) {
+                    $agregar(
+                        'SEGUIMIENTO_PERSONAL',
+                        0,
+                        'archivo',
+                        '',
+                        'fecha_ingreso',
+                        '',
+                        'El archivo no incluye columna de fecha de ingreso. Se usará el 1 de enero del año del programa.',
+                        'Advertencia'
+                    );
+                    $advirtioFecha = true;
+                }
+                $fechaIngreso = sprintf('%d-01-01', $anio);
             }
             if ($doc === '') {
                 $agregar('SEGUIMIENTO_PERSONAL', $fila, 'trabajador', (string)($t['nombre'] ?? ''), 'documento', '', 'Campo obligatorio vacío.');
@@ -367,12 +377,26 @@ class MigracionService
                 continue;
             }
             $docsEnArchivo[$doc] = $fila;
+            $cargoNom = trim((string)($t['cargo'] ?? ''));
+            $cargoId = $this->resolverCargo($cargoNom, $mapaCargos, $cargosNuevos);
+            if ($cargoId === null) {
+                $agregar(
+                    'SEGUIMIENTO_PERSONAL',
+                    $fila,
+                    'trabajador',
+                    $doc,
+                    'cargo',
+                    $cargoNom,
+                    $cargoNom === '' ? 'El cargo es obligatorio.' : 'El cargo no existe en el catálogo.'
+                );
+                continue;
+            }
             $entrada = [
                 'documento' => $doc,
                 'nombre' => $t['nombre'] ?? '',
                 'correo' => $t['correo'] ?? '',
-                'cargo' => $t['cargo'] ?? '',
-                'fecha_ingreso' => $t['fecha_ingreso'] ?? '',
+                'cargo_id' => $cargoId,
+                'fecha_ingreso' => $fechaIngreso,
                 'proyecto' => $t['area'] ?? '',
             ];
             $prep = $this->personal->prepararEntrada($entrada, null, $docsExistentesBd, false, $mapaCargos);
@@ -411,9 +435,9 @@ class MigracionService
             $fila = (int)($m['fila'] ?? 0);
             $codigo = (string)($m['codigo'] ?? '');
             $cargoNom = (string)($m['cargo'] ?? '');
-            $cargoId = $mapaCargos['por_nombre'][$this->personal->repositorio()->claveCargo($cargoNom)] ?? null;
+            $cargoId = $this->resolverCargo($cargoNom, $mapaCargos, $cargosNuevos);
             if ($cargoId === null) {
-                $agregar('MATRIZ POR CARGO', $fila, 'matriz', $cargoNom, 'cargo', $cargoNom, 'El cargo no existe en el catálogo.');
+                $agregar('MATRIZ POR CARGO', $fila, 'matriz', $cargoNom, 'cargo', $cargoNom, 'El cargo es obligatorio.');
                 continue;
             }
             if (!isset($capsPorCodigo[$codigo])) {
@@ -423,11 +447,7 @@ class MigracionService
             $procesoNom = trim((string)($m['proceso'] ?? ''));
             $procesoId = null;
             if ($procesoNom !== '') {
-                $procesoId = $mapaProcesos[$this->clave($procesoNom)] ?? null;
-                if ($procesoId === null) {
-                    $agregar('MATRIZ POR CARGO', $fila, 'matriz', $cargoNom, 'proceso', $procesoNom, 'El proceso no existe en el catálogo.');
-                    continue;
-                }
+                $procesoId = $this->resolverProceso($procesoNom, $mapaProcesos, $procesosNuevos);
             }
             $ambito = $this->mapearAmbito((string)($m['proyecto'] ?? ''));
             $proyecto = trim((string)($m['proyecto'] ?? ''));
@@ -533,6 +553,8 @@ class MigracionService
                 'matriz' => $planMatriz,
                 'cumplimientos' => $planE,
                 'pendientes' => $planP,
+                'cargos_nuevos' => $cargosNuevos,
+                'procesos_nuevos' => $procesosNuevos,
             ],
         ];
 
@@ -556,6 +578,25 @@ class MigracionService
      */
     private function ejecutarPlan(array $plan): array
     {
+        $remapCargos = $this->materializarCargos(is_array($plan['cargos_nuevos'] ?? null) ? $plan['cargos_nuevos'] : []);
+        $remapProcesos = $this->materializarProcesos(is_array($plan['procesos_nuevos'] ?? null) ? $plan['procesos_nuevos'] : []);
+        foreach ($plan['trabajadores'] ?? [] as $idx => $item) {
+            $cargoId = (int)($item['datos']['cargo_id'] ?? 0);
+            if (isset($remapCargos[$cargoId])) {
+                $plan['trabajadores'][$idx]['datos']['cargo_id'] = $remapCargos[$cargoId];
+            }
+        }
+        foreach ($plan['matriz'] ?? [] as $idx => $item) {
+            $cargoId = (int)($item['cargo_id'] ?? 0);
+            if (isset($remapCargos[$cargoId])) {
+                $plan['matriz'][$idx]['cargo_id'] = $remapCargos[$cargoId];
+            }
+            $procesoId = (int)($item['proceso_id'] ?? 0);
+            if (isset($remapProcesos[$procesoId])) {
+                $plan['matriz'][$idx]['proceso_id'] = $remapProcesos[$procesoId];
+            }
+        }
+
         $capIds = [];
         $capsNuevas = 0;
         $capsExistentes = 0;
@@ -1115,6 +1156,230 @@ class MigracionService
         }
 
         return $n;
+    }
+
+    /**
+     * @param array{por_nombre:array<string,int>,por_id:array<int,string>} $mapaCargos
+     * @param list<array<string,mixed>> $cargosNuevos
+     */
+    private function resolverCargo(string $nombre, array &$mapaCargos, array &$cargosNuevos): ?int
+    {
+        $nombre = trim($nombre);
+        if ($nombre === '') {
+            return null;
+        }
+        $clave = $this->claveBusquedaCargo($nombre);
+        if (isset($mapaCargos['por_nombre'][$clave])) {
+            $id = (int)$mapaCargos['por_nombre'][$clave];
+            if ($id >= self::ID_TEMPORAL_CARGO) {
+                $candidato = $this->nombreCargoParaAlta($nombre);
+                foreach ($cargosNuevos as $i => $nuevo) {
+                    if ((int)($nuevo['id_temporal'] ?? 0) !== $id) {
+                        continue;
+                    }
+                    if (mb_strlen($candidato) > mb_strlen((string)($nuevo['nombre'] ?? ''))) {
+                        $cargosNuevos[$i]['nombre'] = $candidato;
+                    }
+                    break;
+                }
+            }
+
+            return $id;
+        }
+        $porTokens = $this->buscarCargoPorTokens($clave, $mapaCargos);
+        if ($porTokens !== null) {
+            $mapaCargos['por_nombre'][$clave] = $porTokens;
+
+            return $porTokens;
+        }
+        $idTemporal = self::ID_TEMPORAL_CARGO + count($cargosNuevos) + 1;
+        $nombreAlta = $this->nombreCargoParaAlta($nombre);
+        $cargosNuevos[] = [
+            'id_temporal' => $idTemporal,
+            'nombre' => $nombreAlta,
+            'clave' => $clave,
+        ];
+        $mapaCargos['por_nombre'][$clave] = $idTemporal;
+        $mapaCargos['por_id'][$idTemporal] = $nombreAlta;
+
+        return $idTemporal;
+    }
+
+    /**
+     * @param array<string,int> $mapaProcesos
+     * @param list<array<string,mixed>> $procesosNuevos
+     */
+    private function resolverProceso(string $nombre, array &$mapaProcesos, array &$procesosNuevos): int
+    {
+        $clave = $this->clave($nombre);
+        if (isset($mapaProcesos[$clave])) {
+            return (int)$mapaProcesos[$clave];
+        }
+        $idTemporal = self::ID_TEMPORAL_PROCESO + count($procesosNuevos) + 1;
+        $procesosNuevos[] = [
+            'id_temporal' => $idTemporal,
+            'nombre' => trim($nombre),
+            'clave' => $clave,
+        ];
+        $mapaProcesos[$clave] = $idTemporal;
+
+        return $idTemporal;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $cargosNuevos
+     * @return array<int,int>
+     */
+    private function materializarCargos(array $cargosNuevos): array
+    {
+        $remap = [];
+        $mapa = $this->personal->repositorio()->mapaCargos();
+        foreach ($cargosNuevos as $item) {
+            $temp = (int)($item['id_temporal'] ?? 0);
+            $nombre = trim((string)($item['nombre'] ?? ''));
+            $clave = (string)($item['clave'] ?? $this->claveBusquedaCargo($nombre));
+            if ($temp <= 0 || $nombre === '') {
+                continue;
+            }
+            $existente = $mapa['por_nombre'][$clave] ?? $this->buscarCargoPorTokens($clave, $mapa);
+            if ($existente !== null) {
+                $remap[$temp] = (int)$existente;
+                continue;
+            }
+            $id = $this->personal->repositorio()->insertarCargo($nombre);
+            $mapa['por_nombre'][$clave] = $id;
+            $mapa['por_id'][$id] = $nombre;
+            $remap[$temp] = $id;
+        }
+
+        return $remap;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $procesosNuevos
+     * @return array<int,int>
+     */
+    private function materializarProcesos(array $procesosNuevos): array
+    {
+        $remap = [];
+        $mapa = $this->mapaProcesos();
+        foreach ($procesosNuevos as $item) {
+            $temp = (int)($item['id_temporal'] ?? 0);
+            $nombre = trim((string)($item['nombre'] ?? ''));
+            $clave = (string)($item['clave'] ?? $this->clave($nombre));
+            if ($temp <= 0 || $nombre === '') {
+                continue;
+            }
+            if (isset($mapa[$clave])) {
+                $remap[$temp] = (int)$mapa[$clave];
+                continue;
+            }
+            $id = $this->repo->insertarProceso($nombre);
+            $mapa[$clave] = $id;
+            $remap[$temp] = $id;
+        }
+
+        return $remap;
+    }
+
+    private function claveBusquedaCargo(string $nombre): string
+    {
+        $sinTurno = preg_replace('/[_\s]+(day|night)\b/i', '', trim($nombre)) ?? $nombre;
+        $clave = $this->personal->repositorio()->claveCargo($sinTurno);
+
+        return $this->aliasCargo($clave);
+    }
+
+    private function aliasCargo(string $clave): string
+    {
+        $alias = [
+            'asistente d1' => 'ing company d1',
+            'asistente company d1' => 'ing company d1',
+            'asistente de company man d1' => 'ing company d1',
+            'asistente d2' => 'asistente company d2',
+            'asistente company d2' => 'asistente company d2',
+            'asistente de company man d2' => 'asistente company d2',
+            'asistente d3' => 'asistente de company man d3',
+            'asistente company d3' => 'asistente de company man d3',
+            'asistente de company man d3' => 'asistente de company man d3',
+            'gerente administrativa y financiera' => 'gerente admon y financiero',
+            'gerente admon y financiero' => 'gerente admon y financiero',
+            'especialista' => 'profesional especialista',
+        ];
+
+        return $alias[$clave] ?? $clave;
+    }
+
+    private function nombreCargoParaAlta(string $nombre): string
+    {
+        $limpio = trim(preg_replace('/\s+/', ' ', $nombre) ?? $nombre);
+        $sinTurno = preg_replace('/[_\s]+(day|night)\b/i', '', $limpio) ?? $limpio;
+        $sinTurno = trim(preg_replace('/\s+/', ' ', $sinTurno) ?? $sinTurno);
+        if (function_exists('mb_strtoupper')) {
+            return mb_strtoupper($sinTurno, 'UTF-8');
+        }
+
+        return strtoupper($sinTurno);
+    }
+
+    /**
+     * @param array{por_nombre:array<string,int>,por_id:array<int,string>} $mapaCargos
+     */
+    private function buscarCargoPorTokens(string $clave, array $mapaCargos): ?int
+    {
+        $tokens = $this->tokensCargo($clave);
+        if ($tokens === []) {
+            return null;
+        }
+        $candidatos = [];
+        foreach ($mapaCargos['por_nombre'] as $nombreClave => $id) {
+            if ($id >= self::ID_TEMPORAL_PROCESO) {
+                continue;
+            }
+            $dest = $this->tokensCargo((string)$nombreClave);
+            if ($this->tokensCubiertos($tokens, $dest)) {
+                $candidatos[(int)$id] = true;
+            }
+        }
+        if (count($candidatos) !== 1) {
+            return null;
+        }
+
+        return (int)array_key_first($candidatos);
+    }
+
+    /** @return list<string> */
+    private function tokensCargo(string $clave): array
+    {
+        $partes = preg_split('/\s+/', $clave) ?: [];
+        $stop = ['de', 'del', 'la', 'el', 'los', 'las', 'y', 'e', 'o', 'u', 'en', 'a', 'al', 'para', 'por'];
+        $out = [];
+        foreach ($partes as $parte) {
+            if ($parte === '' || in_array($parte, $stop, true)) {
+                continue;
+            }
+            $out[] = $parte;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<string> $buscados
+     * @param list<string> $destino
+     */
+    private function tokensCubiertos(array $buscados, array $destino): bool
+    {
+        if ($buscados === [] || $destino === []) {
+            return false;
+        }
+        foreach ($buscados as $token) {
+            if (!in_array($token, $destino, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function clave(string $texto): string

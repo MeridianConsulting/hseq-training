@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
+import { detalleItemCatalogo } from "@/lib/catalogos";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
 
@@ -204,7 +205,7 @@ function Contenido() {
         ]}
         filas={items.map((item) => [
           String(item.nombre ?? ""),
-          String(item.descripcion ?? item.unidad ?? "—"),
+          detalleItemCatalogo(item),
           item.activo === undefined ? (
             "—"
           ) : (

@@ -327,7 +327,7 @@ class MigracionPrg10Parser
                 if ($clave === '') {
                     continue;
                 }
-                if (in_array($clave, ['identificacion', 'no identificacion', 'documento', 'numero documento', 'n identificacion'], true)) {
+                if ($this->esEncabezadoDocumento($clave)) {
                     $cols['documento'] = $col;
                     $halloDoc = true;
                 } elseif (in_array($clave, ['nombre completo', 'nombre'], true) && $cols['nombre'] === 0) {
@@ -339,7 +339,7 @@ class MigracionPrg10Parser
                     $cols['cargo'] = $col;
                 } elseif ($clave === 'estado' && $cols['estado'] === 0) {
                     $cols['estado'] = $col;
-                } elseif (in_array($clave, ['fecha de ingreso', 'fecha ingreso'], true) && $cols['fecha_ingreso'] === 0) {
+                } elseif ($this->esEncabezadoFechaIngreso($clave) && $cols['fecha_ingreso'] === 0) {
                     $cols['fecha_ingreso'] = $col;
                 } elseif ($clave === 'area' && $cols['area'] === 0) {
                     $cols['area'] = $col;
@@ -369,12 +369,12 @@ class MigracionPrg10Parser
      */
     private function codigoPorNombre(array $caps, string $nombre): ?string
     {
-        $objetivo = $this->claveEncabezado($nombre);
+        $objetivo = $this->claveTema($nombre);
         if ($objetivo === '') {
             return null;
         }
         foreach ($caps as $cap) {
-            if ($this->claveEncabezado((string)$cap['nombre']) === $objetivo) {
+            if ($this->claveTema((string)$cap['nombre']) === $objetivo) {
                 return (string)$cap['codigo'];
             }
         }
@@ -425,24 +425,57 @@ class MigracionPrg10Parser
         return '';
     }
 
+    private function claveTema(string $texto): string
+    {
+        $linea = preg_split("/\r\n|\n|\r/", $texto)[0] ?? $texto;
+        $linea = rtrim($linea, " \t:");
+
+        return $this->claveEncabezado($linea);
+    }
+
     private function claveEncabezado(string $texto): string
     {
         $texto = trim($texto);
         if ($texto === '') {
             return '';
         }
-        $texto = str_replace(['.', '°', 'º'], ' ', $texto);
+        $texto = str_replace(['.', '°', 'º', '?', '/', '_', '&'], ' ', $texto);
         if (function_exists('mb_strtolower')) {
             $texto = mb_strtolower($texto, 'UTF-8');
         } else {
             $texto = strtolower($texto);
         }
         $texto = strtr($texto, [
-            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u',
         ]);
         $texto = preg_replace('/\s+/', ' ', $texto) ?? $texto;
 
         return trim($texto);
+    }
+
+    private function esEncabezadoDocumento(string $clave): bool
+    {
+        return in_array($clave, [
+            'identificacion',
+            'no identificacion',
+            'no de identificacion',
+            'n identificacion',
+            'n de identificacion',
+            'documento',
+            'numero documento',
+            'numero de identificacion',
+        ], true);
+    }
+
+    private function esEncabezadoFechaIngreso(string $clave): bool
+    {
+        if ($clave === '' || str_contains($clave, 'examen')) {
+            return false;
+        }
+
+        return $clave === 'fecha de ingreso'
+            || $clave === 'fecha ingreso'
+            || (str_contains($clave, 'fecha') && str_contains($clave, 'ingreso'));
     }
 
     private function esNumeroTema(string $valor): bool

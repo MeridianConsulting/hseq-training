@@ -43,6 +43,14 @@ class MigracionRepository
         return $this->db->fetchAll('SELECT proceso_id, nombre FROM procesos');
     }
 
+    public function insertarProceso(string $nombre): int
+    {
+        return (int)$this->db->insert('procesos', [
+            'nombre' => $nombre,
+            'activo' => 1,
+        ]);
+    }
+
     public function listarModalidades(): array
     {
         return $this->db->fetchAll('SELECT modalidad_id, nombre FROM modalidades WHERE activo = 1');

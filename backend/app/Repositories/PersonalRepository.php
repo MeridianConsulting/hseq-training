@@ -267,6 +267,15 @@ class PersonalRepository
         ]);
     }
 
+    public function insertarCargo(string $nombre): int
+    {
+        $tabla = Database::personalTable('cargos');
+
+        return (int)$this->db->insert($tabla, [
+            'nombre_cargo' => $nombre,
+        ]);
+    }
+
     /**
      * @param array{correo_corporativo:?string, cargo_id:int} $datos
      */
@@ -355,12 +364,22 @@ class PersonalRepository
 
     public function claveCargo(string $nombre): string
     {
-        $normalizado = trim($nombre);
-        if (function_exists('mb_strtolower')) {
-            return mb_strtolower($normalizado, 'UTF-8');
+        $texto = trim($nombre);
+        if ($texto === '') {
+            return '';
         }
+        $texto = str_replace(['.', '°', 'º', '?', '/', '_', '-', ',', ';', ':'], ' ', $texto);
+        if (function_exists('mb_strtolower')) {
+            $texto = mb_strtolower($texto, 'UTF-8');
+        } else {
+            $texto = strtolower($texto);
+        }
+        $texto = strtr($texto, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u',
+        ]);
+        $texto = preg_replace('/\s+/', ' ', $texto) ?? $texto;
 
-        return strtolower($normalizado);
+        return trim($texto);
     }
 
     private function selectPersona(): string
