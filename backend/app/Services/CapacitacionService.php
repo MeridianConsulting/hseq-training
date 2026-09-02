@@ -90,6 +90,10 @@ class CapacitacionService
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
 
+        if ($estado !== null && $estado !== '' && !in_array($estado, ['ACTIVA', 'INACTIVA'], true)) {
+            throw new HttpException('El estado debe ser ACTIVA o INACTIVA.', 422);
+        }
+
         $items = array_map(
             [$this, 'normalizar'],
             $this->repo->listar($porPagina, $offset, $buscar, $estado, $categoriaId)

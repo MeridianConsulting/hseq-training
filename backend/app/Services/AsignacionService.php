@@ -56,7 +56,11 @@ class AsignacionService
         ?string $estado,
         ?string $alerta,
         ?string $buscar,
-        ?string $origen = null
+        ?string $origen = null,
+        ?int $procesoId = null,
+        ?string $proyecto = null,
+        ?string $fechaLimiteDesde = null,
+        ?string $fechaLimiteHasta = null
     ): array {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
@@ -74,11 +78,53 @@ class AsignacionService
             throw new HttpException('El origen debe ser AUTOMATICA, MANUAL, INDUCCION o REINDUCCION', 422);
         }
 
-        $filas = $this->repo->listar($porPagina, $offset, $personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);
+        // Punto de extensión: aislamiento por rol/proceso/proyecto (hoy modo global).
+        $alcance = (new AlcanceDatosService())->alcanceDe([]);
+        unset($alcance);
+
+        if ($fechaLimiteDesde !== null && $fechaLimiteDesde !== '' && !$this->esFecha($fechaLimiteDesde)) {
+            throw new HttpException('La fecha límite desde debe tener formato AAAA-MM-DD.', 422);
+        }
+        if ($fechaLimiteHasta !== null && $fechaLimiteHasta !== '' && !$this->esFecha($fechaLimiteHasta)) {
+            throw new HttpException('La fecha límite hasta debe tener formato AAAA-MM-DD.', 422);
+        }
+        if (
+            $fechaLimiteDesde !== null && $fechaLimiteDesde !== ''
+            && $fechaLimiteHasta !== null && $fechaLimiteHasta !== ''
+            && $fechaLimiteDesde > $fechaLimiteHasta
+        ) {
+            throw new HttpException('La fecha límite desde no puede ser posterior a la fecha hasta.', 422);
+        }
+
+        $filas = $this->repo->listar(
+            $porPagina,
+            $offset,
+            $personaId,
+            $capacitacionId,
+            $estado,
+            $alerta,
+            $buscar,
+            $origen,
+            $procesoId,
+            $proyecto,
+            $fechaLimiteDesde,
+            $fechaLimiteHasta
+        );
 
         return [
             'items' => array_map([$this, 'normalizar'], $filas),
-            'total' => $this->repo->contar($personaId, $capacitacionId, $estado, $alerta, $buscar, $origen),
+            'total' => $this->repo->contar(
+                $personaId,
+                $capacitacionId,
+                $estado,
+                $alerta,
+                $buscar,
+                $origen,
+                $procesoId,
+                $proyecto,
+                $fechaLimiteDesde,
+                $fechaLimiteHasta
+            ),
             'page' => $pagina,
             'per_page' => $porPagina,
         ];
@@ -494,5 +540,15 @@ class AsignacionService
         $ts = strtotime($texto);
 
         return $ts ? date('Y-m-d', $ts) : null;
+    }
+
+    private function esFecha(string $valor): bool
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+            return false;
+        }
+        $partes = explode('-', $valor);
+
+        return checkdate((int)$partes[1], (int)$partes[2], (int)$partes[0]);
     }
 }

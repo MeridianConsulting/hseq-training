@@ -40,6 +40,10 @@ class PersonalService
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
 
+        if ($estado !== null && $estado !== '' && !in_array($estado, ['Activo', 'Inactivo'], true)) {
+            throw new HttpException('El estado laboral debe ser Activo o Inactivo.', 422);
+        }
+
         try {
             $items = array_map([$this, 'normalizar'], $this->repo->listar(
                 $porPagina,

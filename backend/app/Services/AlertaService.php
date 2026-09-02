@@ -11,7 +11,6 @@ use Throwable;
 
 class AlertaService
 {
-    public const ESTADO = 'PROXIMA_A_VENCER';
     public const MENSAJE_CARGA = 'No fue posible cargar las alertas. Intente nuevamente.';
 
     private AlertaRepository $repo;
@@ -131,8 +130,12 @@ class AlertaService
         $codigo = $fila['capacitacion_codigo'] ?? null;
         $nombre = $fila['capacitacion_nombre'] ?? null;
 
+        $estado = (string)($fila['estado_calculado'] ?? $fila['tipo_alerta'] ?? 'PROXIMA_A_VENCER');
+
         return [
-            'cumplimiento_id' => (int)$fila['cumplimiento_id'],
+            'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
+                ? (int)$fila['cumplimiento_id']
+                : null,
             'asignacion_id' => (int)$fila['asignacion_id'],
             'persona_id_ext' => isset($fila['persona_id_ext']) ? (int)$fila['persona_id_ext'] : null,
             'trabajador' => $fila['persona_nombre'] ?? null,
@@ -150,9 +153,10 @@ class AlertaService
             'capacitacion_codigo' => $codigo,
             'capacitacion_nombre' => $nombre,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
-            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? $fila['fecha_limite_cumplimiento'] ?? null,
             'dias_restantes' => (int)($fila['dias_restantes'] ?? 0),
-            'estado' => self::ESTADO,
+            'estado' => $estado,
+            'tipo_alerta' => $fila['tipo_alerta'] ?? null,
         ];
     }
 }

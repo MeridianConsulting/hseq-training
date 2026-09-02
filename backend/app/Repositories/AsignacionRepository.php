@@ -26,9 +26,24 @@ class AsignacionRepository
         ?string $estado,
         ?string $alerta,
         ?string $buscar,
-        ?string $origen = null
+        ?string $origen = null,
+        ?int $procesoId = null,
+        ?string $proyecto = null,
+        ?string $fechaLimiteDesde = null,
+        ?string $fechaLimiteHasta = null
     ): array {
-        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);
+        [$where, $params] = $this->filtros(
+            $personaId,
+            $capacitacionId,
+            $estado,
+            $alerta,
+            $buscar,
+            $origen,
+            $procesoId,
+            $proyecto,
+            $fechaLimiteDesde,
+            $fechaLimiteHasta
+        );
 
         return $this->db->fetchAll(
             $this->selectBase() . " {$where}
@@ -44,9 +59,24 @@ class AsignacionRepository
         ?string $estado,
         ?string $alerta,
         ?string $buscar,
-        ?string $origen = null
+        ?string $origen = null,
+        ?int $procesoId = null,
+        ?string $proyecto = null,
+        ?string $fechaLimiteDesde = null,
+        ?string $fechaLimiteHasta = null
     ): int {
-        [$where, $params] = $this->filtros($personaId, $capacitacionId, $estado, $alerta, $buscar, $origen);
+        [$where, $params] = $this->filtros(
+            $personaId,
+            $capacitacionId,
+            $estado,
+            $alerta,
+            $buscar,
+            $origen,
+            $procesoId,
+            $proyecto,
+            $fechaLimiteDesde,
+            $fechaLimiteHasta
+        );
         $personas = Database::personalTable('personas');
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total
@@ -310,7 +340,11 @@ class AsignacionRepository
         ?string $estado,
         ?string $alerta,
         ?string $buscar,
-        ?string $origen = null
+        ?string $origen = null,
+        ?int $procesoId = null,
+        ?string $proyecto = null,
+        ?string $fechaLimiteDesde = null,
+        ?string $fechaLimiteHasta = null
     ): array {
         $condiciones = [];
         $params = [];
@@ -336,6 +370,26 @@ class AsignacionRepository
         if ($origen !== null && $origen !== '') {
             $condiciones[] = 'a.origen = ?';
             $params[] = $origen;
+        }
+
+        if ($procesoId !== null && $procesoId > 0) {
+            $condiciones[] = 'a.proceso_id = ?';
+            $params[] = $procesoId;
+        }
+
+        if ($proyecto !== null && $proyecto !== '') {
+            $condiciones[] = 'a.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $proyecto;
+        }
+
+        if ($fechaLimiteDesde !== null && $fechaLimiteDesde !== '') {
+            $condiciones[] = 'a.fecha_limite_cumplimiento >= ?';
+            $params[] = $fechaLimiteDesde;
+        }
+
+        if ($fechaLimiteHasta !== null && $fechaLimiteHasta !== '') {
+            $condiciones[] = 'a.fecha_limite_cumplimiento <= ?';
+            $params[] = $fechaLimiteHasta;
         }
 
         if ($alerta === 'proximas') {

@@ -6,6 +6,10 @@ namespace App\Repositories;
 
 use App\Core\Database;
 
+/**
+ * Alertas alineadas con vw_alertas_vencimiento (misma fuente que dashboard).
+ * Incluye pendientes y vigencias próximas/vencidas.
+ */
 class AlertaRepository
 {
     private Database $db;
@@ -26,30 +30,34 @@ class AlertaRepository
         $cargos = Database::personalTable('cargos');
 
         return $this->db->fetchAll(
-            "SELECT c.cumplimiento_id,
-                    c.asignacion_id,
-                    c.fecha_realizacion,
-                    c.fecha_vencimiento,
-                    DATEDIFF(c.fecha_vencimiento, CURDATE()) AS dias_restantes,
-                    a.persona_id_ext,
+            "SELECT v.asignacion_id,
+                    v.persona_id_ext,
+                    v.capacitacion_id,
                     a.proceso_id,
                     a.cargo_id_ext,
-                    a.proyecto,
-                    a.capacitacion_id,
+                    v.proyecto,
+                    v.fecha_limite_cumplimiento,
+                    v.fecha_realizacion,
+                    v.fecha_vencimiento,
+                    v.estado_calculado,
+                    v.tipo_alerta,
+                    v.fecha_alerta,
+                    v.cumplimiento_id,
+                    DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) AS dias_restantes,
                     cap.codigo AS capacitacion_codigo,
                     cap.nombre AS capacitacion_nombre,
                     proc.nombre AS proceso_nombre,
                     per.numero_documento,
                     per.nombre_completo_nombres_primero AS persona_nombre,
                     car.nombre_cargo
-             FROM cumplimientos_capacitacion c
-             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
-             INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+             FROM vw_alertas_vencimiento v
+             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = v.asignacion_id
+             INNER JOIN {$personas} per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
+             LEFT JOIN capacitaciones cap ON cap.capacitacion_id = v.capacitacion_id
              LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
-             INNER JOIN {$personas} per ON per.persona_id = a.persona_id_ext AND per.estado = 'Activo'
              LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
              {$where}
-             ORDER BY c.fecha_vencimiento ASC, c.cumplimiento_id ASC
+             ORDER BY v.fecha_alerta ASC, v.asignacion_id ASC
              LIMIT {$limite} OFFSET {$offset}",
             $params
         );
@@ -63,9 +71,9 @@ class AlertaRepository
         [$where, $params] = $this->filtros($filtros);
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total
-             FROM cumplimientos_capacitacion c
-             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
-             INNER JOIN " . Database::personalTable('personas') . " per ON per.persona_id = a.persona_id_ext AND per.estado = 'Activo'
+             FROM vw_alertas_vencimiento v
+             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = v.asignacion_id
+             INNER JOIN " . Database::personalTable('personas') . " per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
              {$where}",
             $params
         );
@@ -127,11 +135,7 @@ class AlertaRepository
      */
     private function filtros(array $filtros): array
     {
-        $condiciones = [
-            "c.resultado COLLATE utf8mb4_unicode_ci = 'APROBADO'",
-            'c.fecha_vencimiento > CURDATE()',
-            'c.fecha_vencimiento <= DATE_ADD(CURDATE(), INTERVAL 10 DAY)',
-        ];
+        $condiciones = [];
         $params = [];
 
         $procesoId = $filtros['proceso_id'] ?? null;
@@ -142,7 +146,7 @@ class AlertaRepository
 
         $proyecto = $filtros['proyecto'] ?? null;
         if (is_string($proyecto) && $proyecto !== '') {
-            $condiciones[] = 'a.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'v.proyecto COLLATE utf8mb4_unicode_ci = ?';
             $params[] = $proyecto;
         }
 
@@ -152,6 +156,8 @@ class AlertaRepository
             $params[] = $cargoId;
         }
 
-        return ['WHERE ' . implode(' AND ', $condiciones), $params];
+        $where = $condiciones === [] ? '' : ('WHERE ' . implode(' AND ', $condiciones));
+
+        return [$where, $params];
     }
 }

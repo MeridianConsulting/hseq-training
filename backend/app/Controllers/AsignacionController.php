@@ -25,6 +25,7 @@ class AsignacionController extends Controller
     {
         $personaRaw = $request->query('persona_id');
         $capRaw = $request->query('capacitacion_id');
+        $procesoRaw = $request->query('proceso_id');
 
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
@@ -34,7 +35,11 @@ class AsignacionController extends Controller
             nullable_trimmed_string($request->query('estado')),
             nullable_trimmed_string($request->query('alerta')),
             nullable_trimmed_string($request->query('buscar')),
-            nullable_trimmed_string($request->query('origen'))
+            nullable_trimmed_string($request->query('origen')),
+            ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+            nullable_trimmed_string($request->query('proyecto')),
+            nullable_trimmed_string($request->query('fecha_limite_desde')),
+            nullable_trimmed_string($request->query('fecha_limite_hasta'))
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);

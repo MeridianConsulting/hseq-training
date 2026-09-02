@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Filters } from "@/components/ui/filters";
 import { Field, inputClass } from "@/components/ui/field";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import {
   apiDelete,
   apiGet,
@@ -35,12 +37,15 @@ export default function CapacitacionesPage() {
 
 function Contenido() {
   const { puede } = useAuth();
+  const { valores, setFiltro, limpiar } = useFiltrosUrl({
+    buscar: "",
+    estado: "",
+    categoria_id: "",
+  });
   const [items, setItems] = useState<Capacitacion[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [buscar, setBuscar] = useState("");
-  const [estado, setEstado] = useState("");
-  const [categoriaId, setCategoriaId] = useState("");
+  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -49,15 +54,17 @@ function Contenido() {
   const [erroresApi, setErroresApi] = useState<ApiErrorMap | null>(null);
 
   async function cargar(paginaActual = pagina) {
+    setCargando(true);
     const respuesta = await apiGet<ListaPaginada<Capacitacion>>(
       withQuery("/api/capacitaciones", {
         page: paginaActual,
         per_page: 15,
-        buscar,
-        estado,
-        categoria_id: categoriaId || undefined,
+        buscar: valores.buscar,
+        estado: valores.estado,
+        categoria_id: valores.categoria_id || undefined,
       }),
     );
+    setCargando(false);
 
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar las capacitaciones.");
@@ -70,8 +77,11 @@ function Contenido() {
     setError(null);
   }
 
-  useEffect(() => {
+  useDebouncedCallback(() => {
     void cargar(1);
+  }, [valores.buscar, valores.estado, valores.categoria_id]);
+
+  useEffect(() => {
     void (async () => {
       const tipos = ["categorias", "tipos-capacitacion", "proveedores", "periodicidades", "vigencias", "modalidades", "fuentes-normativas"];
       const entradas = await Promise.all(
@@ -82,8 +92,29 @@ function Contenido() {
       );
       setCatalogos(Object.fromEntries(entradas));
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const chips: ChipFiltro[] = [];
+  if (valores.buscar) {
+    chips.push({ clave: "buscar", etiqueta: "Buscar", valor: valores.buscar });
+  }
+  if (valores.estado) {
+    chips.push({
+      clave: "estado",
+      etiqueta: "Estado",
+      valor: valores.estado === "ACTIVA" ? "Activa" : valores.estado === "INACTIVA" ? "Inactiva" : valores.estado,
+    });
+  }
+  if (valores.categoria_id) {
+    const cat = (catalogos.categorias ?? []).find(
+      (item) => String(item.categoria_id) === valores.categoria_id,
+    );
+    chips.push({
+      clave: "categoria_id",
+      etiqueta: "Categoría",
+      valor: cat ? String(cat.nombre ?? valores.categoria_id) : valores.categoria_id,
+    });
+  }
 
   function abrirNueva() {
     setEditando(null);
@@ -186,20 +217,28 @@ function Contenido() {
         <Field etiqueta="Buscar">
           <input
             className={inputClass}
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
+            value={valores.buscar}
+            onChange={(e) => setFiltro("buscar", e.target.value)}
             placeholder="Código o nombre"
           />
         </Field>
         <Field etiqueta="Estado">
-          <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.estado}
+            onChange={(e) => setFiltro("estado", e.target.value)}
+          >
             <option value="">Todas</option>
             <option value="ACTIVA">Activa</option>
             <option value="INACTIVA">Inactiva</option>
           </select>
         </Field>
         <Field etiqueta="Categoría">
-          <select className={inputClass} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.categoria_id}
+            onChange={(e) => setFiltro("categoria_id", e.target.value)}
+          >
             <option value="">Todas</option>
             {(catalogos.categorias ?? []).map((item) => (
               <option key={String(item.categoria_id)} value={String(item.categoria_id)}>
@@ -208,51 +247,57 @@ function Contenido() {
             ))}
           </select>
         </Field>
-        <div className="flex items-end">
-          <Button type="button" variante="secondary" onClick={() => void cargar(1)}>
-            Filtrar
-          </Button>
-        </div>
       </Filters>
 
-      <Table
-        columnas={[
-          { clave: "codigo", etiqueta: "Código" },
-          { clave: "nombre", etiqueta: "Nombre" },
-          { clave: "categoria", etiqueta: "Categoría" },
-          { clave: "duracion", etiqueta: "Duración (h)" },
-          { clave: "criticidad", etiqueta: "Criticidad" },
-          { clave: "estado", etiqueta: "Estado" },
-          { clave: "acciones", etiqueta: "" },
-        ]}
-        filas={items.map((item) => [
-          item.codigo,
-          <div key="n">
-            <p className="font-medium">{item.nombre}</p>
-            {item.es_tarea_critica ? <Badge tono="alto">Tarea crítica</Badge> : null}
-          </div>,
-          item.categoria_nombre ?? "—",
-          item.duracion_estimada_horas,
-          item.criticidad,
-          <Badge key="e" tono={item.estado === "ACTIVA" ? "ok" : "neutral"}>
-            {item.estado === "ACTIVA" ? "Activa" : "Inactiva"}
-          </Badge>,
-          <div key="a" className="flex justify-end gap-2">
-            {puede("capacitaciones.editar") ? (
-              <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
-                <Pencil className="h-4 w-4" aria-hidden />
-                Editar
-              </Button>
-            ) : null}
-            {puede("capacitaciones.eliminar") ? (
-              <Button type="button" variante="ghost" onClick={() => void eliminar(item)}>
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Eliminar
-              </Button>
-            ) : null}
-          </div>,
-        ])}
+      <FiltrosActivos
+        chips={chips}
+        onQuitar={(clave) => setFiltro(clave, "")}
+        onLimpiar={limpiar}
       />
+
+      {cargando ? (
+        <ListaCargando />
+      ) : (
+        <Table
+          columnas={[
+            { clave: "codigo", etiqueta: "Código" },
+            { clave: "nombre", etiqueta: "Nombre" },
+            { clave: "categoria", etiqueta: "Categoría" },
+            { clave: "duracion", etiqueta: "Duración (h)" },
+            { clave: "criticidad", etiqueta: "Criticidad" },
+            { clave: "estado", etiqueta: "Estado" },
+            { clave: "acciones", etiqueta: "" },
+          ]}
+          filas={items.map((item) => [
+            item.codigo,
+            <div key="n">
+              <p className="font-medium">{item.nombre}</p>
+              {item.es_tarea_critica ? <Badge tono="alto">Tarea crítica</Badge> : null}
+            </div>,
+            item.categoria_nombre ?? "—",
+            item.duracion_estimada_horas,
+            item.criticidad,
+            <Badge key="e" tono={item.estado === "ACTIVA" ? "ok" : "neutral"}>
+              {item.estado === "ACTIVA" ? "Activa" : "Inactiva"}
+            </Badge>,
+            <div key="a" className="flex justify-end gap-2">
+              {puede("capacitaciones.editar") ? (
+                <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Editar
+                </Button>
+              ) : null}
+              {puede("capacitaciones.eliminar") ? (
+                <Button type="button" variante="ghost" onClick={() => void eliminar(item)}>
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  Eliminar
+                </Button>
+              ) : null}
+            </div>,
+          ])}
+          vacio="No hay capacitaciones para los filtros seleccionados."
+        />
+      )}
       <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
 
       <Modal

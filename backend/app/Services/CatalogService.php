@@ -72,6 +72,28 @@ class CatalogService
         return $this->repo->listar($def, $filtroEstado, $buscar);
     }
 
+    /**
+     * @return array{items:list<array<string,mixed>>,total:int,page:int,per_page:int}
+     */
+    public function listarPaginado(
+        array $def,
+        string $filtroEstado,
+        ?string $buscar,
+        int $pagina,
+        int $porPagina
+    ): array {
+        $pagina = max(1, $pagina);
+        $porPagina = min(100, max(1, $porPagina));
+        $offset = ($pagina - 1) * $porPagina;
+
+        return [
+            'items' => $this->repo->listar($def, $filtroEstado, $buscar, $porPagina, $offset),
+            'total' => $this->repo->contar($def, $filtroEstado, $buscar),
+            'page' => $pagina,
+            'per_page' => $porPagina,
+        ];
+    }
+
     public function ver(array $def, int $id): array
     {
         $registro = $this->repo->buscarPorId($def, $id);

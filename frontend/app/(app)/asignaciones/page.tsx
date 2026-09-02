@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   FormularioAsignacion,
@@ -23,13 +23,39 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { BadgeCheck, CalendarPlus, Pencil, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import type { Asignacion, Capacitacion, Cumplimiento, IntentoSesion, ProximasAsignaciones } from "@/lib/tipos";
+import type {
+  Asignacion,
+  Capacitacion,
+  Cumplimiento,
+  IntentoSesion,
+  OpcionesAlertas,
+  ProximasAsignaciones,
+} from "@/lib/tipos";
+
+const FILTROS_DEFAULT = {
+  buscar: "",
+  capacitacion_id: "",
+  estado: "",
+  origen: "",
+  proceso_id: "",
+  proyecto: "",
+  fecha_limite_desde: "",
+  fecha_limite_hasta: "",
+  alerta: "",
+};
+
+const ETIQUETAS_ALERTA: Record<string, string> = {
+  proximas: "Próximas a vencer",
+  vencidas: "Vencidas",
+};
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
   PENDIENTE: "Pendiente",
@@ -155,15 +181,17 @@ type ResultadoMasivo = {
 function Contenido() {
   const { puede } = useAuth();
   const router = useRouter();
+  const { valores, setFiltro, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
+    keysDebounce: ["buscar"],
+  });
   const [items, setItems] = useState<Asignacion[]>([]);
   const [proximas, setProximas] = useState<ProximasAsignaciones>({ total: 0, items: [] });
   const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
+  const [procesos, setProcesos] = useState<{ proceso_id: number; nombre: string }[]>([]);
+  const [proyectos, setProyectos] = useState<string[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [buscar, setBuscar] = useState("");
-  const [capacitacionId, setCapacitacionId] = useState("");
-  const [estado, setEstado] = useState("");
-  const [origen, setOrigen] = useState("");
+  const [cargandoListado, setCargandoListado] = useState(true);
   const [personaHistorial, setPersonaHistorial] = useState<PersonaHistorial | null>(null);
   const [historialListo, setHistorialListo] = useState(false);
   const [intentosSesion, setIntentosSesion] = useState<IntentoSesion[]>([]);
@@ -180,27 +208,37 @@ function Contenido() {
   const [faltantes, setFaltantes] = useState<Cumplimiento[]>([]);
 
   async function cargarListado(paginaActual = 1) {
-    const respuesta = await apiGet<ListaPaginada<Asignacion>>(
-      withQuery("/api/asignaciones", {
-        page: paginaActual,
-        per_page: 15,
-        buscar: personaHistorial ? undefined : buscar.trim() || undefined,
-        persona_id: personaHistorial?.id,
-        capacitacion_id: capacitacionId || undefined,
-        estado: estado || undefined,
-        origen: origen || undefined,
-      }),
-    );
+    setCargandoListado(true);
+    try {
+      const respuesta = await apiGet<ListaPaginada<Asignacion>>(
+        withQuery("/api/asignaciones", {
+          page: paginaActual,
+          per_page: 15,
+          buscar: personaHistorial ? undefined : valores.buscar.trim() || undefined,
+          persona_id: personaHistorial?.id,
+          capacitacion_id: valores.capacitacion_id || undefined,
+          estado: valores.estado || undefined,
+          origen: valores.origen || undefined,
+          proceso_id: valores.proceso_id || undefined,
+          proyecto: valores.proyecto || undefined,
+          fecha_limite_desde: valores.fecha_limite_desde || undefined,
+          fecha_limite_hasta: valores.fecha_limite_hasta || undefined,
+          alerta: valores.alerta || undefined,
+        }),
+      );
 
-    if (!respuesta.success || !respuesta.data) {
-      setError(respuesta.message || "No fue posible cargar las asignaciones.");
-      return;
+      if (!respuesta.success || !respuesta.data) {
+        setError(respuesta.message || "No fue posible cargar las asignaciones.");
+        return;
+      }
+
+      setItems(respuesta.data.items);
+      setPagina(respuesta.data.pagination.current_page);
+      setUltima(respuesta.data.pagination.last_page);
+      setError(null);
+    } finally {
+      setCargandoListado(false);
     }
-
-    setItems(respuesta.data.items);
-    setPagina(respuesta.data.pagination.current_page);
-    setUltima(respuesta.data.pagination.last_page);
-    setError(null);
   }
 
   async function cargarProximas() {
@@ -219,16 +257,27 @@ function Contenido() {
     setHistorialListo(true);
   }, []);
 
-  useEffect(() => {
-    if (!historialListo) {
-      return;
-    }
-    const id = window.setTimeout(() => {
+  useDebouncedCallback(
+    () => {
+      if (!historialListo) {
+        return;
+      }
       void cargarListado(1);
-    }, 300);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar, capacitacionId, estado, origen, personaHistorial, historialListo]);
+    },
+    [
+      valores.buscar,
+      valores.capacitacion_id,
+      valores.estado,
+      valores.origen,
+      valores.proceso_id,
+      valores.proyecto,
+      valores.fecha_limite_desde,
+      valores.fecha_limite_hasta,
+      valores.alerta,
+      personaHistorial,
+      historialListo,
+    ],
+  );
 
   useEffect(() => {
     if (!personaHistorial) {
@@ -290,13 +339,107 @@ function Contenido() {
   useEffect(() => {
     void cargarProximas();
     void (async () => {
-      const caps = await apiGet<ListaPaginada<Capacitacion>>(
-        withQuery("/api/capacitaciones", { per_page: 100, estado: "ACTIVA" }),
-      );
+      const [caps, procs, opts] = await Promise.all([
+        apiGet<ListaPaginada<Capacitacion>>(
+          withQuery("/api/capacitaciones", { per_page: 100, estado: "ACTIVA" }),
+        ),
+        apiGet<{ items: { proceso_id: number; nombre: string }[] }>(
+          "/api/catalogs/procesos?activos=1",
+        ),
+        apiGet<OpcionesAlertas>("/api/alertas/opciones"),
+      ]);
       setCapacitaciones(caps.data?.items ?? []);
+      setProcesos(
+        (procs.data?.items ?? []).map((p) => ({
+          proceso_id: Number(p.proceso_id),
+          nombre: String(p.nombre ?? ""),
+        })),
+      );
+      setProyectos(opts.data?.proyectos ?? []);
     })();
   }, []);
 
+  const chipsActivos = useMemo(() => {
+    const chips: ChipFiltro[] = [];
+    if (valores.buscar.trim() && !personaHistorial) {
+      chips.push({ clave: "buscar", etiqueta: "Trabajador", valor: valores.buscar.trim() });
+    }
+    if (valores.capacitacion_id) {
+      const cap = capacitaciones.find((c) => String(c.capacitacion_id) === valores.capacitacion_id);
+      chips.push({
+        clave: "capacitacion_id",
+        etiqueta: "Capacitación",
+        valor: cap ? `${cap.codigo} — ${cap.nombre}` : valores.capacitacion_id,
+      });
+    }
+    if (valores.origen) {
+      chips.push({
+        clave: "origen",
+        etiqueta: "Origen",
+        valor: etiquetaOrigen(valores.origen),
+      });
+    }
+    if (valores.estado) {
+      chips.push({
+        clave: "estado",
+        etiqueta: "Estado",
+        valor: ETIQUETAS_ESTADO[valores.estado] ?? valores.estado,
+      });
+    }
+    if (valores.proceso_id) {
+      const proc = procesos.find((p) => String(p.proceso_id) === valores.proceso_id);
+      chips.push({
+        clave: "proceso_id",
+        etiqueta: "Proceso",
+        valor: proc?.nombre ?? valores.proceso_id,
+      });
+    }
+    if (valores.proyecto) {
+      chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
+    }
+    if (valores.fecha_limite_desde) {
+      chips.push({
+        clave: "fecha_limite_desde",
+        etiqueta: "Fecha límite desde",
+        valor: formatoFecha(valores.fecha_limite_desde),
+      });
+    }
+    if (valores.fecha_limite_hasta) {
+      chips.push({
+        clave: "fecha_limite_hasta",
+        etiqueta: "Fecha límite hasta",
+        valor: formatoFecha(valores.fecha_limite_hasta),
+      });
+    }
+    if (valores.alerta) {
+      chips.push({
+        clave: "alerta",
+        etiqueta: "Alerta",
+        valor: ETIQUETAS_ALERTA[valores.alerta] ?? valores.alerta,
+      });
+    }
+    if (evidenciaFaltante) {
+      chips.push({
+        clave: "evidencia_faltante",
+        etiqueta: "Soportes",
+        valor: "Sin soporte",
+      });
+    }
+    return chips;
+  }, [valores, capacitaciones, procesos, personaHistorial, evidenciaFaltante]);
+
+  function quitarChip(clave: string) {
+    if (clave === "evidencia_faltante") {
+      setEvidenciaFaltante(false);
+      return;
+    }
+    setFiltro(clave, "");
+  }
+
+  function limpiarFiltros() {
+    limpiar();
+    setEvidenciaFaltante(false);
+  }
   async function guardar(evento: FormEvent, datos: DatosAsignacion) {
     evento.preventDefault();
     setError(null);
@@ -445,13 +588,22 @@ function Contenido() {
       documento: item.numero_documento,
     };
     setPersonaHistorial(filtro);
-    setBuscar("");
+    setFiltro("buscar", "");
     router.replace(rutaHistorial(filtro));
   }
 
   function quitarFiltroHistorial() {
     setPersonaHistorial(null);
-    router.replace("/asignaciones");
+    if (typeof window === "undefined") {
+      router.replace("/asignaciones");
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.delete("persona_id");
+    params.delete("nombre");
+    params.delete("documento");
+    const cadena = params.toString();
+    router.replace(cadena ? `/asignaciones?${cadena}` : "/asignaciones");
   }
 
   return (
@@ -598,12 +750,12 @@ function Contenido() {
         <Field etiqueta="Trabajador">
           <input
             className={inputClass}
-            value={buscar}
+            value={personaHistorial ? "" : valores.buscar}
             onChange={(e) => {
               if (personaHistorial !== null) {
                 quitarFiltroHistorial();
               }
-              setBuscar(e.target.value);
+              setFiltro("buscar", e.target.value);
             }}
             placeholder="Nombre o documento"
             disabled={personaHistorial !== null}
@@ -612,8 +764,8 @@ function Contenido() {
         <Field etiqueta="Capacitación">
           <select
             className={inputClass}
-            value={capacitacionId}
-            onChange={(e) => setCapacitacionId(e.target.value)}
+            value={valores.capacitacion_id}
+            onChange={(e) => setFiltro("capacitacion_id", e.target.value)}
           >
             <option value="">Todas</option>
             {capacitaciones.map((cap) => (
@@ -624,7 +776,11 @@ function Contenido() {
           </select>
         </Field>
         <Field etiqueta="Origen">
-          <select className={inputClass} value={origen} onChange={(e) => setOrigen(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.origen}
+            onChange={(e) => setFiltro("origen", e.target.value)}
+          >
             <option value="">Todos</option>
             <option value="AUTOMATICA">Automática</option>
             <option value="MANUAL">Manual</option>
@@ -633,7 +789,11 @@ function Contenido() {
           </select>
         </Field>
         <Field etiqueta="Estado">
-          <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.estado}
+            onChange={(e) => setFiltro("estado", e.target.value)}
+          >
             <option value="">Todos</option>
             <option value="PENDIENTE">Pendiente</option>
             <option value="PENDIENTE_PROXIMA_A_VENCER">Próxima a vencer</option>
@@ -643,19 +803,76 @@ function Contenido() {
             <option value="VENCIDA">Vigencia vencida</option>
           </select>
         </Field>
+        <Field etiqueta="Proceso">
+          <select
+            className={inputClass}
+            value={valores.proceso_id}
+            onChange={(e) => setFiltro("proceso_id", e.target.value)}
+          >
+            <option value="">Todos</option>
+            {procesos.map((p) => (
+              <option key={p.proceso_id} value={p.proceso_id}>
+                {p.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field etiqueta="Proyecto">
+          <select
+            className={inputClass}
+            value={valores.proyecto}
+            onChange={(e) => setFiltro("proyecto", e.target.value)}
+          >
+            <option value="">Todos</option>
+            {proyectos.map((nombre) => (
+              <option key={nombre} value={nombre}>
+                {nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field etiqueta="Fecha límite desde">
+          <input
+            type="date"
+            className={inputClass}
+            value={valores.fecha_limite_desde}
+            onChange={(e) => setFiltro("fecha_limite_desde", e.target.value)}
+          />
+        </Field>
+        <Field etiqueta="Fecha límite hasta">
+          <input
+            type="date"
+            className={inputClass}
+            value={valores.fecha_limite_hasta}
+            onChange={(e) => setFiltro("fecha_limite_hasta", e.target.value)}
+          />
+        </Field>
+        <Field etiqueta="Alerta">
+          <select
+            className={inputClass}
+            value={valores.alerta}
+            onChange={(e) => setFiltro("alerta", e.target.value)}
+          >
+            <option value="">Todas</option>
+            <option value="proximas">Próximas a vencer</option>
+            <option value="vencidas">Vencidas</option>
+          </select>
+        </Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
           <input
             type="checkbox"
             checked={evidenciaFaltante}
             onChange={(e) => setEvidenciaFaltante(e.target.checked)}
           />
-          Evidencia faltante
+          Ver cumplimientos sin soporte
         </label>
       </Filters>
 
+      <FiltrosActivos chips={chipsActivos} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
+
       {evidenciaFaltante ? (
         <Card className="mb-6">
-          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Evidencias faltantes</h2>
+          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Cumplimientos sin soporte</h2>
           <Table
             columnas={[
               { clave: "persona", etiqueta: "Trabajador" },
@@ -677,95 +894,106 @@ function Contenido() {
               "Sí",
               c.soportes_count ?? 0,
             ])}
-            vacio="No hay cumplimientos con evidencia faltante."
+            vacio="No hay cumplimientos sin soporte."
           />
         </Card>
       ) : null}
 
-      <Table
-        columnas={[
-          { clave: "documento", etiqueta: "Documento" },
-          { clave: "persona", etiqueta: "Trabajador" },
-          { clave: "cap", etiqueta: "Capacitación" },
-          { clave: "origen", etiqueta: "Origen" },
-          { clave: "periodicidad", etiqueta: "Periodicidad" },
-          { clave: "obligatoria", etiqueta: "Obligatoria" },
-          { clave: "limite", etiqueta: "Fecha límite" },
-          { clave: "realizacion", etiqueta: "Realización" },
-          { clave: "resultado", etiqueta: "Resultado" },
-          { clave: "horas", etiqueta: "Horas" },
-          { clave: "vence", etiqueta: "Vencimiento" },
-          { clave: "estado", etiqueta: "Estado" },
-          { clave: "dias", etiqueta: "Días" },
-          { clave: "acciones", etiqueta: "" },
-        ]}
-        filas={items.map((item) => [
-          item.numero_documento ?? "—",
-          <button
-            key="p"
-            type="button"
-            className="text-left font-medium text-hseq-800 underline-offset-2 hover:underline"
-            onClick={() => verHistorial(item)}
-          >
-            {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
-          </button>,
-          `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`,
-          etiquetaOrigen(item.origen),
-          item.periodicidad_nombre ?? "—",
-          item.obligatoria === null ? "—" : item.obligatoria ? "Sí" : "No",
-          formatoFecha(item.fecha_limite_cumplimiento),
-          formatoFecha(item.fecha_realizacion),
-          item.cumplimiento_resultado === "APROBADO"
-            ? "Aprobado"
-            : item.cumplimiento_resultado ?? "—",
-          item.horas_efectivas ?? "—",
-          item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : item.tiene_cumplimiento ? "Sin vencimiento" : "—",
-          <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
-            {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
-          </Badge>,
-          item.estado_calculado === "PENDIENTE_PROXIMA_A_VENCER" || item.estado_calculado === "PENDIENTE"
-            ? item.etiqueta_dias ?? "—"
-            : "—",
-          <span key="a" className="flex flex-wrap gap-2">
-            {puede("cumplimientos.crear") &&
-            item.cumplimiento_resultado !== "APROBADO" &&
-            sesionDeCumplimiento(item) > 0 ? (
-              <Button
+      {cargandoListado ? (
+        <ListaCargando mensaje="Cargando asignaciones…" />
+      ) : (
+        <>
+          <Table
+            columnas={[
+              { clave: "documento", etiqueta: "Documento" },
+              { clave: "persona", etiqueta: "Trabajador" },
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "origen", etiqueta: "Origen" },
+              { clave: "periodicidad", etiqueta: "Periodicidad" },
+              { clave: "obligatoria", etiqueta: "Obligatoria" },
+              { clave: "limite", etiqueta: "Fecha límite" },
+              { clave: "realizacion", etiqueta: "Realización" },
+              { clave: "resultado", etiqueta: "Resultado" },
+              { clave: "horas", etiqueta: "Horas" },
+              { clave: "vence", etiqueta: "Vencimiento" },
+              { clave: "estado", etiqueta: "Estado" },
+              { clave: "dias", etiqueta: "Días" },
+              { clave: "acciones", etiqueta: "" },
+            ]}
+            filas={items.map((item) => [
+              item.numero_documento ?? "—",
+              <button
+                key="p"
                 type="button"
-                variante="ghost"
-                onClick={() => {
-                  setCumpAsignacion(item);
-                  setCumpAbierto(true);
-                }}
+                className="text-left font-medium text-hseq-800 underline-offset-2 hover:underline"
+                onClick={() => verHistorial(item)}
               >
-                <BadgeCheck className="h-4 w-4" aria-hidden />
-                Cumplimiento
-              </Button>
-            ) : null}
-            {puede("asignaciones.editar") ? (
-              <Button
-                type="button"
-                variante="ghost"
-                onClick={() => {
-                  setEditando(item);
-                  setAbierto(true);
-                }}
-              >
-                <Pencil className="h-4 w-4" aria-hidden />
-                Fecha
-              </Button>
-            ) : null}
-            {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
-              <Button type="button" variante="danger" onClick={() => void eliminar(item)}>
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Eliminar
-              </Button>
-            ) : null}
-          </span>,
-        ])}
-        vacio="No hay asignaciones para los filtros seleccionados."
-      />
-      <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargarListado(p)} />
+                {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
+              </button>,
+              `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`,
+              etiquetaOrigen(item.origen),
+              item.periodicidad_nombre ?? "—",
+              item.obligatoria === null ? "—" : item.obligatoria ? "Sí" : "No",
+              formatoFecha(item.fecha_limite_cumplimiento),
+              formatoFecha(item.fecha_realizacion),
+              item.cumplimiento_resultado === "APROBADO"
+                ? "Aprobado"
+                : item.cumplimiento_resultado ?? "—",
+              item.horas_efectivas ?? "—",
+              item.fecha_vencimiento
+                ? formatoFecha(item.fecha_vencimiento)
+                : item.tiene_cumplimiento
+                  ? "Sin vencimiento"
+                  : "—",
+              <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
+                {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
+              </Badge>,
+              item.estado_calculado === "PENDIENTE_PROXIMA_A_VENCER" ||
+              item.estado_calculado === "PENDIENTE"
+                ? item.etiqueta_dias ?? "—"
+                : "—",
+              <span key="a" className="flex flex-wrap gap-2">
+                {puede("cumplimientos.crear") &&
+                item.cumplimiento_resultado !== "APROBADO" &&
+                sesionDeCumplimiento(item) > 0 ? (
+                  <Button
+                    type="button"
+                    variante="ghost"
+                    onClick={() => {
+                      setCumpAsignacion(item);
+                      setCumpAbierto(true);
+                    }}
+                  >
+                    <BadgeCheck className="h-4 w-4" aria-hidden />
+                    Cumplimiento
+                  </Button>
+                ) : null}
+                {puede("asignaciones.editar") ? (
+                  <Button
+                    type="button"
+                    variante="ghost"
+                    onClick={() => {
+                      setEditando(item);
+                      setAbierto(true);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                    Fecha
+                  </Button>
+                ) : null}
+                {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
+                  <Button type="button" variante="danger" onClick={() => void eliminar(item)}>
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                    Eliminar
+                  </Button>
+                ) : null}
+              </span>,
+            ])}
+            vacio="No hay asignaciones para los filtros seleccionados."
+          />
+          <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargarListado(p)} />
+        </>
+      )}
 
       <Modal
         abierto={abierto}

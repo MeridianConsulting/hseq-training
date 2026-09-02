@@ -254,7 +254,7 @@ export type AlertaVencimiento = {
 };
 
 export type AlertaProximaVencer = {
-  cumplimiento_id: number;
+  cumplimiento_id: number | null;
   asignacion_id: number;
   persona_id_ext: number | null;
   trabajador: string | null;
@@ -271,6 +271,7 @@ export type AlertaProximaVencer = {
   fecha_vencimiento: string | null;
   dias_restantes: number;
   estado: string;
+  tipo_alerta?: string | null;
 };
 
 export type OpcionesAlertas = {

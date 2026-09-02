@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { useDebouncedCallback } from "@/hooks/useFiltrosUrl";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import type { Capacitacion, CargoCorporativo, FilaMatriz, ItemCatalogo } from "@/lib/tipos";
 import { FormularioMatriz, type DatosMatriz } from "./formulario";
@@ -58,8 +60,10 @@ function Contenido() {
   const [areas, setAreas] = useState<ItemCatalogo[]>([]);
   const [procesos, setProcesos] = useState<ItemCatalogo[]>([]);
   const [periodicidades, setPeriodicidades] = useState<ItemCatalogo[]>([]);
+  const [cargando, setCargando] = useState(true);
 
   async function cargar(paginaActual = pagina) {
+    setCargando(true);
     const respuesta = await apiGet<ListaPaginada<FilaMatriz>>(
       withQuery("/api/matriz", {
         page: paginaActual,
@@ -71,6 +75,7 @@ function Contenido() {
         estado: estado || undefined,
       }),
     );
+    setCargando(false);
 
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar la matriz.");
@@ -83,12 +88,8 @@ function Contenido() {
     setError(null);
   }
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      void cargar(1);
-    }, 300);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  useDebouncedCallback(() => {
+    void cargar(1);
   }, [capacitacionId, cargoId, procesoId, proyecto, estado]);
 
   useEffect(() => {
@@ -107,6 +108,54 @@ function Contenido() {
       setPeriodicidades(pe.data?.items ?? []);
     })();
   }, []);
+
+  function limpiarFiltros() {
+    setCapacitacionId("");
+    setCargoId("");
+    setProcesoId("");
+    setProyecto("");
+    setEstado("activas");
+  }
+
+  const chips: ChipFiltro[] = [];
+  if (cargoId) {
+    const cargo = cargos.find((c) => String(c.cargo_id) === cargoId);
+    chips.push({ clave: "cargo_id", etiqueta: "Cargo", valor: cargo?.nombre_cargo ?? cargoId });
+  }
+  if (procesoId) {
+    const proceso = procesos.find((p) => String(p.proceso_id) === procesoId);
+    chips.push({
+      clave: "proceso_id",
+      etiqueta: "Proceso",
+      valor: proceso ? String(proceso.nombre) : procesoId,
+    });
+  }
+  if (proyecto.trim()) {
+    chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: proyecto.trim() });
+  }
+  if (capacitacionId) {
+    const cap = capacitaciones.find((c) => String(c.capacitacion_id) === capacitacionId);
+    chips.push({
+      clave: "capacitacion_id",
+      etiqueta: "Capacitación",
+      valor: cap ? `${cap.codigo} — ${cap.nombre}` : capacitacionId,
+    });
+  }
+  if (estado !== "activas") {
+    chips.push({
+      clave: "estado",
+      etiqueta: "Estado",
+      valor: estado === "todos" ? "Todas" : estado === "inactivas" ? "Inactivas" : estado,
+    });
+  }
+
+  function quitarChip(clave: string) {
+    if (clave === "cargo_id") setCargoId("");
+    if (clave === "proceso_id") setProcesoId("");
+    if (clave === "proyecto") setProyecto("");
+    if (clave === "capacitacion_id") setCapacitacionId("");
+    if (clave === "estado") setEstado("activas");
+  }
 
   async function guardar(evento: FormEvent, datos: DatosMatriz) {
     evento.preventDefault();
@@ -287,65 +336,71 @@ function Contenido() {
         </Field>
       </Filters>
 
-      <Table
-        columnas={[
-          { clave: "cargo", etiqueta: "Cargo" },
-          { clave: "proceso", etiqueta: "Proceso" },
-          { clave: "proyecto", etiqueta: "Proyecto" },
-          { clave: "cap", etiqueta: "Capacitación" },
-          { clave: "periodicidad", etiqueta: "Periodicidad" },
-          { clave: "obligatoria", etiqueta: "Obligatoria" },
-          { clave: "estado", etiqueta: "Estado" },
-          { clave: "acciones", etiqueta: "" },
-        ]}
-        filas={items.map((item) => [
-          item.cargo_nombre ?? (item.cargo_id_ext ? `Cargo ${item.cargo_id_ext}` : "Cualquier cargo"),
-          item.proceso_nombre ?? "—",
-          item.proyecto ?? "—",
-          <div key="c">
-            <p className="font-medium">{item.capacitacion_codigo}</p>
-            <p className="text-xs text-slate-500">{item.capacitacion_nombre}</p>
-          </div>,
-          item.periodicidad_nombre ?? "—",
-          <Badge key="o" tono={item.obligatoria ? "alto" : "neutral"}>
-            {item.obligatoria ? "Sí" : "No"}
-          </Badge>,
-          <Badge key="e" tono={item.activa ? "ok" : "neutral"}>
-            {item.activa ? "Activa" : "Inactiva"}
-          </Badge>,
-          <div key="a" className="flex justify-end gap-2">
-            {puede("matriz.editar") ? (
-              <Button
-                type="button"
-                variante="ghost"
-                onClick={() => {
-                  setEditando(item);
-                  setAbierto(true);
-                }}
-              >
-                <Pencil className="h-4 w-4" aria-hidden />
-                Editar
-              </Button>
-            ) : null}
-            {item.activa
-              ? puede("matriz.eliminar")
-                ? (
-                  <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
-                    <UserMinus className="h-4 w-4" aria-hidden />
-                    Inactivar
-                  </Button>
-                )
-                : null
-              : puede("matriz.editar")
-                ? (
-                  <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
-                    Reactivar
-                  </Button>
-                )
-                : null}
-          </div>,
-        ])}
-      />
+      <FiltrosActivos chips={chips} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
+
+      {cargando ? (
+        <ListaCargando />
+      ) : (
+        <Table
+          columnas={[
+            { clave: "cargo", etiqueta: "Cargo" },
+            { clave: "proceso", etiqueta: "Proceso" },
+            { clave: "proyecto", etiqueta: "Proyecto" },
+            { clave: "cap", etiqueta: "Capacitación" },
+            { clave: "periodicidad", etiqueta: "Periodicidad" },
+            { clave: "obligatoria", etiqueta: "Obligatoria" },
+            { clave: "estado", etiqueta: "Estado" },
+            { clave: "acciones", etiqueta: "" },
+          ]}
+          filas={items.map((item) => [
+            item.cargo_nombre ?? (item.cargo_id_ext ? `Cargo ${item.cargo_id_ext}` : "Cualquier cargo"),
+            item.proceso_nombre ?? "—",
+            item.proyecto ?? "—",
+            <div key="c">
+              <p className="font-medium">{item.capacitacion_codigo}</p>
+              <p className="text-xs text-slate-500">{item.capacitacion_nombre}</p>
+            </div>,
+            item.periodicidad_nombre ?? "—",
+            <Badge key="o" tono={item.obligatoria ? "alto" : "neutral"}>
+              {item.obligatoria ? "Sí" : "No"}
+            </Badge>,
+            <Badge key="e" tono={item.activa ? "ok" : "neutral"}>
+              {item.activa ? "Activa" : "Inactiva"}
+            </Badge>,
+            <div key="a" className="flex justify-end gap-2">
+              {puede("matriz.editar") ? (
+                <Button
+                  type="button"
+                  variante="ghost"
+                  onClick={() => {
+                    setEditando(item);
+                    setAbierto(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Editar
+                </Button>
+              ) : null}
+              {item.activa
+                ? puede("matriz.eliminar")
+                  ? (
+                    <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
+                      <UserMinus className="h-4 w-4" aria-hidden />
+                      Inactivar
+                    </Button>
+                  )
+                  : null
+                : puede("matriz.editar")
+                  ? (
+                    <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
+                      Reactivar
+                    </Button>
+                  )
+                  : null}
+            </div>,
+          ])}
+        />
+      )}
       <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
 
       <Modal

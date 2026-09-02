@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
-import { Button } from "@/components/ui/button";
-import { Funnel } from "lucide-react";
+import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type { CambioAuditoria, RegistroAuditoria } from "@/lib/tipos";
 
@@ -60,29 +60,31 @@ export default function AuditoriaPage() {
 }
 
 function Contenido() {
+  const { valores, setFiltro, limpiar } = useFiltrosUrl(
+    { entidad: "", accion: "", usuario: "", desde: "", hasta: "" },
+    { keysDebounce: ["usuario"] },
+  );
   const [items, setItems] = useState<RegistroAuditoria[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [entidad, setEntidad] = useState("");
-  const [accion, setAccion] = useState("");
-  const [usuario, setUsuario] = useState("");
-  const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState("");
+  const [cargando, setCargando] = useState(true);
   const [expandida, setExpandida] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function cargar(paginaActual = 1) {
+    setCargando(true);
     const r = await apiGet<ListaPaginada<RegistroAuditoria>>(
       withQuery("/api/auditoria", {
         page: paginaActual,
         per_page: 20,
-        entidad,
-        accion,
-        usuario,
-        desde,
-        hasta,
+        entidad: valores.entidad,
+        accion: valores.accion,
+        usuario: valores.usuario,
+        desde: valores.desde,
+        hasta: valores.hasta,
       }),
     );
+    setCargando(false);
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible cargar la auditoría.");
       return;
@@ -94,10 +96,34 @@ function Contenido() {
     setExpandida(null);
   }
 
-  useEffect(() => {
+  useDebouncedCallback(() => {
     void cargar(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [valores.entidad, valores.accion, valores.usuario, valores.desde, valores.hasta]);
+
+  const chips: ChipFiltro[] = [];
+  if (valores.entidad) {
+    chips.push({
+      clave: "entidad",
+      etiqueta: "Módulo",
+      valor: MODULOS.find((m) => m.valor === valores.entidad)?.etiqueta ?? valores.entidad,
+    });
+  }
+  if (valores.accion) {
+    chips.push({
+      clave: "accion",
+      etiqueta: "Acción",
+      valor: ACCIONES.find((a) => a.valor === valores.accion)?.etiqueta ?? valores.accion,
+    });
+  }
+  if (valores.usuario) {
+    chips.push({ clave: "usuario", etiqueta: "Usuario", valor: valores.usuario });
+  }
+  if (valores.desde) {
+    chips.push({ clave: "desde", etiqueta: "Desde", valor: valores.desde });
+  }
+  if (valores.hasta) {
+    chips.push({ clave: "hasta", etiqueta: "Hasta", valor: valores.hasta });
+  }
 
   return (
     <>
@@ -108,7 +134,11 @@ function Contenido() {
       {error ? <Alert tono="error">{error}</Alert> : null}
       <Filters>
         <Field etiqueta="Módulo">
-          <select className={inputClass} value={entidad} onChange={(e) => setEntidad(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.entidad}
+            onChange={(e) => setFiltro("entidad", e.target.value)}
+          >
             {MODULOS.map((op) => (
               <option key={op.valor || "todos"} value={op.valor}>
                 {op.etiqueta}
@@ -117,7 +147,11 @@ function Contenido() {
           </select>
         </Field>
         <Field etiqueta="Acción">
-          <select className={inputClass} value={accion} onChange={(e) => setAccion(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.accion}
+            onChange={(e) => setFiltro("accion", e.target.value)}
+          >
             {ACCIONES.map((op) => (
               <option key={op.valor || "todas"} value={op.valor}>
                 {op.etiqueta}
@@ -128,60 +162,75 @@ function Contenido() {
         <Field etiqueta="Usuario">
           <input
             className={inputClass}
-            value={usuario}
-            onChange={(e) => setUsuario(e.target.value)}
+            value={valores.usuario}
+            onChange={(e) => setFiltro("usuario", e.target.value)}
             placeholder="Nombre o usuario"
           />
         </Field>
         <Field etiqueta="Desde">
-          <input type="date" className={inputClass} value={desde} onChange={(e) => setDesde(e.target.value)} />
+          <input
+            type="date"
+            className={inputClass}
+            value={valores.desde}
+            onChange={(e) => setFiltro("desde", e.target.value)}
+          />
         </Field>
         <Field etiqueta="Hasta">
-          <input type="date" className={inputClass} value={hasta} onChange={(e) => setHasta(e.target.value)} />
+          <input
+            type="date"
+            className={inputClass}
+            value={valores.hasta}
+            onChange={(e) => setFiltro("hasta", e.target.value)}
+          />
         </Field>
-        <div className="flex items-end">
-          <Button type="button" variante="secondary" onClick={() => void cargar(1)}>
-            <Funnel className="h-4 w-4" aria-hidden />
-            Filtrar
-          </Button>
-        </div>
       </Filters>
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Fecha y hora</th>
-              <th className="px-4 py-3 font-medium">Usuario</th>
-              <th className="px-4 py-3 font-medium">Acción</th>
-              <th className="px-4 py-3 font-medium">Entidad</th>
-              <th className="px-4 py-3 font-medium">Id</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {items.length === 0 ? (
+
+      <FiltrosActivos
+        chips={chips}
+        onQuitar={(clave) => setFiltro(clave, "")}
+        onLimpiar={limpiar}
+      />
+
+      {cargando ? (
+        <ListaCargando />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
-                  No hay registros para mostrar.
-                </td>
+                <th className="px-4 py-3 font-medium">Fecha y hora</th>
+                <th className="px-4 py-3 font-medium">Usuario</th>
+                <th className="px-4 py-3 font-medium">Acción</th>
+                <th className="px-4 py-3 font-medium">Entidad</th>
+                <th className="px-4 py-3 font-medium">Id</th>
               </tr>
-            ) : (
-              items.map((item) => {
-                const abierta = expandida === item.auditoria_id;
-                return (
-                  <FilaAuditoria
-                    key={item.auditoria_id}
-                    item={item}
-                    abierta={abierta}
-                    onToggle={() =>
-                      setExpandida(abierta ? null : item.auditoria_id)
-                    }
-                  />
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {items.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
+                    No hay registros para mostrar.
+                  </td>
+                </tr>
+              ) : (
+                items.map((item) => {
+                  const abierta = expandida === item.auditoria_id;
+                  return (
+                    <FilaAuditoria
+                      key={item.auditoria_id}
+                      item={item}
+                      abierta={abierta}
+                      onToggle={() =>
+                        setExpandida(abierta ? null : item.auditoria_id)
+                      }
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
       <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
     </>
   );

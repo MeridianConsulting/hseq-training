@@ -30,6 +30,32 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
         $buscar = $request->query('buscar');
         $filtro = $this->filtroEstado($request);
+        $pageRaw = $request->query('page');
+        $perRaw = $request->query('per_page');
+
+        if (($pageRaw !== null && $pageRaw !== '') || ($perRaw !== null && $perRaw !== '')) {
+            $resultado = $this->service->listarPaginado(
+                $def,
+                $filtro,
+                $buscar !== null ? (string)$buscar : null,
+                (int)($pageRaw ?: 1),
+                (int)($perRaw ?: 20)
+            );
+            $this->success([
+                'tipo' => $def['tipo'],
+                'etiqueta' => $def['etiqueta'],
+                'items' => $resultado['items'],
+                'total' => $resultado['total'],
+                'pagination' => [
+                    'total' => $resultado['total'],
+                    'per_page' => $resultado['per_page'],
+                    'current_page' => $resultado['page'],
+                    'last_page' => max(1, (int)ceil($resultado['total'] / max(1, $resultado['per_page']))),
+                ],
+            ]);
+
+            return;
+        }
 
         $items = $this->service->listar(
             $def,

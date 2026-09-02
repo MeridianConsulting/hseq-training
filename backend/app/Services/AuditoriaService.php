@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Exceptions\HttpException;
 use App\Core\Request;
 use App\Repositories\AuditoriaRepository;
 use RuntimeException;
@@ -207,6 +208,16 @@ class AuditoriaService
         $desde = isset($filtros['desde']) ? trim((string)$filtros['desde']) : '';
         $hasta = isset($filtros['hasta']) ? trim((string)$filtros['hasta']) : '';
 
+        if ($desde !== '' && !$this->esFecha($desde)) {
+            throw new HttpException('La fecha desde debe tener formato AAAA-MM-DD.', 422);
+        }
+        if ($hasta !== '' && !$this->esFecha($hasta)) {
+            throw new HttpException('La fecha hasta debe tener formato AAAA-MM-DD.', 422);
+        }
+        if ($desde !== '' && $hasta !== '' && $desde > $hasta) {
+            throw new HttpException('La fecha desde no puede ser posterior a la fecha hasta.', 422);
+        }
+
         return [
             'entidad' => isset($filtros['entidad']) ? trim((string)$filtros['entidad']) : '',
             'accion' => isset($filtros['accion']) ? trim((string)$filtros['accion']) : '',
@@ -216,6 +227,16 @@ class AuditoriaService
             'desde' => $desde !== '' ? $desde : '',
             'hasta' => $hasta !== '' ? $hasta : '',
         ];
+    }
+
+    private function esFecha(string $valor): bool
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+            return false;
+        }
+        $partes = explode('-', $valor);
+
+        return checkdate((int)$partes[1], (int)$partes[2], (int)$partes[0]);
     }
 
     private function normalizarValor(mixed $valor): mixed

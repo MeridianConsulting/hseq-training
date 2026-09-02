@@ -21,7 +21,33 @@ class CatalogRepository
         $this->db = Database::getInstance();
     }
 
-    public function listar(array $def, string $filtroEstado, ?string $buscar = null): array
+    public function listar(array $def, string $filtroEstado, ?string $buscar = null, ?int $limite = null, ?int $offset = null): array
+    {
+        [$where, $params] = $this->condiciones($def, $filtroEstado, $buscar);
+        $tabla = $this->identificador((string)$def['tabla']);
+        $sql = "SELECT * FROM {$tabla} {$where} ORDER BY nombre ASC";
+        if ($limite !== null) {
+            $limite = max(1, $limite);
+            $offset = max(0, (int)$offset);
+            $sql .= " LIMIT {$limite} OFFSET {$offset}";
+        }
+
+        return $this->db->fetchAll($sql, $params);
+    }
+
+    public function contar(array $def, string $filtroEstado, ?string $buscar = null): int
+    {
+        [$where, $params] = $this->condiciones($def, $filtroEstado, $buscar);
+        $tabla = $this->identificador((string)$def['tabla']);
+        $fila = $this->db->fetch("SELECT COUNT(*) AS total FROM {$tabla} {$where}", $params);
+
+        return (int)($fila['total'] ?? 0);
+    }
+
+    /**
+     * @return array{0:string,1:list<mixed>}
+     */
+    private function condiciones(array $def, string $filtroEstado, ?string $buscar): array
     {
         $condiciones = [];
         $params = [];
@@ -40,12 +66,8 @@ class CatalogRepository
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
-        $tabla = $this->identificador((string)$def['tabla']);
 
-        return $this->db->fetchAll(
-            "SELECT * FROM {$tabla} {$where} ORDER BY nombre ASC",
-            $params
-        );
+        return [$where, $params];
     }
 
     public function buscarPorId(array $def, int $id): ?array

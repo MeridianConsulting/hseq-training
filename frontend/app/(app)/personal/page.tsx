@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
+import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { Download, History, Pencil, Plus, Upload, UserMinus } from "lucide-react";
 import {
   apiDownload,
@@ -42,14 +44,17 @@ export default function PersonalPage() {
 
 function Contenido() {
   const { puede } = useAuth();
+  const { valores, setFiltro, limpiar } = useFiltrosUrl({
+    buscar: "",
+    estado: "Activo",
+    cargo_id: "",
+  });
   const [items, setItems] = useState<PersonaCorporativa[]>([]);
   const [cargos, setCargos] = useState<CargoCorporativo[]>([]);
   const [tiposDocumento, setTiposDocumento] = useState<TipoDocumentoCorporativo[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [buscar, setBuscar] = useState("");
-  const [estado, setEstado] = useState("Activo");
-  const [cargoId, setCargoId] = useState("");
+  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
@@ -64,15 +69,17 @@ function Contenido() {
   const [inactivando, setInactivando] = useState(false);
 
   async function cargar(paginaActual = 1) {
+    setCargando(true);
     const respuesta = await apiGet<ListaPaginada<PersonaCorporativa>>(
       withQuery("/api/personal", {
         page: paginaActual,
         per_page: 15,
-        buscar,
-        estado,
-        cargo_id: cargoId || undefined,
+        buscar: valores.buscar,
+        estado: valores.estado,
+        cargo_id: valores.cargo_id || undefined,
       }),
     );
+    setCargando(false);
 
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible consultar el personal corporativo.");
@@ -100,14 +107,29 @@ function Contenido() {
     })();
   }, []);
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      void cargar(1);
-    }, 300);
+  useDebouncedCallback(() => {
+    void cargar(1);
+  }, [valores.buscar, valores.estado, valores.cargo_id]);
 
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar, estado, cargoId]);
+  const chips: ChipFiltro[] = [];
+  if (valores.buscar) {
+    chips.push({ clave: "buscar", etiqueta: "Buscar", valor: valores.buscar });
+  }
+  if (valores.estado !== "Activo") {
+    chips.push({
+      clave: "estado",
+      etiqueta: "Estado",
+      valor: valores.estado === "" ? "Todos" : valores.estado,
+    });
+  }
+  if (valores.cargo_id) {
+    const cargo = cargos.find((c) => String(c.cargo_id) === valores.cargo_id);
+    chips.push({
+      clave: "cargo_id",
+      etiqueta: "Cargo",
+      valor: cargo?.nombre_cargo ?? valores.cargo_id,
+    });
+  }
 
   function abrirNueva() {
     setEditando(null);
@@ -292,20 +314,28 @@ function Contenido() {
         <Field etiqueta="Buscar">
           <input
             className={inputClass}
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
+            value={valores.buscar}
+            onChange={(e) => setFiltro("buscar", e.target.value)}
             placeholder="Documento o nombre"
           />
         </Field>
         <Field etiqueta="Estado laboral">
-          <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.estado}
+            onChange={(e) => setFiltro("estado", e.target.value)}
+          >
             <option value="">Todos</option>
             <option value="Activo">Activo</option>
             <option value="Inactivo">Inactivo</option>
           </select>
         </Field>
         <Field etiqueta="Cargo">
-          <select className={inputClass} value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
+          <select
+            className={inputClass}
+            value={valores.cargo_id}
+            onChange={(e) => setFiltro("cargo_id", e.target.value)}
+          >
             <option value="">Todos</option>
             {cargos.map((c) => (
               <option key={c.cargo_id} value={c.cargo_id}>
@@ -316,59 +346,69 @@ function Contenido() {
         </Field>
       </Filters>
 
-      <Table
-        columnas={[
-          { clave: "doc", etiqueta: "Documento" },
-          { clave: "nombre", etiqueta: "Nombre" },
-          { clave: "correo", etiqueta: "Correo" },
-          { clave: "cargo", etiqueta: "Cargo" },
-          { clave: "proyecto", etiqueta: "Proyecto" },
-          { clave: "ingreso", etiqueta: "Fecha de ingreso" },
-          { clave: "estado", etiqueta: "Estado" },
-          { clave: "acciones", etiqueta: "" },
-        ]}
-        filas={items.map((item) => [
-          item.numero_documento,
-          item.nombre_completo,
-          item.correo_corporativo ?? "—",
-          item.cargo ?? "—",
-          item.proyecto ?? "—",
-          item.contrato_fecha_inicio ?? "—",
-          <Badge key="e" tono={item.estado === "Activo" ? "ok" : "aviso"}>
-            {item.estado}
-          </Badge>,
-          <div key="a" className="flex justify-end gap-1">
-            {puede("asignaciones.ver") ? (
-              <Link
-                href={rutaHistorial(item)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
-              >
-                <History className="h-4 w-4" aria-hidden />
-                Historial
-              </Link>
-            ) : null}
-            {puede("personal.editar") && item.estado === "Activo" ? (
-              <Button
-                type="button"
-                variante="ghost"
-                onClick={() => {
-                  setError(null);
-                  setInactivarDe(item);
-                }}
-              >
-                <UserMinus className="h-4 w-4" aria-hidden />
-                Inactivar
-              </Button>
-            ) : null}
-            {puede("personal.editar") ? (
-              <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
-                <Pencil className="h-4 w-4" aria-hidden />
-                Editar
-              </Button>
-            ) : null}
-          </div>,
-        ])}
+      <FiltrosActivos
+        chips={chips}
+        onQuitar={(clave) => setFiltro(clave, clave === "estado" ? "Activo" : "")}
+        onLimpiar={limpiar}
       />
+
+      {cargando ? (
+        <ListaCargando />
+      ) : (
+        <Table
+          columnas={[
+            { clave: "doc", etiqueta: "Documento" },
+            { clave: "nombre", etiqueta: "Nombre" },
+            { clave: "correo", etiqueta: "Correo" },
+            { clave: "cargo", etiqueta: "Cargo" },
+            { clave: "proyecto", etiqueta: "Proyecto" },
+            { clave: "ingreso", etiqueta: "Fecha de ingreso" },
+            { clave: "estado", etiqueta: "Estado" },
+            { clave: "acciones", etiqueta: "" },
+          ]}
+          filas={items.map((item) => [
+            item.numero_documento,
+            item.nombre_completo,
+            item.correo_corporativo ?? "—",
+            item.cargo ?? "—",
+            item.proyecto ?? "—",
+            item.contrato_fecha_inicio ?? "—",
+            <Badge key="e" tono={item.estado === "Activo" ? "ok" : "aviso"}>
+              {item.estado}
+            </Badge>,
+            <div key="a" className="flex justify-end gap-1">
+              {puede("asignaciones.ver") ? (
+                <Link
+                  href={rutaHistorial(item)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
+                >
+                  <History className="h-4 w-4" aria-hidden />
+                  Historial
+                </Link>
+              ) : null}
+              {puede("personal.editar") && item.estado === "Activo" ? (
+                <Button
+                  type="button"
+                  variante="ghost"
+                  onClick={() => {
+                    setError(null);
+                    setInactivarDe(item);
+                  }}
+                >
+                  <UserMinus className="h-4 w-4" aria-hidden />
+                  Inactivar
+                </Button>
+              ) : null}
+              {puede("personal.editar") ? (
+                <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  Editar
+                </Button>
+              ) : null}
+            </div>,
+          ])}
+        />
+      )}
       <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
 
       <Modal
