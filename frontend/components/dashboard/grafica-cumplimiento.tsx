@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import type { KpiCumplimiento, TemaEficacia, TemaHoras } from "@/lib/tipos";
+import type { KpiCumplimiento, KpiEficacia, KpiHoras, KpiSoportes } from "@/lib/tipos";
 
 export function GraficaCumplimiento({
   titulo,
@@ -17,7 +17,7 @@ export function GraficaCumplimiento({
 
   return (
     <Card>
-      <h2 className="text-sm font-semibold text-hseq-900">{titulo}</h2>
+      <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
       <p className="mt-1 text-xs text-slate-500">{descripcion}</p>
 
       {sinInformacion ? (
@@ -41,7 +41,7 @@ export function GraficaCumplimiento({
           <p className="mt-4 text-center text-sm font-medium text-hseq-800">
             {kpi.sin_programado
               ? "Sin programado"
-              : `${kpi.porcentaje?.toFixed(1).replace(".", ",")} % de cumplimiento`}
+              : `${formatoNumero(kpi.porcentaje)} % de cobertura`}
           </p>
         </>
       )}
@@ -74,73 +74,122 @@ function BarraSvg({
   );
 }
 
-export function GraficaEficacia({ temas }: { temas: TemaEficacia[] }) {
+export function TarjetaEficacia({
+  titulo,
+  descripcion,
+  kpi,
+}: {
+  titulo: string;
+  descripcion: string;
+  kpi: KpiEficacia;
+}) {
   return (
     <Card>
-      <h2 className="text-sm font-semibold text-hseq-900">Eficacia por tema</h2>
-      <p className="mt-1 text-xs text-slate-500">Promedio de nota (escala 0 a 5). Sin nota no entra al cálculo.</p>
-      {temas.length === 0 ? (
-        <p className="mt-8 text-center text-sm text-slate-500">Sin información</p>
+      <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
+      <p className="mt-1 text-xs text-slate-500">{descripcion}</p>
+      {kpi.evaluaciones === 0 || kpi.promedio === null ? (
+        <p className="mt-8 text-center text-sm text-slate-500">Sin evaluaciones</p>
       ) : (
-        <ul className="mt-4 space-y-3">
-          {temas.map((tema) => {
-            const ancho = Math.min(100, Math.max(0, (tema.promedio / 5) * 100));
-            return (
-              <li key={tema.capacitacion_id}>
-                <div className="mb-1 flex items-baseline justify-between gap-2">
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium text-hseq-900">{tema.codigo}</span> {tema.nombre}
-                  </p>
-                  <p className="shrink-0 text-sm font-semibold text-hseq-800">
-                    {tema.promedio.toFixed(2).replace(".", ",")}
-                    <span className="ml-1 text-xs font-normal text-slate-500">
-                      ({tema.evaluaciones})
-                    </span>
-                  </p>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-2 rounded-full bg-hseq-600" style={{ width: `${ancho}%` }} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <p className="mt-6 text-center text-3xl font-semibold text-hseq-900">
+            {formatoNumero(kpi.promedio, 2)}
+          </p>
+          <p className="mt-2 text-center text-xs text-slate-500">
+            Promedio de {kpi.evaluaciones} evaluación{kpi.evaluaciones === 1 ? "" : "es"}
+          </p>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-2 rounded-full bg-hseq-600"
+              style={{ width: `${Math.min(100, Math.max(0, (kpi.promedio / 5) * 100))}%` }}
+            />
+          </div>
+        </>
       )}
     </Card>
   );
 }
 
-export function GraficaHoras({ temas }: { temas: TemaHoras[] }) {
-  const maximo = Math.max(...temas.map((tema) => tema.horas), 0);
-
+export function TarjetaSoportes({ kpi }: { kpi: KpiSoportes }) {
   return (
     <Card>
-      <h2 className="text-sm font-semibold text-hseq-900">Horas ejecutadas por tema</h2>
-      <p className="mt-1 text-xs text-slate-500">Suma de horas efectivas registradas en cumplimientos del período.</p>
-      {temas.length === 0 ? (
-        <p className="mt-8 text-center text-sm text-slate-500">Sin información</p>
+      <h3 className="text-sm font-semibold text-hseq-900">Cumplimiento de soportes</h3>
+      <p className="mt-1 text-xs text-slate-500">
+        Capacitaciones que requieren certificado/soporte. Con soporte = cumple; sin soporte =
+        pendiente.
+      </p>
+      {kpi.requieren === 0 ? (
+        <p className="mt-8 text-center text-sm text-slate-500">Sin requerimientos en el período</p>
       ) : (
-        <ul className="mt-4 space-y-3">
-          {temas.map((tema) => {
-            const ancho = maximo > 0 ? (tema.horas / maximo) * 100 : 0;
-            return (
-              <li key={tema.capacitacion_id}>
-                <div className="mb-1 flex items-baseline justify-between gap-2">
-                  <p className="text-sm text-slate-700">
-                    <span className="font-medium text-hseq-900">{tema.codigo}</span> {tema.nombre}
-                  </p>
-                  <p className="shrink-0 text-sm font-semibold text-hseq-800">
-                    {tema.horas.toFixed(1).replace(".", ",")} h
-                  </p>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-2 rounded-full bg-hseq-500" style={{ width: `${ancho}%` }} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+          <div>
+            <p className="text-2xl font-semibold text-hseq-900">{kpi.con_soporte}</p>
+            <p className="text-xs text-slate-500">Con soporte</p>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold text-slate-700">{kpi.pendientes}</p>
+            <p className="text-xs text-slate-500">Pendientes</p>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold text-hseq-800">
+              {kpi.porcentaje === null ? "—" : `${formatoNumero(kpi.porcentaje)} %`}
+            </p>
+            <p className="text-xs text-slate-500">Cumplimiento</p>
+          </div>
+        </div>
       )}
     </Card>
   );
+}
+
+export function TarjetaHoras({
+  titulo,
+  kpi,
+}: {
+  titulo: string;
+  kpi: KpiHoras;
+}) {
+  const maximo = Math.max(kpi.programadas, kpi.ejecutadas, 1);
+  const anchoProgramadas = (kpi.programadas / maximo) * 100;
+  const anchoEjecutadas = (kpi.ejecutadas / maximo) * 100;
+
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
+      <div className="mt-4 space-y-3">
+        <BarraHoras etiqueta="Programadas" valor={kpi.programadas} ancho={anchoProgramadas} color="#0e7490" />
+        <BarraHoras etiqueta="Ejecutadas" valor={kpi.ejecutadas} ancho={anchoEjecutadas} color="#14b8a6" />
+      </div>
+    </Card>
+  );
+}
+
+function BarraHoras({
+  etiqueta,
+  valor,
+  ancho,
+  color,
+}: {
+  etiqueta: string;
+  valor: number;
+  ancho: number;
+  color: string;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <p className="text-sm text-slate-600">{etiqueta}</p>
+        <p className="text-sm font-semibold text-hseq-900">{formatoNumero(valor, 1)} h</p>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-2 rounded-full" style={{ width: `${ancho}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+function formatoNumero(valor: number | null | undefined, decimales = 1): string {
+  if (valor === null || valor === undefined) {
+    return "—";
+  }
+  return valor.toFixed(decimales).replace(".", ",");
 }

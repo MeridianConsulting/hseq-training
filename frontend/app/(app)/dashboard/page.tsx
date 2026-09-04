@@ -1,44 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FiltroPeriodo, type FiltroPeriodoValor } from "@/components/dashboard/filtro-periodo";
+import {
+  FiltroPeriodo,
+  type FiltroDashboardValor,
+} from "@/components/dashboard/filtro-periodo";
 import {
   GraficaCumplimiento,
-  GraficaEficacia,
-  GraficaHoras,
+  TarjetaEficacia,
+  TarjetaHoras,
+  TarjetaSoportes,
 } from "@/components/dashboard/grafica-cumplimiento";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { Table } from "@/components/ui/table";
 import { apiGet, withQuery } from "@/lib/api";
-import type { AlertaVencimiento, ResumenDashboard } from "@/lib/tipos";
+import type { ResumenDashboard } from "@/lib/tipos";
 
-const ETIQUETAS_ESTADO: Record<string, string> = {
-  PENDIENTE: "Pendiente",
-  PENDIENTE_PROXIMA_A_VENCER: "Pendiente próxima a vencer",
-  PENDIENTE_VENCIDA: "Pendiente vencida",
-  COMPLETADA: "Completada",
-  PROXIMA_A_VENCER: "Vigencia próxima a vencer",
-  VENCIDA: "Vigencia vencida",
-};
-
-function tonoEstado(estado: string) {
-  if (estado.includes("VENCIDA") || estado === "VENCIDA") return "alto" as const;
-  if (estado.includes("PROXIMA")) return "aviso" as const;
-  if (estado === "COMPLETADA") return "ok" as const;
-  return "neutral" as const;
-}
-
-function filtroInicial(): FiltroPeriodoValor {
+function filtroInicial(): FiltroDashboardValor {
   const hoy = new Date();
+  const mes = hoy.getMonth() + 1;
   return {
+    proceso: "todos",
+    proyecto: "",
     tipo: "mensual",
     anio: hoy.getFullYear(),
-    mes: hoy.getMonth() + 1,
-    trimestre: Math.ceil((hoy.getMonth() + 1) / 3),
+    mes,
+    trimestre: Math.ceil(mes / 3),
+    semestre: mes <= 6 ? 1 : 2,
   };
 }
 
@@ -51,7 +41,7 @@ export default function DashboardPage() {
 }
 
 function Contenido() {
-  const [filtro, setFiltro] = useState<FiltroPeriodoValor>(filtroInicial);
+  const [filtro, setFiltro] = useState<FiltroDashboardValor>(filtroInicial);
   const [resumen, setResumen] = useState<ResumenDashboard | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,12 +56,19 @@ function Contenido() {
       const params: Record<string, string | number> = {
         tipo: filtro.tipo,
         anio: filtro.anio,
+        proceso: filtro.proceso,
       };
       if (filtro.tipo === "mensual") {
         params.mes = filtro.mes;
       }
       if (filtro.tipo === "trimestral") {
         params.trimestre = filtro.trimestre;
+      }
+      if (filtro.tipo === "semestral") {
+        params.semestre = filtro.semestre;
+      }
+      if (filtro.proyecto !== "") {
+        params.proyecto = filtro.proyecto;
       }
 
       const dash = await apiGet<ResumenDashboard>(withQuery("/api/dashboard", params));
@@ -96,14 +93,42 @@ function Contenido() {
     };
   }, [filtro]);
 
+  const cobertura = resumen?.cobertura;
+  const eficacia = resumen?.eficacia;
+  const horas = resumen?.horas;
+
   return (
     <>
       <PageHeader
-        titulo="Indicadores HSEQ"
-        descripcion="Cumplimiento del plan anual frente a lo ejecutado. Administración y proyectos se consolidan en un solo valor."
+        titulo="Panel de control"
+        descripcion="Indicadores de cobertura, eficacia, soportes y horas calculados desde el programa de capacitación."
+        acciones={
+          resumen ? (
+            <Card className="min-w-[11rem] py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Empleados
+              </p>
+              <dl className="mt-2 space-y-1 text-sm">
+                <div className="flex justify-between gap-6">
+                  <dt className="text-slate-600">Activos</dt>
+                  <dd className="font-semibold text-hseq-900">{resumen.poblacion.activos}</dd>
+                </div>
+                <div className="flex justify-between gap-6">
+                  <dt className="text-slate-600">Inactivos</dt>
+                  <dd className="font-semibold text-slate-700">{resumen.poblacion.inactivos}</dd>
+                </div>
+              </dl>
+            </Card>
+          ) : null
+        }
       />
 
-      <FiltroPeriodo valor={filtro} onChange={setFiltro} />
+      <FiltroPeriodo
+        valor={filtro}
+        onChange={setFiltro}
+        procesos={resumen?.opciones.procesos ?? []}
+        proyectos={resumen?.opciones.proyectos ?? []}
+      />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
 
@@ -111,76 +136,78 @@ function Contenido() {
         <p className="mb-4 text-sm text-slate-500">Cargando indicadores…</p>
       ) : null}
 
-      {resumen ? (
+      {resumen && cobertura && eficacia && horas ? (
         <>
           <p className="mb-4 text-sm text-slate-500">
             Período: <span className="font-medium text-hseq-900">{resumen.periodo.etiqueta}</span>
             {cargando ? " · Actualizando…" : null}
           </p>
 
-          <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <Card>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Trabajadores activos</p>
-              <p className="mt-1 text-3xl font-semibold text-hseq-900">{resumen.poblacion?.activos ?? 0}</p>
-              <p className="mt-1 text-xs text-slate-500">Población laboral vigente. Los inactivos no entran en el cumplimiento actual.</p>
-            </Card>
-            <Card>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Trabajadores inactivos</p>
-              <p className="mt-1 text-3xl font-semibold text-slate-700">{resumen.poblacion?.inactivos ?? 0}</p>
-              <p className="mt-1 text-xs text-slate-500">Conservan historial y se consultan desde el reporte del trabajador.</p>
-            </Card>
-          </div>
+          <section className="mb-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Cobertura
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <GraficaCumplimiento
+                titulo="Cumplimiento general"
+                descripcion="Capacitaciones ejecutadas / programadas × 100."
+                kpi={cobertura.general}
+              />
+              <GraficaCumplimiento
+                titulo="Inducción y reinducción"
+                descripcion="Solo capacitaciones de inducción/reinducción."
+                kpi={cobertura.induccion}
+              />
+              <GraficaCumplimiento
+                titulo="Tareas críticas"
+                descripcion="Solo capacitaciones marcadas como tarea crítica."
+                kpi={cobertura.tareas_criticas}
+              />
+            </div>
+          </section>
 
-          <div className="mb-6 grid gap-4 lg:grid-cols-3">
-            <GraficaCumplimiento
-              titulo="Cumplimiento general"
-              descripcion="Programado del plan anual vs cumplimientos del período."
-              kpi={resumen.cumplimiento_general}
-            />
-            <GraficaCumplimiento
-              titulo="Inducción y reinducción"
-              descripcion="Plan filtrado por tipo de inducción; ejecutado por origen o el mismo tipo."
-              kpi={resumen.cumplimiento_induccion}
-            />
-            <GraficaCumplimiento
-              titulo="Tareas críticas"
-              descripcion="Solo capacitaciones marcadas como tarea crítica."
-              kpi={resumen.cumplimiento_tareas_criticas}
-            />
-          </div>
+          <section className="mb-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Eficacia
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <TarjetaEficacia
+                titulo="Eficacia general"
+                descripcion="Promedio de calificaciones válidas. Sin evaluación no cuenta como cero."
+                kpi={eficacia.general}
+              />
+              <TarjetaEficacia
+                titulo="Inducción y reinducción"
+                descripcion="Promedio exclusivo de evaluaciones de inducción/reinducción."
+                kpi={eficacia.induccion}
+              />
+              <TarjetaEficacia
+                titulo="Tareas críticas"
+                descripcion="Promedio exclusivo de evaluaciones en tareas críticas."
+                kpi={eficacia.tareas_criticas}
+              />
+            </div>
+          </section>
 
-          <div className="mb-6 grid gap-4 lg:grid-cols-2">
-            <GraficaEficacia temas={resumen.eficacia_por_tema} />
-            <GraficaHoras temas={resumen.horas_por_tema} />
-          </div>
+          <section className="mb-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Soportes
+            </h2>
+            <div className="max-w-xl">
+              <TarjetaSoportes kpi={resumen.soportes} />
+            </div>
+          </section>
 
-          <Card>
-            <h2 className="mb-1 text-sm font-semibold text-hseq-900">Alertas de vencimiento</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              {resumen.alertas_activas} alerta{resumen.alertas_activas === 1 ? "" : "s"} activa
-              {resumen.alertas_activas === 1 ? "" : "s"} · {resumen.pendientes} pendiente
-              {resumen.pendientes === 1 ? "" : "s"}
-            </p>
-            <Table
-              columnas={[
-                { clave: "estado", etiqueta: "Estado" },
-                { clave: "tipo", etiqueta: "Tipo" },
-                { clave: "fecha", etiqueta: "Fecha alerta" },
-                { clave: "persona", etiqueta: "Persona" },
-                { clave: "cap", etiqueta: "Capacitación" },
-              ]}
-              filas={(resumen.alertas ?? []).map((alerta: AlertaVencimiento) => [
-                <Badge key="e" tono={tonoEstado(alerta.estado_calculado)}>
-                  {ETIQUETAS_ESTADO[alerta.estado_calculado] ?? alerta.estado_calculado}
-                </Badge>,
-                alerta.tipo_alerta === "LIMITE_CUMPLIMIENTO" ? "Límite de cumplimiento" : "Vigencia",
-                alerta.fecha_alerta ?? "—",
-                String(alerta.persona_id_ext),
-                String(alerta.capacitacion_id),
-              ])}
-              vacio="No hay alertas de vencimiento en este momento."
-            />
-          </Card>
+          <section className="mb-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Horas de capacitación
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <TarjetaHoras titulo="Total" kpi={horas.general} />
+              <TarjetaHoras titulo="Inducción y reinducción" kpi={horas.induccion} />
+              <TarjetaHoras titulo="Tareas críticas" kpi={horas.critica} />
+            </div>
+          </section>
         </>
       ) : null}
     </>

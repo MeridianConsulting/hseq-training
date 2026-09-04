@@ -39,13 +39,14 @@ export type PingRespuesta = {
   base_personal: EstadoPing;
 };
 
-export type TipoPeriodoDashboard = "mensual" | "trimestral" | "anual";
+export type TipoPeriodoDashboard = "mensual" | "trimestral" | "semestral" | "anual";
 
 export type PeriodoDashboard = {
   tipo: TipoPeriodoDashboard;
   anio: number;
   mes: number | null;
   trimestre: number | null;
+  semestre: number | null;
   desde: string;
   hasta: string;
   etiqueta: string;
@@ -58,35 +59,55 @@ export type KpiCumplimiento = {
   sin_programado: boolean;
 };
 
-export type TemaEficacia = {
-  capacitacion_id: number;
-  codigo: string;
-  nombre: string;
-  promedio: number;
+export type KpiEficacia = {
+  promedio: number | null;
   evaluaciones: number;
 };
 
-export type TemaHoras = {
-  capacitacion_id: number;
-  codigo: string;
-  nombre: string;
-  horas: number;
+export type KpiSoportes = {
+  requieren: number;
+  con_soporte: number;
+  pendientes: number;
+  porcentaje: number | null;
+};
+
+export type KpiHoras = {
+  programadas: number;
+  ejecutadas: number;
 };
 
 export type ResumenDashboard = {
   periodo: PeriodoDashboard;
+  alcance: {
+    proceso: string;
+    proyecto: string | null;
+  };
+  cobertura: {
+    general: KpiCumplimiento;
+    induccion: KpiCumplimiento;
+    tareas_criticas: KpiCumplimiento;
+  };
+  eficacia: {
+    general: KpiEficacia;
+    induccion: KpiEficacia;
+    tareas_criticas: KpiEficacia;
+  };
+  soportes: KpiSoportes;
+  horas: {
+    general: KpiHoras;
+    induccion: KpiHoras;
+    critica: KpiHoras;
+  };
   cumplimiento_general: KpiCumplimiento;
   cumplimiento_induccion: KpiCumplimiento;
   cumplimiento_tareas_criticas: KpiCumplimiento;
-  eficacia_por_tema: TemaEficacia[];
-  horas_por_tema: TemaHoras[];
-  estados: Record<string, number>;
-  pendientes: number;
-  alertas_activas: number;
-  alertas: AlertaVencimiento[];
   poblacion: {
     activos: number;
     inactivos: number;
+  };
+  opciones: {
+    procesos: ProcesoCronograma[];
+    proyectos: string[];
   };
 };
 
