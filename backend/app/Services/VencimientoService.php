@@ -23,7 +23,8 @@ use DateTimeImmutable;
  * fecha_limite_cumplimiento (asignacion pendiente) != fecha_vencimiento (vigencia del curso tomado).
  *
  * Inducción / reinducción: el disparo está en MotorAsignacionService.
- * Este servicio solo calcula fecha_vencimiento con la periodicidad resuelta.
+ * Este servicio calcula fecha_vencimiento: periodicidad de matriz si existe;
+ * si no, vigencia del catálogo de la capacitación.
  */
 class VencimientoService
 {
@@ -92,7 +93,7 @@ class VencimientoService
      * Periodicidad del trabajador, no del nombre de la capacitación.
      * 1) snapshot de matriz en la asignación (aunque la regla se inactive después)
      * 2) regla activa cargo + proyecto + capacitación
-     * 3) periodicidad por defecto de la capacitación
+     * 3) vigencia del catálogo de la capacitación (validez una vez tomada)
      * 4) ninguna → sin vencimiento
      *
      * @return array{cantidad:?int,unidad:?string,nombre:?string,origen:string,etiqueta:string}
@@ -149,17 +150,17 @@ class VencimientoService
                     a.matriz_aplicabilidad_id,
                     a.cargo_id_ext,
                     a.proyecto,
-                    cap.periodicidad_default_id,
-                    pd.cantidad AS cap_cantidad,
-                    pd.unidad AS cap_unidad,
-                    pd.nombre AS cap_nombre,
+                    cap.vigencia_id,
+                    vg.cantidad AS cap_cantidad,
+                    vg.unidad AS cap_unidad,
+                    vg.nombre AS cap_nombre,
                     m.matriz_aplicabilidad_id AS matriz_existe,
                     pe.cantidad AS mat_cantidad,
                     pe.unidad AS mat_unidad,
                     pe.nombre AS mat_nombre
              FROM asignaciones_capacitacion a
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
-             LEFT JOIN periodicidades pd ON pd.periodicidad_id = cap.periodicidad_default_id
+             LEFT JOIN vigencias vg ON vg.vigencia_id = cap.vigencia_id
              LEFT JOIN matriz_aplicabilidad m ON m.matriz_aplicabilidad_id = a.matriz_aplicabilidad_id
              LEFT JOIN periodicidades pe ON pe.periodicidad_id = m.periodicidad_id
              WHERE a.asignacion_id = ?

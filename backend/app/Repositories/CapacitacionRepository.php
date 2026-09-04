@@ -15,9 +15,13 @@ class CapacitacionRepository
         $this->db = Database::getInstance();
     }
 
-    public function listar(int $limite, int $offset, ?string $buscar, ?string $estado, ?int $categoriaId): array
+    /**
+     * @param array<string,mixed> $filtros
+     * @return list<array<string,mixed>>
+     */
+    public function listar(int $limite, int $offset, array $filtros): array
     {
-        [$where, $params] = $this->filtros($buscar, $estado, $categoriaId);
+        [$where, $params] = $this->filtros($filtros);
 
         return $this->db->fetchAll(
             $this->selectBase() . " {$where} ORDER BY c.codigo ASC LIMIT {$limite} OFFSET {$offset}",
@@ -25,9 +29,10 @@ class CapacitacionRepository
         );
     }
 
-    public function contar(?string $buscar, ?string $estado, ?int $categoriaId): int
+    /** @param array<string,mixed> $filtros */
+    public function contar(array $filtros): int
     {
-        [$where, $params] = $this->filtros($buscar, $estado, $categoriaId);
+        [$where, $params] = $this->filtros($filtros);
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total FROM capacitaciones c {$where}",
             $params
@@ -185,6 +190,8 @@ class CapacitacionRepository
                     per.cantidad AS periodicidad_cantidad,
                     per.unidad AS periodicidad_unidad,
                     vig.nombre AS vigencia_nombre,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad,
                     md.nombre AS modalidad_nombre,
                     prv.nombre AS proveedor_nombre,
                     fte.nombre AS fuente_normativa_nombre
@@ -198,27 +205,49 @@ class CapacitacionRepository
                 LEFT JOIN fuentes_normativas fte ON fte.fuente_normativa_id = c.fuente_normativa_id';
     }
 
-    /** @return array{0:string,1:list<mixed>} */
-    private function filtros(?string $buscar, ?string $estado, ?int $categoriaId): array
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{0:string,1:list<mixed>}
+     */
+    private function filtros(array $filtros): array
     {
         $condiciones = [];
         $params = [];
 
-        if ($buscar !== null && $buscar !== '') {
+        $buscar = isset($filtros['buscar']) ? trim((string)$filtros['buscar']) : '';
+        if ($buscar !== '') {
             $condiciones[] = '(c.codigo LIKE ? OR c.nombre LIKE ?)';
             $like = '%' . $buscar . '%';
             $params[] = $like;
             $params[] = $like;
         }
 
-        if ($estado !== null && $estado !== '') {
+        $estado = isset($filtros['estado']) ? trim((string)$filtros['estado']) : '';
+        if ($estado !== '') {
             $condiciones[] = 'c.estado = ?';
             $params[] = $estado;
         }
 
-        if ($categoriaId !== null && $categoriaId > 0) {
-            $condiciones[] = 'c.categoria_id = ?';
-            $params[] = $categoriaId;
+        $tipoId = isset($filtros['tipo_capacitacion_id']) ? (int)$filtros['tipo_capacitacion_id'] : 0;
+        if ($tipoId > 0) {
+            $condiciones[] = 'c.tipo_capacitacion_id = ?';
+            $params[] = $tipoId;
+        }
+
+        $modalidadId = isset($filtros['modalidad_default_id']) ? (int)$filtros['modalidad_default_id'] : 0;
+        if ($modalidadId > 0) {
+            $condiciones[] = 'c.modalidad_default_id = ?';
+            $params[] = $modalidadId;
+        }
+
+        if (array_key_exists('es_tarea_critica', $filtros) && $filtros['es_tarea_critica'] !== null && $filtros['es_tarea_critica'] !== '') {
+            $condiciones[] = 'c.es_tarea_critica = ?';
+            $params[] = (int)$filtros['es_tarea_critica'] === 1 ? 1 : 0;
+        }
+
+        if (array_key_exists('evaluacion', $filtros) && $filtros['evaluacion'] !== null && $filtros['evaluacion'] !== '') {
+            $condiciones[] = 'c.evaluacion = ?';
+            $params[] = (int)$filtros['evaluacion'] === 1 ? 1 : 0;
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

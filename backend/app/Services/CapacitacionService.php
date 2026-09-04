@@ -11,6 +11,12 @@ use PDOException;
 class CapacitacionService
 {
     private const SQLSTATE_INTEGRIDAD = '23000';
+    public const MENSAJE_CODIGO_DUPLICADO = 'Este código de capacitación ya está registrado.';
+    public const MENSAJE_CREADA = 'Capacitación creada correctamente.';
+    public const MENSAJE_ACTUALIZADA = 'Capacitación actualizada correctamente.';
+    public const MENSAJE_ELIMINADA = 'Capacitación eliminada';
+    public const MENSAJE_INACTIVADA = 'La capacitación está en uso; se inactivó para conservar el histórico';
+    public const MENSAJE_YA_INACTIVA = 'La capacitación ya está inactiva y conserva el histórico.';
 
     /** @var array<string,string> */
     public const CAMPOS_AUDITABLES = [
@@ -55,15 +61,15 @@ class CapacitacionService
             'objetivo' => 'required|string',
             'descripcion_temario' => 'nullable|string',
             'categoria_id' => 'nullable|integer',
-            'tipo_capacitacion_id' => 'nullable|integer',
+            'tipo_capacitacion_id' => 'required|integer',
             'duracion_estimada_horas' => 'required|numeric|gt:0',
-            'criticidad' => 'required|in:BAJA,MEDIA,ALTA',
+            'criticidad' => 'nullable|in:BAJA,MEDIA,ALTA',
             'es_tarea_critica' => 'nullable|integer|min:0|max:1',
             'responsable' => 'nullable|string|max:120',
             'proveedor_default_id' => 'nullable|integer',
             'periodicidad_default_id' => 'nullable|integer',
             'vigencia_id' => 'nullable|integer',
-            'modalidad_default_id' => 'nullable|integer',
+            'modalidad_default_id' => 'required|integer',
             'evaluacion' => 'nullable|integer|min:0|max:1',
             'nota_minima' => 'nullable|numeric|min:0',
             'certificado' => 'nullable|integer|min:0|max:1',
@@ -76,32 +82,45 @@ class CapacitacionService
     public function mensajes(): array
     {
         return [
-            'duracion_estimada_horas.required' => 'La duración estimada es obligatoria.',
-            'duracion_estimada_horas.numeric' => 'La duración estimada debe ser un valor numérico.',
+            'codigo.required' => 'El código es obligatorio.',
+            'nombre.required' => 'El nombre es obligatorio.',
+            'objetivo.required' => 'El objetivo es obligatorio.',
+            'duracion_estimada_horas.required' => 'La duración es obligatoria.',
+            'duracion_estimada_horas.numeric' => 'La duración debe ser un valor numérico.',
             'duracion_estimada_horas.gt' => 'La duración debe ser mayor que cero.',
-            'criticidad.required' => 'Debe definir la criticidad de la capacitación.',
-            'criticidad.in' => 'Debe definir la criticidad de la capacitación.',
+            'tipo_capacitacion_id.required' => 'El tipo de capacitación es obligatorio.',
+            'tipo_capacitacion_id.integer' => 'El tipo de capacitación no es válido.',
+            'modalidad_default_id.required' => 'La modalidad es obligatoria.',
+            'modalidad_default_id.integer' => 'La modalidad no es válida.',
+            'vigencia_id.integer' => 'La vigencia no es válida.',
+            'es_tarea_critica.min' => 'La tarea crítica solo admite Sí o No.',
+            'es_tarea_critica.max' => 'La tarea crítica solo admite Sí o No.',
+            'evaluacion.min' => 'Requiere evaluación solo admite Sí o No.',
+            'evaluacion.max' => 'Requiere evaluación solo admite Sí o No.',
+            'nota_minima.numeric' => 'La nota mínima debe ser un valor numérico.',
+            'nota_minima.min' => 'La nota mínima no puede ser negativa.',
         ];
     }
 
-    public function listar(int $pagina, int $porPagina, ?string $buscar, ?string $estado, ?int $categoriaId): array
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{items:list<array<string,mixed>>,total:int,page:int,per_page:int}
+     */
+    public function listar(int $pagina, int $porPagina, array $filtros): array
     {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
-
-        if ($estado !== null && $estado !== '' && !in_array($estado, ['ACTIVA', 'INACTIVA'], true)) {
-            throw new HttpException('El estado debe ser ACTIVA o INACTIVA.', 422);
-        }
+        $limpios = $this->normalizarFiltros($filtros);
 
         $items = array_map(
             [$this, 'normalizar'],
-            $this->repo->listar($porPagina, $offset, $buscar, $estado, $categoriaId)
+            $this->repo->listar($porPagina, $offset, $limpios)
         );
 
         return [
             'items' => $items,
-            'total' => $this->repo->contar($buscar, $estado, $categoriaId),
+            'total' => $this->repo->contar($limpios),
             'page' => $pagina,
             'per_page' => $porPagina,
         ];
@@ -126,10 +145,12 @@ class CapacitacionService
         $datos = $this->preparar($datos);
 
         if ($this->repo->codigoDuplicado((string)$datos['codigo'])) {
-            throw new HttpException('Ya existe una capacitación con ese código', 409);
+            throw new HttpException(self::MENSAJE_CODIGO_DUPLICADO, 409);
         }
 
         $this->validarFks($datos);
+        $this->exigirTipoYModalidad($datos);
+        $datos = $this->aplicarReglasEvaluacion($datos);
 
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
 
@@ -153,10 +174,12 @@ class CapacitacionService
         $datos = $this->preparar($datos, true);
 
         if (isset($datos['codigo']) && $this->repo->codigoDuplicado((string)$datos['codigo'], $id)) {
-            throw new HttpException('Ya existe otra capacitación con ese código', 409);
+            throw new HttpException(self::MENSAJE_CODIGO_DUPLICADO, 409);
         }
 
         $this->validarFks($datos);
+        $this->exigirTipoYModalidad($datos);
+        $datos = $this->aplicarReglasEvaluacion($datos, $antes);
 
         if ($datos === []) {
             return $antes;
@@ -190,6 +213,10 @@ class CapacitacionService
     {
         $antes = $this->ver($id);
 
+        if (($antes['estado'] ?? '') === 'INACTIVA') {
+            return self::MENSAJE_YA_INACTIVA;
+        }
+
         try {
             return $this->repo->transaccion(function () use ($id, $antes, $actor): string {
                 $this->repo->eliminar($id);
@@ -199,12 +226,12 @@ class CapacitacionService
                         'eliminar',
                         'capacitaciones',
                         $id,
-                        ['mensaje' => 'Capacitación eliminada'],
+                        ['mensaje' => self::MENSAJE_ELIMINADA],
                         $antes
                     );
                 }
 
-                return 'Capacitación eliminada';
+                return self::MENSAJE_ELIMINADA;
             });
         } catch (PDOException $e) {
             if ($e->getCode() === self::SQLSTATE_INTEGRIDAD) {
@@ -222,7 +249,7 @@ class CapacitacionService
                     );
                 }
 
-                return 'La capacitación está en uso; se inactivó para conservar el histórico';
+                return self::MENSAJE_INACTIVADA;
             }
 
             throw $e;
@@ -242,6 +269,45 @@ class CapacitacionService
         }
 
         return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
+     */
+    private function normalizarFiltros(array $filtros): array
+    {
+        $estado = isset($filtros['estado']) ? trim((string)$filtros['estado']) : '';
+        if ($estado !== '' && !in_array($estado, ['ACTIVA', 'INACTIVA'], true)) {
+            throw new HttpException('El estado debe ser ACTIVA o INACTIVA.', 422);
+        }
+
+        $tarea = $this->filtroBinario($filtros['es_tarea_critica'] ?? null);
+        $evaluacion = $this->filtroBinario($filtros['evaluacion'] ?? null);
+
+        return [
+            'buscar' => isset($filtros['buscar']) && trim((string)$filtros['buscar']) !== ''
+                ? trim((string)$filtros['buscar'])
+                : null,
+            'estado' => $estado !== '' ? $estado : null,
+            'tipo_capacitacion_id' => isset($filtros['tipo_capacitacion_id']) && (int)$filtros['tipo_capacitacion_id'] > 0
+                ? (int)$filtros['tipo_capacitacion_id']
+                : null,
+            'modalidad_default_id' => isset($filtros['modalidad_default_id']) && (int)$filtros['modalidad_default_id'] > 0
+                ? (int)$filtros['modalidad_default_id']
+                : null,
+            'es_tarea_critica' => $tarea,
+            'evaluacion' => $evaluacion,
+        ];
+    }
+
+    private function filtroBinario(mixed $valor): ?int
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        return (int)$valor === 1 ? 1 : 0;
     }
 
     private function preparar(array $datos, bool $parcial = false): array
@@ -275,8 +341,12 @@ class CapacitacionService
             $datos['duracion_estimada_horas'] = (float)$datos['duracion_estimada_horas'];
         }
 
-        if (array_key_exists('nota_minima', $datos) && $datos['nota_minima'] !== null) {
+        if (array_key_exists('nota_minima', $datos) && $datos['nota_minima'] !== null && $datos['nota_minima'] !== '') {
             $datos['nota_minima'] = (float)$datos['nota_minima'];
+        }
+
+        if (!$parcial && (!array_key_exists('criticidad', $datos) || $datos['criticidad'] === null || $datos['criticidad'] === '')) {
+            $datos['criticidad'] = 'MEDIA';
         }
 
         if ($parcial) {
@@ -288,6 +358,43 @@ class CapacitacionService
         }
 
         return $datos;
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     * @param array<string,mixed>|null $antes
+     * @return array<string,mixed>
+     */
+    private function aplicarReglasEvaluacion(array $datos, ?array $antes = null): array
+    {
+        $evaluacion = 0;
+        if (array_key_exists('evaluacion', $datos)) {
+            $evaluacion = (int)$datos['evaluacion'];
+        } elseif ($antes !== null && !empty($antes['evaluacion'])) {
+            $evaluacion = 1;
+        }
+
+        if ($evaluacion === 1) {
+            $nota = $datos['nota_minima'] ?? ($antes['nota_minima'] ?? null);
+            if ($nota === null || $nota === '') {
+                throw new HttpException('La nota mínima es obligatoria cuando la capacitación requiere evaluación.', 422);
+            }
+            $datos['nota_minima'] = (float)$nota;
+        } else {
+            $datos['nota_minima'] = 0.0;
+        }
+
+        return $datos;
+    }
+
+    private function exigirTipoYModalidad(array $datos): void
+    {
+        if (array_key_exists('tipo_capacitacion_id', $datos) && empty($datos['tipo_capacitacion_id'])) {
+            throw new HttpException('El tipo de capacitación es obligatorio.', 422);
+        }
+        if (array_key_exists('modalidad_default_id', $datos) && empty($datos['modalidad_default_id'])) {
+            throw new HttpException('La modalidad es obligatoria.', 422);
+        }
     }
 
     private function validarFks(array $datos): void
@@ -325,6 +432,8 @@ class CapacitacionService
             'periodicidad_nombre' => $fila['periodicidad_nombre'] ?? null,
             'vigencia_id' => $fila['vigencia_id'] !== null ? (int)$fila['vigencia_id'] : null,
             'vigencia_nombre' => $fila['vigencia_nombre'] ?? null,
+            'vigencia_cantidad' => $fila['vigencia_cantidad'] !== null ? (int)$fila['vigencia_cantidad'] : null,
+            'vigencia_unidad' => $fila['vigencia_unidad'] ?? null,
             'modalidad_default_id' => $fila['modalidad_default_id'] !== null ? (int)$fila['modalidad_default_id'] : null,
             'modalidad_nombre' => $fila['modalidad_nombre'] ?? null,
             'evaluacion' => (int)$fila['evaluacion'] === 1,

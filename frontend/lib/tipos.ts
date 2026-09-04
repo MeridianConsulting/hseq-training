@@ -601,6 +601,8 @@ export type Capacitacion = {
   periodicidad_nombre: string | null;
   vigencia_id: number | null;
   vigencia_nombre: string | null;
+  vigencia_cantidad?: number | null;
+  vigencia_unidad?: string | null;
   modalidad_default_id: number | null;
   modalidad_nombre: string | null;
   evaluacion: boolean;
