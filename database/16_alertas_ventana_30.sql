@@ -1,7 +1,7 @@
--- Alinea el CASE de estado_calculado con utf8mb4_unicode_ci (PDO SET NAMES).
--- Evita Error 1267 al filtrar asignaciones por estado.
--- Ventana de alertas: 30 días (RF-AL-002).
--- Uso: mysql -u root meridian_capacitaciones < database/06_vistas_collation_estado.sql
+-- Ventana de alertas: 30 días (RF-AL-002 / RF-AL-003).
+-- Uso: mysql -u root --default-character-set=utf8mb4 meridian_capacitaciones < database/16_alertas_ventana_30.sql
+
+USE meridian_capacitaciones;
 
 CREATE OR REPLACE VIEW vw_estado_asignaciones AS
 SELECT

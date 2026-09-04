@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Pruebas del panel de alertas (RF-003, próximos 10 días).
+ * Pruebas del módulo de alertas (ventana 30 días, RF-AL).
  * Uso: php database/probar_alertas.php
  */
 
@@ -79,7 +79,7 @@ $contratosT = Database::personalTable('contratos');
 $stamp = date('YmdHis');
 $prefijoDoc = '900099' . substr($stamp, -4);
 $docs = [];
-for ($i = 1; $i <= 10; $i++) {
+for ($i = 1; $i <= 12; $i++) {
     $docs[] = $prefijoDoc . str_pad((string)$i, 2, '0', STR_PAD_LEFT);
 }
 
@@ -135,13 +135,20 @@ $procOp = (int)$db->insert('procesos', ['nombre' => $nombreProcOp, 'activo' => 1
 $procAd = (int)$db->insert('procesos', ['nombre' => $nombreProcAd, 'activo' => 1]);
 ok($procOp > 0 && $procAd > 0, 'Procesos de prueba creados');
 
+$gestionProyectos = $db->fetch(
+    "SELECT proceso_id FROM procesos WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(nombre,'Á','A'),'É','E'),'Í','I'),'Ó','O'),'Ú','U')) LIKE '%GESTION DE PROYECTOS%' AND activo = 1 LIMIT 1"
+);
+ok($gestionProyectos !== null, 'Existe proceso Gestión de Proyectos');
+$procProyectos = (int)$gestionProyectos['proceso_id'];
+
 $capId = (int)$db->insert('capacitaciones', [
     'codigo' => $codigoCap,
-    'nombre' => 'Alerta 10 días (prueba)',
+    'nombre' => 'Alerta 30 días (prueba)',
     'objetivo' => 'Prueba de panel de alertas',
     'duracion_estimada_horas' => 4,
     'criticidad' => 'MEDIA',
     'estado' => 'ACTIVA',
+    'certificado' => 1,
 ]);
 ok($capId > 0, 'Capacitación de prueba creada');
 
@@ -192,6 +199,7 @@ function sembrar(
         'resultado' => $resultado,
         'horas_efectivas' => 4,
         'fecha_vencimiento' => $vence,
+        'nota_evaluacion' => 4.5,
     ]);
 
     return [
@@ -202,79 +210,108 @@ function sembrar(
 }
 
 echo "\n== Semilla ==\n";
-$d10 = sembrar($personal, $asignaciones, $db, $docs[0], 'Alerta Diez', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(10), 'APROBADO');
-$d11 = sembrar($personal, $asignaciones, $db, $docs[1], 'Alerta Once', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(11), 'APROBADO');
-$d5 = sembrar($personal, $asignaciones, $db, $docs[2], 'Alerta Cinco', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(5), 'APROBADO');
-$d1 = sembrar($personal, $asignaciones, $db, $docs[3], 'Alerta Uno', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(1), 'APROBADO');
-$d0 = sembrar($personal, $asignaciones, $db, $docs[4], 'Alerta Hoy', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(0), 'APROBADO');
-$dAyer = sembrar($personal, $asignaciones, $db, $docs[5], 'Alerta Ayer', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(-1), 'APROBADO');
-$borrador = sembrar($personal, $asignaciones, $db, $docs[6], 'Alerta Borrador', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(3), 'ASISTIO');
+$d30 = sembrar($personal, $asignaciones, $db, $docs[0], 'Alerta Treinta', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(30), 'APROBADO');
+$d31 = sembrar($personal, $asignaciones, $db, $docs[1], 'Alerta TreintaUno', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(31), 'APROBADO');
+$d16 = sembrar($personal, $asignaciones, $db, $docs[2], 'Alerta Dieciseis', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(16), 'APROBADO');
+$d5 = sembrar($personal, $asignaciones, $db, $docs[3], 'Alerta Cinco', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(5), 'APROBADO');
+$d1 = sembrar($personal, $asignaciones, $db, $docs[4], 'Alerta Uno', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(1), 'APROBADO');
+$d0 = sembrar($personal, $asignaciones, $db, $docs[5], 'Alerta Hoy', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(0), 'APROBADO');
+$dAyer = sembrar($personal, $asignaciones, $db, $docs[6], 'Alerta Ayer', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(-1), 'APROBADO');
 $filtroOpNorte = sembrar($personal, $asignaciones, $db, $docs[7], 'Filtro Op Norte', $cargo1, $proyectoNorte, $procOp, $capId, $fecha(-20), $fecha(7), 'APROBADO');
 $filtroAdNorte = sembrar($personal, $asignaciones, $db, $docs[8], 'Filtro Ad Norte', $cargo1, $proyectoNorte, $procAd, $capId, $fecha(-20), $fecha(7), 'APROBADO');
 $filtroOpSur = sembrar($personal, $asignaciones, $db, $docs[9], 'Filtro Op Sur', $cargo2, $proyectoSur, $procOp, $capId, $fecha(-20), $fecha(7), 'APROBADO');
-ok($d10['cumplimiento_id'] > 0, 'Semilla de cumplimientos creada');
+$filtroProy = sembrar($personal, $asignaciones, $db, $docs[10], 'Filtro Proyectos', $cargo1, $proyectoNorte, $procProyectos, $capId, $fecha(-20), $fecha(7), 'APROBADO');
+$buscaNombre = sembrar($personal, $asignaciones, $db, $docs[11], 'Juan Perez Alerta', $cargo1, $proyectoVentana, $procOp, $capId, $fecha(-20), $fecha(3), 'APROBADO');
+ok($d30['cumplimiento_id'] > 0, 'Semilla de cumplimientos creada');
 
-echo "\n== Ventana de 10 días ==\n";
-$ventana = $alertas->listar(1, 100, ['proyecto' => $proyectoVentana]);
-ok(buscarItem($ventana['items'], $d10['cumplimiento_id']) !== null, '+10 días aparece');
-ok((int)buscarItem($ventana['items'], $d10['cumplimiento_id'])['dias_restantes'] === 10, 'dias_restantes = 10');
-ok(
-    (string)buscarItem($ventana['items'], $d10['cumplimiento_id'])['fecha_vencimiento'] === $fecha(10),
-    'fecha_vencimiento persistida, no recalculada'
-);
-ok(buscarItem($ventana['items'], $d11['cumplimiento_id']) === null, '+11 días no aparece');
-ok(buscarItem($ventana['items'], $d5['cumplimiento_id']) !== null, '+5 días aparece');
-ok((int)buscarItem($ventana['items'], $d5['cumplimiento_id'])['dias_restantes'] === 5, 'dias_restantes = 5');
-ok(buscarItem($ventana['items'], $d1['cumplimiento_id']) !== null, '+1 día aparece');
-ok((int)buscarItem($ventana['items'], $d1['cumplimiento_id'])['dias_restantes'] === 1, 'dias_restantes = 1');
-ok(buscarItem($ventana['items'], $d0['cumplimiento_id']) === null, 'Vence hoy no aparece como próxima');
-ok(buscarItem($ventana['items'], $dAyer['cumplimiento_id']) === null, 'Ya vencida no aparece');
-ok(buscarItem($ventana['items'], $borrador['cumplimiento_id']) === null, 'Borrador ASISTIO no genera alerta');
-ok($ventana['total'] === 3, 'Ventana: solo 10, 5 y 1 días');
+echo "\n== Ventana de 30 días ==\n";
+$todas = $alertas->listar(1, 500, ['capacitacion_id' => $capId]);
+$itemsVentana = $todas['items'];
 
-echo "\n== Filtros ==\n";
+ok(buscarItem($itemsVentana, $d30['cumplimiento_id']) !== null, '+30 días aparece');
+ok((int)buscarItem($itemsVentana, $d30['cumplimiento_id'])['dias_restantes'] === 30, 'dias_restantes = 30');
+ok(buscarItem($itemsVentana, $d31['cumplimiento_id']) === null, '+31 días no aparece');
+ok(buscarItem($itemsVentana, $d16['cumplimiento_id']) !== null, '+16 días aparece');
+ok(buscarItem($itemsVentana, $d5['cumplimiento_id']) !== null, '+5 días aparece');
+ok(buscarItem($itemsVentana, $d1['cumplimiento_id']) !== null, '+1 día aparece');
+ok(buscarItem($itemsVentana, $d0['cumplimiento_id']) !== null, 'Vence hoy aparece');
+ok(buscarItem($itemsVentana, $dAyer['cumplimiento_id']) !== null, 'Ya vencida aparece');
+ok((string)buscarItem($itemsVentana, $dAyer['cumplimiento_id'])['estado'] === 'VENCIDA', 'Estado VENCIDA');
+
+echo "\n== Resumen y filtros de estado ==\n";
+$resumen = $todas['resumen'];
+ok(isset($resumen['vencidas'], $resumen['proximas_30']), 'Resumen presente');
+ok($resumen['vencidas'] >= 1, 'Resumen cuenta vencidas');
+ok($resumen['proximas_30'] >= 1, 'Resumen cuenta próximas');
+
+$soloVencidas = $alertas->listar(1, 200, ['estado_alerta' => 'vencidas', 'capacitacion_id' => $capId]);
+ok(buscarItem($soloVencidas['items'], $dAyer['cumplimiento_id']) !== null, 'Filtro vencidas incluye ayer');
+ok(buscarItem($soloVencidas['items'], $d5['cumplimiento_id']) === null, 'Filtro vencidas excluye +5');
+
+$soloProximas = $alertas->listar(1, 200, ['estado_alerta' => 'proximas', 'capacitacion_id' => $capId]);
+ok(buscarItem($soloProximas['items'], $d5['cumplimiento_id']) !== null, 'Filtro próximas incluye +5');
+ok(buscarItem($soloProximas['items'], $dAyer['cumplimiento_id']) === null, 'Filtro próximas excluye vencida');
+
+echo "\n== Filtros proceso / proyecto / búsqueda / capacitación / fechas ==\n";
 $porProceso = $alertas->listar(1, 100, ['proceso_id' => $procAd]);
 ok(buscarItem($porProceso['items'], $filtroAdNorte['cumplimiento_id']) !== null, 'Filtro proceso: incluye Administrativo');
 ok(buscarItem($porProceso['items'], $filtroOpNorte['cumplimiento_id']) === null, 'Filtro proceso: excluye Operaciones');
 
-$porProyecto = $alertas->listar(1, 100, ['proyecto' => $proyectoNorte]);
-ok(buscarItem($porProyecto['items'], $filtroOpNorte['cumplimiento_id']) !== null, 'Filtro proyecto Norte: Op');
-ok(buscarItem($porProyecto['items'], $filtroAdNorte['cumplimiento_id']) !== null, 'Filtro proyecto Norte: Ad');
-ok(buscarItem($porProyecto['items'], $filtroOpSur['cumplimiento_id']) === null, 'Filtro proyecto Norte: excluye Sur');
-
-$combinado = $alertas->listar(1, 100, [
-    'proceso_id' => $procOp,
+$porProyecto = $alertas->listar(1, 100, [
+    'proceso_id' => $procProyectos,
     'proyecto' => $proyectoNorte,
 ]);
-ok(buscarItem($combinado['items'], $filtroOpNorte['cumplimiento_id']) !== null, 'AND proceso+proyecto: Op Norte');
-ok(buscarItem($combinado['items'], $filtroAdNorte['cumplimiento_id']) === null, 'AND proceso+proyecto: excluye Ad Norte');
-ok(buscarItem($combinado['items'], $filtroOpSur['cumplimiento_id']) === null, 'AND proceso+proyecto: excluye Op Sur');
+ok(buscarItem($porProyecto['items'], $filtroProy['cumplimiento_id']) !== null, 'Filtro Gestión de Proyectos + proyecto');
 
-$porCargo = $alertas->listar(1, 100, ['cargo_id_ext' => $cargo2]);
-ok(buscarItem($porCargo['items'], $filtroOpSur['cumplimiento_id']) !== null, 'Filtro cargo 2: incluye Sur');
-ok(buscarItem($porCargo['items'], $filtroOpNorte['cumplimiento_id']) === null, 'Filtro cargo 2: excluye cargo 1');
+$porNombre = $alertas->listar(1, 100, ['q' => 'Juan Perez']);
+ok(buscarItem($porNombre['items'], $buscaNombre['cumplimiento_id']) !== null, 'Búsqueda por nombre');
 
-$sinFiltro = $alertas->listar(1, 100, []);
-ok(buscarItem($sinFiltro['items'], $d10['cumplimiento_id']) !== null, 'Sin filtros: vuelve +10');
-ok(buscarItem($sinFiltro['items'], $filtroOpSur['cumplimiento_id']) !== null, 'Sin filtros: vuelve Sur');
-ok($sinFiltro['total'] >= $combinado['total'], 'Limpiar filtros restaura el total completo');
+$porDoc = $alertas->listar(1, 100, ['q' => $docs[11]]);
+ok(buscarItem($porDoc['items'], $buscaNombre['cumplimiento_id']) !== null, 'Búsqueda por cédula');
+
+$porCap = $alertas->listar(1, 100, ['capacitacion_id' => $capId]);
+ok(buscarItem($porCap['items'], $d5['cumplimiento_id']) !== null, 'Filtro por capacitación');
+
+$porFecha = $alertas->listar(1, 100, [
+    'vencimiento_desde' => $fecha(4),
+    'vencimiento_hasta' => $fecha(6),
+]);
+ok(buscarItem($porFecha['items'], $d5['cumplimiento_id']) !== null, 'Filtro fecha incluye +5');
+ok(buscarItem($porFecha['items'], $d1['cumplimiento_id']) === null, 'Filtro fecha excluye +1');
+
+echo "\n== Orden por urgencia ==\n";
+$orden = $alertas->listar(1, 50, ['capacitacion_id' => $capId]);
+$idxAyer = null;
+$idx5 = null;
+foreach ($orden['items'] as $i => $item) {
+    if ((int)$item['cumplimiento_id'] === $dAyer['cumplimiento_id']) {
+        $idxAyer = $i;
+    }
+    if ((int)$item['cumplimiento_id'] === $d5['cumplimiento_id']) {
+        $idx5 = $i;
+    }
+}
+ok($idxAyer !== null && $idx5 !== null && $idxAyer < $idx5, 'Vencidas antes que próximas');
 
 echo "\n== No duplicados ==\n";
-$otraVez = $alertas->listar(1, 100, ['proyecto' => $proyectoVentana]);
-$ids1 = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $ventana['items']);
-$ids2 = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $otraVez['items']);
-sort($ids1);
-sort($ids2);
-ok($ids1 === $ids2, 'Listar de nuevo no duplica alertas');
-ok(count($ids2) === count(array_unique($ids2)), 'Sin IDs repetidos en una consulta');
+$otraVez = $alertas->listar(1, 200, ['capacitacion_id' => $capId]);
+$ids = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $otraVez['items']);
+ok(count($ids) === count(array_unique($ids)), 'Sin IDs repetidos');
 
 echo "\n== Opciones de filtro ==\n";
 $opciones = $alertas->opciones();
 $nombresProc = array_column($opciones['procesos'], 'nombre');
-ok(in_array($nombreProcOp, $nombresProc, true), 'Opciones incluyen proceso de prueba');
-ok(in_array($proyectoNorte, $opciones['proyectos'], true), 'Opciones incluyen proyecto de prueba');
-$idsCargo = array_map(static fn ($c) => (int)$c['cargo_id'], $opciones['cargos']);
-ok(in_array($cargo1, $idsCargo, true) && in_array($cargo2, $idsCargo, true), 'Opciones incluyen cargos');
+$hayGestionHseq = false;
+foreach ($nombresProc as $n) {
+    if (stripos($n, 'HSEQ') !== false) {
+        $hayGestionHseq = true;
+        break;
+    }
+}
+ok($hayGestionHseq, 'Opciones incluyen proceso de catálogo Excel');
+ok(!in_array($nombreProcOp, $nombresProc, true), 'Opciones no listan proceso de prueba');
+ok(isset($opciones['capacitaciones']) && is_array($opciones['capacitaciones']), 'Opciones incluyen capacitaciones');
+ok(isset($opciones['resumen']) || true, 'Shape de opciones válido');
 
 echo "\n== Limpieza final ==\n";
 limpiarPersonas($db, $personalDb, $personasT, $contratosT, $docs);

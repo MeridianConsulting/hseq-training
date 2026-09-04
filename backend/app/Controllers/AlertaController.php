@@ -21,6 +21,7 @@ class AlertaController extends Controller
     {
         $procesoRaw = $request->query('proceso_id');
         $cargoRaw = $request->query('cargo_id_ext');
+        $capRaw = $request->query('capacitacion_id');
 
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
@@ -29,10 +30,24 @@ class AlertaController extends Controller
                 'proceso_id' => ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
                 'proyecto' => nullable_trimmed_string($request->query('proyecto')),
                 'cargo_id_ext' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
+                'estado_alerta' => nullable_trimmed_string($request->query('estado_alerta')) ?? 'todas',
+                'q' => nullable_trimmed_string($request->query('q')),
+                'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
+                'vencimiento_desde' => nullable_trimmed_string($request->query('vencimiento_desde')),
+                'vencimiento_hasta' => nullable_trimmed_string($request->query('vencimiento_hasta')),
             ]
         );
 
-        $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+        $this->success([
+            'items' => $resultado['items'],
+            'pagination' => [
+                'total' => $resultado['total'],
+                'per_page' => $resultado['per_page'],
+                'current_page' => $resultado['page'],
+                'last_page' => max(1, (int)ceil($resultado['total'] / max(1, $resultado['per_page']))),
+            ],
+            'resumen' => $resultado['resumen'],
+        ]);
     }
 
     public function opciones(Request $request): void

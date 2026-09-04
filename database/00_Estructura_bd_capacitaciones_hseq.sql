@@ -418,14 +418,14 @@ SELECT
          AND a.fecha_limite_cumplimiento < CURDATE()
       THEN 'PENDIENTE_VENCIDA'
     WHEN c.cumplimiento_id IS NULL
-         AND a.fecha_limite_cumplimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 10 DAY)
+         AND a.fecha_limite_cumplimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
       THEN 'PENDIENTE_PROXIMA_A_VENCER'
     WHEN c.cumplimiento_id IS NULL
       THEN 'PENDIENTE'
     WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()
       THEN 'VENCIDA'
     WHEN c.fecha_vencimiento IS NOT NULL
-         AND c.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 10 DAY)
+         AND c.fecha_vencimiento BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
       THEN 'PROXIMA_A_VENCER'
     ELSE 'COMPLETADA'
   END COLLATE utf8mb4_unicode_ci AS estado_calculado

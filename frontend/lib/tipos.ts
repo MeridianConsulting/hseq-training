@@ -293,6 +293,27 @@ export type AlertaProximaVencer = {
   dias_restantes: number;
   estado: string;
   tipo_alerta?: string | null;
+  nota_evaluacion?: number | null;
+  resultado?: string | null;
+  requiere_soporte?: boolean;
+  soportes_count?: number;
+  tiene_soporte?: boolean;
+};
+
+export type ResumenAlertas = {
+  vencidas: number;
+  proximas_30: number;
+};
+
+export type ListaAlertas = {
+  items: AlertaProximaVencer[];
+  pagination: {
+    total: number;
+    per_page: number;
+    current_page: number;
+    last_page: number;
+  };
+  resumen: ResumenAlertas;
 };
 
 export type OpcionesAlertas = {

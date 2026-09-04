@@ -21,8 +21,14 @@ class AlertaService
     }
 
     /**
-     * @param array{proceso_id?:?int, proyecto?:?string, cargo_id_ext?:?int} $filtros
-     * @return array{items:list<array<string,mixed>>,total:int,page:int,per_page:int}
+     * @param array<string,mixed> $filtros
+     * @return array{
+     *   items:list<array<string,mixed>>,
+     *   total:int,
+     *   page:int,
+     *   per_page:int,
+     *   resumen:array{vencidas:int,proximas_30:int}
+     * }
      */
     public function listar(int $pagina, int $porPagina, array $filtros): array
     {
@@ -43,6 +49,7 @@ class AlertaService
                 'total' => $this->repo->contar($limpios),
                 'page' => $pagina,
                 'per_page' => $porPagina,
+                'resumen' => $this->repo->resumen($limpios),
             ];
         } catch (HttpException $e) {
             throw $e;
@@ -53,7 +60,7 @@ class AlertaService
     }
 
     /**
-     * @param array{proceso_id?:?int, proyecto?:?string, cargo_id_ext?:?int} $filtros
+     * @param array<string,mixed> $filtros
      * @return array{items:list<array<string,mixed>>,total:int}
      */
     public function listarTodos(array $filtros): array
@@ -70,19 +77,16 @@ class AlertaService
     }
 
     /**
-     * @return array{procesos:list<array<string,mixed>>,proyectos:list<string>,cargos:list<array<string,mixed>>}
+     * @return array{
+     *   procesos:list<array<string,mixed>>,
+     *   proyectos:list<string>,
+     *   cargos:list<array<string,mixed>>,
+     *   capacitaciones:list<array<string,mixed>>
+     * }
      */
     public function opciones(): array
     {
         try {
-            $procesos = [];
-            foreach ($this->repo->procesosActivos() as $fila) {
-                $procesos[] = [
-                    'proceso_id' => (int)$fila['proceso_id'],
-                    'nombre' => (string)$fila['nombre'],
-                ];
-            }
-
             $cargos = [];
             foreach ($this->repo->cargos() as $fila) {
                 $cargos[] = [
@@ -92,9 +96,10 @@ class AlertaService
             }
 
             return [
-                'procesos' => $procesos,
+                'procesos' => $this->repo->procesosActivos(),
                 'proyectos' => $this->repo->proyectos(),
                 'cargos' => $cargos,
+                'capacitaciones' => $this->repo->capacitacionesEnAlertas(),
             ];
         } catch (HttpException $e) {
             throw $e;
@@ -105,20 +110,51 @@ class AlertaService
     }
 
     /**
-     * @param array{proceso_id?:?int, proyecto?:?string, cargo_id_ext?:?int} $filtros
-     * @return array{proceso_id:?int, proyecto:?string, cargo_id_ext:?int}
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
      */
     private function normalizarFiltros(array $filtros): array
     {
         $procesoId = isset($filtros['proceso_id']) ? (int)$filtros['proceso_id'] : 0;
         $cargoId = isset($filtros['cargo_id_ext']) ? (int)$filtros['cargo_id_ext'] : 0;
+        $capId = isset($filtros['capacitacion_id']) ? (int)$filtros['capacitacion_id'] : 0;
         $proyecto = isset($filtros['proyecto']) ? trim((string)$filtros['proyecto']) : '';
+        $estado = strtolower(trim((string)($filtros['estado_alerta'] ?? 'todas')));
+        if (!in_array($estado, ['todas', 'proximas', 'vencidas'], true)) {
+            $estado = 'todas';
+        }
+        $q = isset($filtros['q']) ? trim((string)$filtros['q']) : '';
+        $desde = isset($filtros['vencimiento_desde']) ? trim((string)$filtros['vencimiento_desde']) : '';
+        $hasta = isset($filtros['vencimiento_hasta']) ? trim((string)$filtros['vencimiento_hasta']) : '';
+
+        $procesoFinal = $procesoId > 0 ? $procesoId : null;
+        $proyectoFinal = null;
+        if ($proyecto !== '' && $this->repo->procesoEsGestionProyectos($procesoFinal)) {
+            $proyectoFinal = $proyecto;
+        }
 
         return [
-            'proceso_id' => $procesoId > 0 ? $procesoId : null,
-            'proyecto' => $proyecto !== '' ? $proyecto : null,
+            'proceso_id' => $procesoFinal,
+            'proyecto' => $proyectoFinal,
             'cargo_id_ext' => $cargoId > 0 ? $cargoId : null,
+            'estado_alerta' => $estado,
+            'q' => $q !== '' ? $q : null,
+            'capacitacion_id' => $capId > 0 ? $capId : null,
+            'vencimiento_desde' => $this->fechaONula($desde),
+            'vencimiento_hasta' => $this->fechaONula($hasta),
         ];
+    }
+
+    private function fechaONula(string $valor): ?string
+    {
+        if ($valor === '') {
+            return null;
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+            throw new HttpException('La fecha de vencimiento no es válida', 422);
+        }
+
+        return $valor;
     }
 
     /**
@@ -129,8 +165,9 @@ class AlertaService
     {
         $codigo = $fila['capacitacion_codigo'] ?? null;
         $nombre = $fila['capacitacion_nombre'] ?? null;
-
         $estado = (string)($fila['estado_calculado'] ?? $fila['tipo_alerta'] ?? 'PROXIMA_A_VENCER');
+        $soportes = (int)($fila['soportes_count'] ?? 0);
+        $requiereSoporte = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
 
         return [
             'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
@@ -157,6 +194,13 @@ class AlertaService
             'dias_restantes' => (int)($fila['dias_restantes'] ?? 0),
             'estado' => $estado,
             'tipo_alerta' => $fila['tipo_alerta'] ?? null,
+            'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
+                ? (float)$fila['nota_evaluacion']
+                : null,
+            'resultado' => $fila['cumplimiento_resultado'] ?? null,
+            'requiere_soporte' => $requiereSoporte,
+            'soportes_count' => $soportes,
+            'tiene_soporte' => $soportes > 0,
         ];
     }
 }
