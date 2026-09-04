@@ -453,6 +453,8 @@ export type TotalesReporte = {
   pendientes: number;
   vencidas: number;
   proximas: number;
+  programadas?: number;
+  ejecutadas?: number;
   porcentaje: number | null;
   horas: number;
   asistieron?: number;
@@ -511,8 +513,8 @@ export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
   { id: "cumplimiento_trabajador", etiqueta: "Cumplimiento por trabajador" },
   { id: "cumplimiento_cargo", etiqueta: "Cumplimiento por cargo" },
   { id: "cumplimiento_proceso", etiqueta: "Cumplimiento por proceso" },
-  { id: "cumplimiento_proyecto", etiqueta: "Cumplimiento por proyecto" },
   { id: "historial_trabajador", etiqueta: "Historial del trabajador" },
+  { id: "cumplimiento_proyecto", etiqueta: "Cumplimiento por proyecto" },
   { id: "vencidas", etiqueta: "Capacitaciones vencidas" },
   { id: "proximas", etiqueta: "Próximas a vencer" },
   { id: "pendientes", etiqueta: "Capacitaciones pendientes" },

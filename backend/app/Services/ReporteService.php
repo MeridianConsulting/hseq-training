@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Repositories\AlertaRepository;
+use App\Repositories\DashboardRepository;
 use App\Repositories\HistorialContextoRepository;
 use App\Repositories\ReporteRepository;
 use App\Repositories\SoporteRepository;
@@ -41,6 +42,7 @@ class ReporteService
     private ReporteRepository $repo;
     private AlertaService $alertas;
     private AlertaRepository $alertaRepo;
+    private DashboardRepository $dashboard;
     private PersonalService $personal;
     private HistorialContextoRepository $historial;
     private SoporteRepository $soportes;
@@ -50,6 +52,7 @@ class ReporteService
         $this->repo = new ReporteRepository();
         $this->alertas = new AlertaService();
         $this->alertaRepo = new AlertaRepository();
+        $this->dashboard = new DashboardRepository();
         $this->personal = new PersonalService();
         $this->historial = new HistorialContextoRepository();
         $this->soportes = new SoporteRepository();
@@ -105,7 +108,7 @@ class ReporteService
             'total' => $this->repo->contar($tipo, $limpios),
             'page' => $pagina,
             'per_page' => $porPagina,
-            'totales' => $this->repo->totales($tipo, $limpios),
+            'totales' => $this->totalesParaTipo($tipo, $limpios),
             'titulo' => $this->titulo($tipo),
             'filtros_etiqueta' => $this->etiquetasFiltro($limpios),
         ];
@@ -136,7 +139,7 @@ class ReporteService
             foreach ($filas as $fila) {
                 $items[] = $this->normalizarFila($tipo, $fila);
             }
-            $totales = $this->repo->totales($tipo, $limpios);
+            $totales = $this->totalesParaTipo($tipo, $limpios);
         }
 
         if ($total === 0) {
@@ -207,7 +210,7 @@ class ReporteService
 
         $fila += 2;
         $hoja->setCellValue('A' . $fila, 'TOTAL REGISTROS');
-        $hoja->setCellValue('B' . $fila, $totales['asignadas']);
+        $hoja->setCellValue('B' . $fila, $total);
         $fila++;
         if ($tipo === 'horas') {
             $hoja->setCellValue('A' . $fila, 'TOTAL HORAS');
@@ -226,8 +229,11 @@ class ReporteService
             $hoja->setCellValue('A' . $fila, 'CONVOCADOS');
             $hoja->setCellValue('B' . $fila, $totales['convocados'] ?? 0);
         } elseif (!in_array($tipo, ['evidencias_faltantes', 'proximas'], true)) {
-            $hoja->setCellValue('A' . $fila, 'COMPLETADAS');
-            $hoja->setCellValue('B' . $fila, $totales['completadas']);
+            $hoja->setCellValue('A' . $fila, 'PROGRAMADAS');
+            $hoja->setCellValue('B' . $fila, $totales['programadas'] ?? $totales['asignadas']);
+            $fila++;
+            $hoja->setCellValue('A' . $fila, 'EJECUTADAS');
+            $hoja->setCellValue('B' . $fila, $totales['ejecutadas'] ?? $totales['completadas']);
             $fila++;
             $hoja->setCellValue('A' . $fila, 'PENDIENTES');
             $hoja->setCellValue('B' . $fila, $totales['pendientes']);
@@ -380,15 +386,20 @@ class ReporteService
             throw new HttpException('La fecha inicial no puede ser posterior a la fecha final.', 422);
         }
 
+        $procesoId = isset($filtros['proceso_id']) && (int)$filtros['proceso_id'] > 0
+            ? (int)$filtros['proceso_id']
+            : null;
+        $proyectoRaw = isset($filtros['proyecto']) ? trim((string)$filtros['proyecto']) : '';
+        $proyecto = null;
+        if ($proyectoRaw !== '' && $this->alertaRepo->procesoEsGestionProyectos($procesoId)) {
+            $proyecto = $proyectoRaw;
+        }
+
         return [
             'desde' => $desde,
             'hasta' => $hasta,
-            'proceso_id' => isset($filtros['proceso_id']) && (int)$filtros['proceso_id'] > 0
-                ? (int)$filtros['proceso_id']
-                : null,
-            'proyecto' => isset($filtros['proyecto']) && trim((string)$filtros['proyecto']) !== ''
-                ? trim((string)$filtros['proyecto'])
-                : null,
+            'proceso_id' => $procesoId,
+            'proyecto' => $proyecto,
             'cargo_id_ext' => isset($filtros['cargo_id_ext']) && (int)$filtros['cargo_id_ext'] > 0
                 ? (int)$filtros['cargo_id_ext']
                 : null,
@@ -471,17 +482,40 @@ class ReporteService
      */
     private function normalizarFila(string $tipo, array $fila): array
     {
+        if ($tipo === 'cumplimiento_trabajador') {
+            $programadas = (int)($fila['asignadas'] ?? 0);
+            $ejecutadas = (int)($fila['completadas'] ?? 0);
+
+            return [
+                'persona_id_ext' => isset($fila['persona_id_ext']) ? (int)$fila['persona_id_ext'] : null,
+                'documento' => $fila['numero_documento'] ?? null,
+                'trabajador' => $fila['persona_nombre'] ?? null,
+                'cargo' => $fila['nombre_cargo'] ?? null,
+                'proceso' => $fila['proceso_nombre'] ?? null,
+                'proyecto' => $fila['proyecto'] ?? null,
+                'programadas' => $programadas,
+                'ejecutadas' => $ejecutadas,
+                'asignadas' => $programadas,
+                'completadas' => $ejecutadas,
+                'pendientes' => (int)($fila['pendientes'] ?? 0),
+                'vencidas' => (int)($fila['vencidas'] ?? 0),
+                'porcentaje' => $programadas > 0 ? round($ejecutadas / $programadas * 100, 1) : null,
+            ];
+        }
+
         if ($this->repo->esAgrupado($tipo)) {
-            $asignadas = (int)($fila['asignadas'] ?? 0);
-            $completadas = (int)($fila['completadas'] ?? 0);
+            $programadas = (int)($fila['asignadas'] ?? 0);
+            $ejecutadas = (int)($fila['completadas'] ?? 0);
 
             return [
                 'grupo' => (string)($fila['grupo'] ?? ''),
-                'asignadas' => $asignadas,
-                'completadas' => $completadas,
+                'programadas' => $programadas,
+                'ejecutadas' => $ejecutadas,
+                'asignadas' => $programadas,
+                'completadas' => $ejecutadas,
                 'pendientes' => (int)($fila['pendientes'] ?? 0),
                 'vencidas' => (int)($fila['vencidas'] ?? 0),
-                'porcentaje' => $asignadas > 0 ? round($completadas / $asignadas * 100, 1) : null,
+                'porcentaje' => $programadas > 0 ? round($ejecutadas / $programadas * 100, 1) : null,
             ];
         }
 
@@ -539,9 +573,16 @@ class ReporteService
             ];
         }
 
+        $soportes = (int)($fila['soportes_count'] ?? 0);
+        $requiereSoporte = !empty($fila['capacitacion_certificado']);
+
         return [
             'asignacion_id' => isset($fila['asignacion_id']) ? (int)$fila['asignacion_id'] : null,
             'persona_id_ext' => isset($fila['persona_id_ext']) ? (int)$fila['persona_id_ext'] : null,
+            'cargo_id_ext' => isset($fila['cargo_id_ext']) ? (int)$fila['cargo_id_ext'] : null,
+            'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
+                ? (int)$fila['cumplimiento_id']
+                : null,
             'documento' => $fila['numero_documento'] ?? null,
             'trabajador' => $fila['persona_nombre'] ?? null,
             'cargo' => $fila['nombre_cargo'] ?? null,
@@ -560,6 +601,11 @@ class ReporteService
             'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
                 ? (float)$fila['nota_evaluacion']
                 : null,
+            'resultado' => $fila['cumplimiento_resultado'] ?? null,
+            'es_tarea_critica' => !empty($fila['es_tarea_critica']),
+            'soportes_count' => $soportes,
+            'tiene_soporte' => $soportes > 0,
+            'requiere_soporte' => $requiereSoporte,
         ];
     }
 
@@ -568,6 +614,21 @@ class ReporteService
      */
     public function columnas(string $tipo): array
     {
+        if ($tipo === 'cumplimiento_trabajador') {
+            return [
+                ['clave' => 'documento', 'etiqueta' => 'Cédula'],
+                ['clave' => 'trabajador', 'etiqueta' => 'Trabajador'],
+                ['clave' => 'cargo', 'etiqueta' => 'Cargo'],
+                ['clave' => 'proceso', 'etiqueta' => 'Proceso'],
+                ['clave' => 'proyecto', 'etiqueta' => 'Proyecto'],
+                ['clave' => 'programadas', 'etiqueta' => 'Programadas', 'tipo' => 'numero'],
+                ['clave' => 'ejecutadas', 'etiqueta' => 'Ejecutadas', 'tipo' => 'numero'],
+                ['clave' => 'pendientes', 'etiqueta' => 'Pendientes', 'tipo' => 'numero'],
+                ['clave' => 'vencidas', 'etiqueta' => 'Vencidas', 'tipo' => 'numero'],
+                ['clave' => 'porcentaje', 'etiqueta' => '% cumplimiento', 'tipo' => 'numero'],
+            ];
+        }
+
         if ($this->repo->esAgrupado($tipo)) {
             $grupo = match ($tipo) {
                 'cumplimiento_cargo' => 'Cargo',
@@ -577,8 +638,8 @@ class ReporteService
 
             return [
                 ['clave' => 'grupo', 'etiqueta' => $grupo],
-                ['clave' => 'asignadas', 'etiqueta' => 'Asignadas', 'tipo' => 'numero'],
-                ['clave' => 'completadas', 'etiqueta' => 'Completadas', 'tipo' => 'numero'],
+                ['clave' => 'programadas', 'etiqueta' => 'Programadas', 'tipo' => 'numero'],
+                ['clave' => 'ejecutadas', 'etiqueta' => 'Ejecutadas', 'tipo' => 'numero'],
                 ['clave' => 'pendientes', 'etiqueta' => 'Pendientes', 'tipo' => 'numero'],
                 ['clave' => 'vencidas', 'etiqueta' => 'Vencidas', 'tipo' => 'numero'],
                 ['clave' => 'porcentaje', 'etiqueta' => '% cumplimiento', 'tipo' => 'numero'],
@@ -686,7 +747,138 @@ class ReporteService
             $cols[] = ['clave' => 'periodicidad', 'etiqueta' => 'Periodicidad'];
         }
 
+        if ($tipo === 'tareas_criticas' || $tipo === 'cumplimiento_general') {
+            $cols[] = ['clave' => 'es_tarea_critica', 'etiqueta' => 'Tarea crítica'];
+        }
+
+        $cols[] = ['clave' => 'tiene_soporte', 'etiqueta' => 'Soporte'];
+
         return $cols;
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
+     */
+    private function totalesParaTipo(string $tipo, array $filtros): array
+    {
+        $base = $this->repo->totales($tipo, $filtros);
+
+        if ($tipo !== 'cumplimiento_general') {
+            return $base;
+        }
+
+        return $this->totalesPanelCumplimientoGeneral($filtros, $base);
+    }
+
+    /**
+     * Totales de cumplimiento general con la misma fórmula del Panel:
+     * programadas = plan anual APROBADO; ejecutadas = cumplimientos en rango.
+     *
+     * @param array<string,mixed> $filtros
+     * @param array<string,mixed> $base
+     * @return array<string,mixed>
+     */
+    private function totalesPanelCumplimientoGeneral(array $filtros, array $base): array
+    {
+        $desde = is_string($filtros['desde'] ?? null) ? $filtros['desde'] : (date('Y') . '-01-01');
+        $hasta = is_string($filtros['hasta'] ?? null) ? $filtros['hasta'] : (date('Y') . '-12-31');
+        $alcance = $this->alcancePanel($filtros);
+
+        $programadas = $this->programadoEnRango($desde, $hasta, $alcance);
+        $ejecutadas = $this->dashboard->ejecutado(
+            [
+                'anio' => (int)substr($desde, 0, 4),
+                'meses' => [],
+                'desde' => $desde,
+                'hasta' => $hasta,
+            ],
+            'general',
+            $alcance
+        );
+
+        $pendientes = (int)($base['pendientes'] ?? 0);
+        $vencidas = (int)($base['vencidas'] ?? 0);
+        $proximas = (int)($base['proximas'] ?? 0);
+        $porcentaje = $programadas > 0 ? round($ejecutadas / $programadas * 100, 1) : null;
+
+        $totales = $this->repo->empaquetarTotales(
+            $programadas,
+            $ejecutadas,
+            $pendientes,
+            $vencidas,
+            $proximas,
+            0.0,
+            $porcentaje
+        );
+        $totales['programadas'] = $programadas;
+        $totales['ejecutadas'] = $ejecutadas;
+
+        return $totales;
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{modo:string,proceso_id:?int,proyecto:?string}
+     */
+    private function alcancePanel(array $filtros): array
+    {
+        $procesoId = isset($filtros['proceso_id']) ? (int)$filtros['proceso_id'] : 0;
+        if ($procesoId > 0) {
+            return [
+                'modo' => 'proceso',
+                'proceso_id' => $procesoId,
+                'proyecto' => isset($filtros['proyecto']) && is_string($filtros['proyecto'])
+                    ? $filtros['proyecto']
+                    : null,
+            ];
+        }
+
+        return ['modo' => 'todos', 'proceso_id' => null, 'proyecto' => null];
+    }
+
+    /**
+     * @param array{modo:string,proceso_id:?int,proyecto:?string} $alcance
+     */
+    private function programadoEnRango(string $desde, string $hasta, array $alcance): int
+    {
+        try {
+            $inicio = new DateTimeImmutable($desde);
+            $fin = new DateTimeImmutable($hasta);
+        } catch (\Exception $e) {
+            return 0;
+        }
+
+        if ($inicio > $fin) {
+            return 0;
+        }
+
+        $porAnio = [];
+        $cursor = $inicio->modify('first day of this month');
+        $limite = $fin->modify('first day of this month');
+        while ($cursor <= $limite) {
+            $anio = (int)$cursor->format('Y');
+            $mes = (int)$cursor->format('n');
+            $porAnio[$anio][] = $mes;
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        $total = 0;
+        foreach ($porAnio as $anio => $meses) {
+            $mesesUnicos = array_values(array_unique($meses));
+            $total += $this->dashboard->programado(
+                [
+                    'anio' => $anio,
+                    'meses' => $mesesUnicos,
+                    'desde' => $desde,
+                    'hasta' => $hasta,
+                ],
+                'general',
+                $alcance
+            );
+        }
+
+        return $total;
     }
 
     /**
@@ -843,8 +1035,11 @@ class ReporteService
         $hoja->setCellValue('A' . $fila, 'TOTAL REGISTROS');
         $hoja->setCellValue('B' . $fila, $totales['asignadas']);
         $fila++;
-        $hoja->setCellValue('A' . $fila, 'COMPLETADAS');
-        $hoja->setCellValue('B' . $fila, $totales['completadas']);
+        $hoja->setCellValue('A' . $fila, 'PROGRAMADAS');
+        $hoja->setCellValue('B' . $fila, $totales['programadas'] ?? $totales['asignadas']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'EJECUTADAS');
+        $hoja->setCellValue('B' . $fila, $totales['ejecutadas'] ?? $totales['completadas']);
         $fila++;
         $hoja->setCellValue('A' . $fila, 'PENDIENTES');
         $hoja->setCellValue('B' . $fila, $totales['pendientes']);

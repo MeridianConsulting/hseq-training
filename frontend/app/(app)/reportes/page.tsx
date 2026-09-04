@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
@@ -21,6 +22,7 @@ import type {
   PeriodoHistorial,
   PersonaCorporativa,
   ResultadoReporte,
+  SoporteCumplimiento,
   TotalesReporte,
 } from "@/lib/tipos";
 import { TIPOS_REPORTE } from "@/lib/tipos";
@@ -34,6 +36,15 @@ const ESTADOS = [
   "COMPLETADA",
   "PROXIMA_A_VENCER",
   "VENCIDA",
+];
+
+const TIPOS_DETALLE = [
+  "cumplimiento_general",
+  "vencidas",
+  "pendientes",
+  "inducciones",
+  "reinducciones",
+  "tareas_criticas",
 ];
 
 function formatoFecha(valor: unknown): string {
@@ -71,14 +82,41 @@ function etiquetaEstado(estado: unknown): string {
   return mapa[clave] ?? (clave || "—");
 }
 
+function procesoPermiteProyecto(
+  procesoId: string,
+  procesos: OpcionesAlertas["procesos"],
+): boolean {
+  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
+  if (!seleccionado) return false;
+  const n = seleccionado.nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return n.includes("gestion de proyectos");
+}
+
 function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
+  if (tipo === "cumplimiento_trabajador") {
+    return [
+      { clave: "documento", etiqueta: "Cédula" },
+      { clave: "trabajador", etiqueta: "Trabajador" },
+      { clave: "cargo", etiqueta: "Cargo" },
+      { clave: "proceso", etiqueta: "Proceso" },
+      { clave: "proyecto", etiqueta: "Proyecto" },
+      { clave: "programadas", etiqueta: "Programadas" },
+      { clave: "ejecutadas", etiqueta: "Ejecutadas" },
+      { clave: "pendientes", etiqueta: "Pendientes" },
+      { clave: "vencidas", etiqueta: "Vencidas" },
+      { clave: "porcentaje", etiqueta: "% cumplimiento" },
+    ];
+  }
   if (tipo === "cumplimiento_cargo" || tipo === "cumplimiento_proceso" || tipo === "cumplimiento_proyecto") {
     const grupo =
       tipo === "cumplimiento_cargo" ? "Cargo" : tipo === "cumplimiento_proceso" ? "Proceso" : "Proyecto";
     return [
       { clave: "grupo", etiqueta: grupo },
-      { clave: "asignadas", etiqueta: "Asignadas" },
-      { clave: "completadas", etiqueta: "Completadas" },
+      { clave: "programadas", etiqueta: "Programadas" },
+      { clave: "ejecutadas", etiqueta: "Ejecutadas" },
       { clave: "pendientes", etiqueta: "Pendientes" },
       { clave: "vencidas", etiqueta: "Vencidas" },
       { clave: "porcentaje", etiqueta: "% cumplimiento" },
@@ -148,6 +186,9 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
   if (tipo === "reinducciones") {
     cols.push({ clave: "periodicidad", etiqueta: "Periodicidad" });
   }
+  if (tipo === "tareas_criticas" || tipo === "cumplimiento_general") {
+    cols.push({ clave: "es_tarea_critica", etiqueta: "Crítica" });
+  }
   return cols;
 }
 
@@ -156,6 +197,9 @@ function celda(tipo: string, clave: string, item: Record<string, unknown>) {
   if (clave.includes("fecha") || clave === "fecha") return formatoFecha(valor);
   if (clave === "estado" || clave === "estado_asistencia" || clave === "origen") return etiquetaEstado(valor);
   if (clave === "porcentaje") return valor === null || valor === undefined ? "—" : `${valor}%`;
+  if (clave === "es_tarea_critica" || clave === "tiene_soporte" || clave === "requiere_certificado") {
+    return valor ? "Sí" : "No";
+  }
   if (clave === "trabajador" && item.persona_id_ext) {
     return (
       <Link
@@ -171,6 +215,14 @@ function celda(tipo: string, clave: string, item: Record<string, unknown>) {
     );
   }
   return texto(valor);
+}
+
+function valorProgramadas(totales: TotalesReporte): number {
+  return totales.programadas ?? totales.asignadas;
+}
+
+function valorEjecutadas(totales: TotalesReporte): number {
+  return totales.ejecutadas ?? totales.completadas;
 }
 
 export default function Page() {
@@ -217,15 +269,20 @@ function Contenido() {
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
+  const [detalle, setDetalle] = useState<Record<string, unknown> | null>(null);
+  const [soportesDetalle, setSoportesDetalle] = useState<SoporteCumplimiento[]>([]);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   const esHistorial = tipo === "historial_trabajador";
+  const muestraProyecto = procesoPermiteProyecto(procesoId, opciones.procesos);
+  const permiteDetalle = TIPOS_DETALLE.includes(tipo);
 
   const params = useMemo(
     () => ({
       desde: desde || undefined,
       hasta: hasta || undefined,
       proceso_id: procesoId || undefined,
-      proyecto: proyecto || undefined,
+      proyecto: muestraProyecto && proyecto ? proyecto : undefined,
       buscar: esHistorial ? undefined : buscar.trim() || undefined,
       estado: estado || undefined,
       cargo_id_ext: esHistorial ? cargoId || undefined : undefined,
@@ -233,7 +290,20 @@ function Contenido() {
       tipo_capacitacion_id: esHistorial ? tipoCapId || undefined : undefined,
       persona_id: esHistorial ? personaId || undefined : undefined,
     }),
-    [desde, hasta, procesoId, proyecto, buscar, estado, cargoId, capacitacionId, tipoCapId, personaId, esHistorial],
+    [
+      desde,
+      hasta,
+      procesoId,
+      proyecto,
+      buscar,
+      estado,
+      cargoId,
+      capacitacionId,
+      tipoCapId,
+      personaId,
+      esHistorial,
+      muestraProyecto,
+    ],
   );
 
   const columnas = columnasDe(tipo);
@@ -301,6 +371,19 @@ function Contenido() {
     }
   }
 
+  async function abrirDetalle(item: Record<string, unknown>) {
+    setDetalle(item);
+    setSoportesDetalle([]);
+    const cumplimientoId = typeof item.cumplimiento_id === "number" ? item.cumplimiento_id : null;
+    if (!cumplimientoId) return;
+    setCargandoDetalle(true);
+    const r = await apiGet<SoporteCumplimiento[]>(`/api/cumplimientos/${cumplimientoId}/soportes`);
+    setCargandoDetalle(false);
+    if (r.success && r.data) {
+      setSoportesDetalle(r.data);
+    }
+  }
+
   useEffect(() => {
     void (async () => {
       const respuesta = await apiGet<OpcionesAlertas>("/api/reportes/opciones");
@@ -309,6 +392,12 @@ function Contenido() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!muestraProyecto && proyecto !== "") {
+      setProyecto("");
+    }
+  }, [muestraProyecto, proyecto]);
 
   useEffect(() => {
     if (!esHistorial) {
@@ -376,6 +465,35 @@ function Contenido() {
             ))}
           </select>
         </Field>
+        <Field etiqueta="Proceso">
+          <select
+            className={inputClass}
+            value={procesoId}
+            onChange={(e) => {
+              setProcesoId(e.target.value);
+              setProyecto("");
+            }}
+          >
+            <option value="">Todos</option>
+            {opciones.procesos.map((p) => (
+              <option key={p.proceso_id} value={p.proceso_id}>
+                {p.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {muestraProyecto ? (
+          <Field etiqueta="Proyecto">
+            <select className={inputClass} value={proyecto} onChange={(e) => setProyecto(e.target.value)}>
+              <option value="">Todos</option>
+              {opciones.proyectos.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
         {muestraPeriodo ? (
           <>
             <Field etiqueta="Fecha inicial">
@@ -386,26 +504,6 @@ function Contenido() {
             </Field>
           </>
         ) : null}
-        <Field etiqueta="Proceso">
-          <select className={inputClass} value={procesoId} onChange={(e) => setProcesoId(e.target.value)}>
-            <option value="">Todos</option>
-            {opciones.procesos.map((p) => (
-              <option key={p.proceso_id} value={p.proceso_id}>
-                {p.nombre}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field etiqueta="Proyecto">
-          <select className={inputClass} value={proyecto} onChange={(e) => setProyecto(e.target.value)}>
-            <option value="">Todos</option>
-            {opciones.proyectos.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </Field>
         {muestraEstado ? (
           <Field etiqueta="Estado">
             <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
@@ -511,18 +609,24 @@ function Contenido() {
 
       {totales ? (
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
           {tipo === "horas" ? (
-            <Tarjeta etiqueta="Total horas" valor={totales.horas.toFixed(2)} />
+            <>
+              <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
+              <Tarjeta etiqueta="Total horas" valor={totales.horas.toFixed(2)} />
+            </>
           ) : tipo === "asistencia" ? (
             <>
+              <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
               <Tarjeta etiqueta="Asistieron" valor={String(totales.asistieron ?? 0)} />
               <Tarjeta etiqueta="Tarde" valor={String(totales.tarde ?? 0)} />
               <Tarjeta etiqueta="Ausentes" valor={String(totales.ausentes ?? 0)} />
             </>
-          ) : tipo !== "evidencias_faltantes" && tipo !== "proximas" ? (
+          ) : tipo === "evidencias_faltantes" || tipo === "proximas" ? (
+            <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
+          ) : (
             <>
-              <Tarjeta etiqueta="Completadas" valor={String(totales.completadas)} />
+              <Tarjeta etiqueta="Programadas" valor={String(valorProgramadas(totales))} />
+              <Tarjeta etiqueta="Ejecutadas" valor={String(valorEjecutadas(totales))} />
               <Tarjeta etiqueta="Pendientes" valor={String(totales.pendientes)} />
               <Tarjeta etiqueta="Vencidas" valor={String(totales.vencidas)} />
               <Tarjeta
@@ -530,7 +634,7 @@ function Contenido() {
                 valor={totales.porcentaje === null ? "—" : `${totales.porcentaje}%`}
               />
             </>
-          ) : null}
+          )}
         </div>
       ) : null}
 
@@ -556,13 +660,145 @@ function Contenido() {
       ) : (
         <>
           <Table
-            columnas={columnas}
-            filas={items.map((item) => columnas.map((col) => celda(tipo, col.clave, item)))}
+            columnas={
+              permiteDetalle
+                ? [...columnas, { clave: "_acciones", etiqueta: "Acciones" }]
+                : columnas
+            }
+            filas={items.map((item) => {
+              const celdas = columnas.map((col) => celda(tipo, col.clave, item));
+              if (permiteDetalle) {
+                celdas.push(
+                  <button
+                    key="detalle"
+                    type="button"
+                    className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                    onClick={() => void abrirDetalle(item)}
+                  >
+                    Ver detalle
+                  </button>,
+                );
+              }
+              return celdas;
+            })}
             vacio={VACIO}
           />
           <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
         </>
       )}
+
+      <Modal abierto={detalle !== null} titulo="Detalle del registro" onCerrar={() => setDetalle(null)}>
+        {detalle ? (
+          <div className="space-y-4 text-sm">
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Trabajador</dt>
+                <dd className="font-medium text-hseq-900">{texto(detalle.trabajador)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Cédula</dt>
+                <dd>{texto(detalle.documento)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Cargo</dt>
+                <dd>
+                  {texto(detalle.cargo)}
+                  {detalle.cargo_id_ext ? (
+                    <span className="mt-1 block text-xs text-slate-500">
+                      Capacitaciones del cargo según matriz de competencias
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Proceso</dt>
+                <dd>{texto(detalle.proceso)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Proyecto</dt>
+                <dd>{texto(detalle.proyecto)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Capacitación</dt>
+                <dd>{texto(detalle.capacitacion)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Estado</dt>
+                <dd>{etiquetaEstado(detalle.estado)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Tarea crítica</dt>
+                <dd>{detalle.es_tarea_critica ? "Sí" : "No"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Asignación</dt>
+                <dd>{formatoFecha(detalle.fecha_asignacion)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Realización</dt>
+                <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Vencimiento</dt>
+                <dd>{formatoFecha(detalle.fecha_vencimiento)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Resultado / evaluación</dt>
+                <dd>
+                  {texto(detalle.resultado)}
+                  {detalle.nota_evaluacion != null ? ` · Nota ${detalle.nota_evaluacion}` : ""}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Soporte</dt>
+                <dd>
+                  {cargandoDetalle ? (
+                    "Cargando…"
+                  ) : soportesDetalle.length > 0 ? (
+                    <ul className="space-y-1">
+                      {soportesDetalle.map((s) => (
+                        <li key={s.soporte_id}>
+                          <button
+                            type="button"
+                            className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                            onClick={() =>
+                              void apiDownload(
+                                `/api/cumplimientos/soportes/${s.soporte_id}/archivo`,
+                                s.nombre_archivo || "soporte",
+                              )
+                            }
+                          >
+                            Ver soporte ({s.nombre_archivo})
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : detalle.requiere_soporte ? (
+                    <span className="text-amber-700">Pendiente</span>
+                  ) : detalle.tiene_soporte ? (
+                    "Sí"
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            {typeof detalle.persona_id_ext === "number" ? (
+              <Link
+                href={withQuery("/asignaciones", {
+                  persona_id: detalle.persona_id_ext,
+                  nombre: typeof detalle.trabajador === "string" ? detalle.trabajador : undefined,
+                  documento: typeof detalle.documento === "string" ? detalle.documento : undefined,
+                })}
+                className="inline-flex font-medium text-hseq-800 underline-offset-2 hover:underline"
+              >
+                Ver asignaciones del trabajador
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
     </>
   );
 }

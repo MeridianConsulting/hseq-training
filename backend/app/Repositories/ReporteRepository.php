@@ -29,6 +29,9 @@ class ReporteRepository
         $limite = max(1, $limite);
         $offset = max(0, $offset);
 
+        if ($tipo === 'cumplimiento_trabajador') {
+            return $this->listarPorTrabajador($filtros, $limite, $offset);
+        }
         if ($this->esAgrupado($tipo)) {
             return $this->listarAgrupado($tipo, $filtros, $limite, $offset);
         }
@@ -58,6 +61,15 @@ class ReporteRepository
      */
     public function contar(string $tipo, array $filtros): int
     {
+        if ($tipo === 'cumplimiento_trabajador') {
+            [$sql, $params] = $this->sqlPorTrabajador($filtros);
+            $fila = $this->db->fetch(
+                "SELECT COUNT(*) AS total FROM ({$sql}) g",
+                $params
+            );
+
+            return (int)($fila['total'] ?? 0);
+        }
         if ($this->esAgrupado($tipo)) {
             $fila = $this->db->fetch(
                 'SELECT COUNT(*) AS total FROM (' . $this->sqlAgrupado($tipo, $filtros)[0] . ') g',
@@ -174,8 +186,10 @@ class ReporteRepository
             return $this->empaquetarTotales($n, 0, 0, 0, 0, 0.0);
         }
 
-        if ($this->esAgrupado($tipo)) {
-            [$sql, $params] = $this->sqlAgrupado($tipo, $filtros);
+        if ($tipo === 'cumplimiento_trabajador' || $this->esAgrupado($tipo)) {
+            [$sql, $params] = $tipo === 'cumplimiento_trabajador'
+                ? $this->sqlPorTrabajador($filtros)
+                : $this->sqlAgrupado($tipo, $filtros);
             $fila = $this->db->fetch(
                 "SELECT COALESCE(SUM(g.asignadas), 0) AS asignadas,
                         COALESCE(SUM(g.completadas), 0) AS completadas,
@@ -228,7 +242,10 @@ class ReporteRepository
     }
 
     /**
-     * @return array{asignadas:int,completadas:int,pendientes:int,vencidas:int,proximas:int,porcentaje:?float,horas:float}
+     * @return array{
+     *   asignadas:int,completadas:int,pendientes:int,vencidas:int,proximas:int,
+     *   programadas:int,ejecutadas:int,porcentaje:?float,horas:float
+     * }
      */
     public function empaquetarTotales(
         int $asignadas,
@@ -236,7 +253,8 @@ class ReporteRepository
         int $pendientes,
         int $vencidas,
         int $proximas,
-        float $horas
+        float $horas,
+        ?float $porcentaje = null
     ): array {
         return [
             'asignadas' => $asignadas,
@@ -244,7 +262,11 @@ class ReporteRepository
             'pendientes' => $pendientes,
             'vencidas' => $vencidas,
             'proximas' => $proximas,
-            'porcentaje' => $asignadas > 0 ? round($completadas / $asignadas * 100, 1) : null,
+            'programadas' => $asignadas,
+            'ejecutadas' => $completadas,
+            'porcentaje' => $porcentaje !== null
+                ? $porcentaje
+                : ($asignadas > 0 ? round($completadas / $asignadas * 100, 1) : null),
             'horas' => round($horas, 2),
         ];
     }
@@ -261,6 +283,58 @@ class ReporteRepository
             "{$sql} LIMIT {$limite} OFFSET {$offset}",
             $params
         );
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return list<array<string,mixed>>
+     */
+    private function listarPorTrabajador(array $filtros, int $limite, int $offset): array
+    {
+        [$sql, $params] = $this->sqlPorTrabajador($filtros);
+
+        return $this->db->fetchAll(
+            "{$sql} LIMIT {$limite} OFFSET {$offset}",
+            $params
+        );
+    }
+
+    /**
+     * Agregación RF-REP-009: una fila por persona con métricas de asignación.
+     *
+     * @param array<string,mixed> $filtros
+     * @return array{0:string,1:list<mixed>}
+     */
+    private function sqlPorTrabajador(array $filtros): array
+    {
+        [$where, $params] = $this->whereAsignaciones('cumplimiento_trabajador', $filtros);
+        $inComp = $this->listaIn(self::COMPLETADAS);
+        $inPend = $this->listaIn(self::PENDIENTES);
+        $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
+
+        $sql = "SELECT a.persona_id_ext,
+                       MAX(per.numero_documento) AS numero_documento,
+                       MAX(per.nombre_completo_nombres_primero) AS persona_nombre,
+                       MAX(car.nombre_cargo) AS nombre_cargo,
+                       MAX(proc.nombre) AS proceso_nombre,
+                       MAX(NULLIF(TRIM(a.proyecto), '')) AS proyecto,
+                       COUNT(*) AS asignadas,
+                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inComp}) THEN 1 ELSE 0 END) AS completadas,
+                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inPend}) THEN 1 ELSE 0 END) AS pendientes,
+                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci = 'VENCIDA' THEN 1 ELSE 0 END) AS vencidas
+                FROM asignaciones_capacitacion a
+                INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+                INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+                LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = cap.tipo_capacitacion_id
+                LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
+                LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+                LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
+                {$where}
+                GROUP BY a.persona_id_ext
+                ORDER BY persona_nombre ASC, a.persona_id_ext ASC";
+
+        return [$sql, $params];
     }
 
     /**
@@ -460,6 +534,7 @@ class ReporteRepository
                        cap.codigo AS capacitacion_codigo,
                        cap.nombre AS capacitacion_nombre,
                        cap.es_tarea_critica,
+                       cap.certificado AS capacitacion_certificado,
                        tip.nombre AS tipo_nombre,
                        proc.nombre AS proceso_nombre,
                        per.numero_documento,
@@ -469,7 +544,12 @@ class ReporteRepository
                        per_cap.nombre AS periodicidad_nombre,
                        c.horas_efectivas,
                        c.nota_evaluacion,
-                       c.resultado AS cumplimiento_resultado
+                       c.resultado AS cumplimiento_resultado,
+                       (
+                           SELECT COUNT(*)
+                           FROM soportes_cumplimiento so
+                           WHERE so.cumplimiento_id = e.cumplimiento_id
+                       ) AS soportes_count
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
@@ -617,13 +697,7 @@ class ReporteRepository
             $params[] = $tipoCapId;
         }
 
-        if ($tipo !== 'historial_trabajador') {
-            $personas = Database::personalTable('personas');
-            $condiciones[] = "EXISTS (
-                SELECT 1 FROM {$personas} per_vig
-                WHERE per_vig.persona_id = a.persona_id_ext AND per_vig.estado = 'Activo'
-            )";
-        }
+        // RF-REP-015/020: no filtrar por estado actual del trabajador (histórico).
 
         $where = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones);
 
