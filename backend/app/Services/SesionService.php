@@ -137,6 +137,9 @@ class SesionService
     {
         $detalle = $this->exigirDetalle((int)$datos['plan_detalle_id']);
         $this->exigirPlanAprobado($detalle);
+        if (strtoupper((string)($detalle['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
+            throw new HttpException('No es posible crear una sesión sobre una programación cancelada.', 409);
+        }
         $this->exigirCapacitacionDelDetalle($datos, $detalle);
 
         $campos = $this->prepararCampos($datos, $detalle);
@@ -184,9 +187,7 @@ class SesionService
     public function actualizar(int $id, array $datos): array
     {
         $actual = $this->ver($id);
-        if (($actual['estado'] ?? '') === 'CANCELADA') {
-            throw new HttpException('No es posible editar una sesión cancelada.', 409);
-        }
+        $this->exigirSesionOperable($actual, 'No es posible editar una capacitación finalizada.', 'No es posible editar una sesión cancelada.');
 
         if ($actual['plan_detalle_id'] === null) {
             throw new HttpException('La sesión no está asociada a un detalle del plan anual.', 422);
@@ -230,9 +231,11 @@ class SesionService
                 if ($sesion === null) {
                     throw new HttpException('La sesión no existe.', 404);
                 }
-                if (($sesion['estado'] ?? '') === 'CANCELADA') {
-                    throw new HttpException('No es posible convocar trabajadores a una sesión cancelada.', 409);
-                }
+                $this->exigirSesionOperable(
+                    $sesion,
+                    'No es posible convocar trabajadores a una capacitación finalizada.',
+                    'No es posible convocar trabajadores a una sesión cancelada.'
+                );
 
                 $cupo = (int)($sesion['cupo_maximo'] ?? 0);
                 $this->insertarConvocadosAtomico(
@@ -269,9 +272,11 @@ class SesionService
                 if ($sesion === null) {
                     throw new HttpException('La sesión no existe.', 404);
                 }
-                if (($sesion['estado'] ?? '') === 'CANCELADA') {
-                    throw new HttpException('No es posible registrar asistencia en una sesión cancelada.', 409);
-                }
+                $this->exigirSesionOperable(
+                    $sesion,
+                    'No es posible registrar asistencia en una capacitación finalizada.',
+                    'No es posible registrar asistencia en una sesión cancelada.'
+                );
 
                 $convocados = $this->repo->participantes($sesionId);
                 if ($convocados === []) {
@@ -346,9 +351,11 @@ class SesionService
                 if ($destino === null) {
                     throw new HttpException('La sesión destino no existe.', 404);
                 }
-                if (($destino['estado'] ?? '') === 'CANCELADA') {
-                    throw new HttpException('No es posible reprogramar hacia una sesión cancelada.', 409);
-                }
+                $this->exigirSesionOperable(
+                    $destino,
+                    'No es posible reprogramar hacia una capacitación finalizada.',
+                    'No es posible reprogramar hacia una sesión cancelada.'
+                );
 
                 $origen = $this->repo->buscarPorId($origenId);
                 if ($origen === null) {
@@ -401,6 +408,39 @@ class SesionService
     }
 
     /**
+     * @return array<string,mixed>
+     */
+    public function finalizar(int $sesionId): array
+    {
+        $sesion = $this->ver($sesionId);
+        if (strtoupper((string)($sesion['estado'] ?? '')) === 'EJECUTADA') {
+            throw new HttpException('La capacitación ya está finalizada.', 409);
+        }
+        if (strtoupper((string)($sesion['estado'] ?? '')) === 'CANCELADA') {
+            throw new HttpException('No es posible finalizar una sesión cancelada.', 409);
+        }
+        if ($sesion['plan_detalle_id'] !== null) {
+            $detalle = $this->exigirDetalle((int)$sesion['plan_detalle_id']);
+            if (strtoupper((string)($detalle['estado_programacion'] ?? '')) === 'CANCELADA') {
+                throw new HttpException('No es posible finalizar una programación cancelada.', 409);
+            }
+        }
+
+        $faltantes = $this->faltantesCierre($sesion);
+        if ($faltantes !== []) {
+            throw new HttpException(implode(' ', $faltantes), 422);
+        }
+
+        try {
+            $this->repo->actualizar($sesionId, ['estado' => 'EJECUTADA']);
+        } catch (PDOException $e) {
+            throw $this->errorPersistencia($e, 'No fue posible finalizar la capacitación.');
+        }
+
+        return $this->ver($sesionId);
+    }
+
+    /**
      * @return list<array<string,mixed>>
      */
     public function historialPersona(int $personaId): array
@@ -417,7 +457,12 @@ class SesionService
 
     public function retirar(int $sesionId, int $asignacionId): array
     {
-        $this->ver($sesionId);
+        $actual = $this->ver($sesionId);
+        $this->exigirSesionOperable(
+            $actual,
+            'No es posible retirar convocados de una capacitación finalizada.',
+            'No es posible retirar convocados de una sesión cancelada.'
+        );
         $eliminados = $this->repo->eliminarParticipante($sesionId, $asignacionId);
         if ($eliminados < 1) {
             throw new HttpException('El trabajador no está convocado a esta sesión.', 404);
@@ -433,6 +478,85 @@ class SesionService
     public function resumir(array $filas): array
     {
         return array_map([$this, 'normalizarResumen'], $filas);
+    }
+
+    /**
+     * @param array<string,mixed> $sesion
+     */
+    private function exigirSesionOperable(array $sesion, string $mensajeEjecutada, string $mensajeCancelada): void
+    {
+        $estado = strtoupper((string)($sesion['estado'] ?? ''));
+        if ($estado === 'EJECUTADA') {
+            throw new HttpException($mensajeEjecutada, 409);
+        }
+        if ($estado === 'CANCELADA') {
+            throw new HttpException($mensajeCancelada, 409);
+        }
+
+        $detalleId = (int)($sesion['plan_detalle_id'] ?? 0);
+        if ($detalleId > 0) {
+            $detalle = $this->repo->detallePlan($detalleId);
+            if ($detalle !== null && strtoupper((string)($detalle['estado_programacion'] ?? '')) === 'CANCELADA') {
+                throw new HttpException('No es posible operar sobre una programación cancelada.', 409);
+            }
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $sesion
+     * @return list<string>
+     */
+    private function faltantesCierre(array $sesion): array
+    {
+        $participantes = is_array($sesion['participantes'] ?? null) ? $sesion['participantes'] : [];
+        if ($participantes === []) {
+            return ['Debe haber trabajadores convocados para finalizar la capacitación.'];
+        }
+
+        $faltantes = [];
+        $pendientes = 0;
+        $sinNota = 0;
+        $sinSoporte = 0;
+        $requiereEval = (bool)($sesion['requiere_evaluacion'] ?? false);
+        $requiereCert = (bool)($sesion['requiere_certificado'] ?? false);
+
+        foreach ($participantes as $fila) {
+            $asistencia = strtoupper((string)($fila['estado_asistencia'] ?? ''));
+            if ($asistencia === 'CONVOCADO' || $asistencia === '') {
+                $pendientes++;
+                continue;
+            }
+            if ($asistencia !== 'ASISTIO' && $asistencia !== 'TARDE') {
+                continue;
+            }
+            if ($requiereEval && ($fila['nota_evaluacion'] ?? null) === null) {
+                $sinNota++;
+            }
+            if ($requiereCert) {
+                $cumplimientoId = (int)($fila['cumplimiento_id'] ?? 0);
+                if ($cumplimientoId < 1 || $this->soportes->contar($cumplimientoId) < 1) {
+                    $sinSoporte++;
+                }
+            }
+        }
+
+        if ($pendientes > 0) {
+            $faltantes[] = $pendientes === 1
+                ? 'Falta registrar la asistencia de 1 trabajador.'
+                : "Falta registrar la asistencia de {$pendientes} trabajadores.";
+        }
+        if ($sinNota > 0) {
+            $faltantes[] = $sinNota === 1
+                ? 'Falta la nota de evaluación de 1 asistente.'
+                : "Falta la nota de evaluación de {$sinNota} asistentes.";
+        }
+        if ($sinSoporte > 0) {
+            $faltantes[] = $sinSoporte === 1
+                ? 'Falta el soporte de 1 asistente.'
+                : "Falta el soporte de {$sinSoporte} asistentes.";
+        }
+
+        return $faltantes;
     }
 
     /**

@@ -6,7 +6,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck,
   Bell,
-  CalendarClock,
   CalendarDays,
   CalendarRange,
   FileSpreadsheet,
@@ -31,7 +30,6 @@ const ICONOS: Record<string, LucideIcon> = {
   "/matriz": Table2,
   "/plan-anual": CalendarRange,
   "/cronograma": CalendarDays,
-  "/sesiones": CalendarClock,
   "/personal": Users,
   "/asignaciones": UserPlus,
   "/cumplimientos": BadgeCheck,

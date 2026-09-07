@@ -62,10 +62,12 @@ export function FormularioAsistencia({
   sesion,
   puedeEditar,
   onGuardado,
+  modoOperativo = false,
 }: {
   sesion: DetalleSesion;
   puedeEditar: boolean;
   onGuardado: (sesion: DetalleSesion, mensaje: string) => void;
+  modoOperativo?: boolean;
 }) {
   const [filas, setFilas] = useState<FilaAsistencia[]>(() => filasDesde(sesion.participantes));
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +92,7 @@ export function FormularioAsistencia({
   }, [sesion]);
 
   const resumen = useMemo(() => resumenLocal(filas), [filas]);
-  const cerrada = sesion.estado === "CANCELADA";
+  const cerrada = sesion.estado === "CANCELADA" || sesion.estado === "EJECUTADA";
   const editable = puedeEditar && !cerrada;
 
   function actualizar(asignacionId: number, cambio: Partial<FilaAsistencia>) {
@@ -349,8 +351,11 @@ export function FormularioAsistencia({
     <div className="space-y-4">
       {error ? <Alert tono="error">{error}</Alert> : null}
       <form className="space-y-4" onSubmit={(e) => void guardar(e)}>
-      {cerrada ? (
+      {sesion.estado === "CANCELADA" ? (
         <Alert tono="aviso">Esta sesión está cancelada. No es posible registrar asistencia.</Alert>
+      ) : null}
+      {sesion.estado === "EJECUTADA" ? (
+        <Alert tono="aviso">La capacitación ya está finalizada. Solo consulta.</Alert>
       ) : null}
 
       <div className="flex flex-wrap gap-2 text-sm">
@@ -428,7 +433,7 @@ export function FormularioAsistencia({
       ) : null}
       </form>
 
-      {ausentesGuardados.length > 0 && puedeEditar && !cerrada ? (
+      {!modoOperativo && ausentesGuardados.length > 0 && puedeEditar && !cerrada ? (
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-hseq-900">
@@ -555,7 +560,7 @@ export function FormularioAsistencia({
         </div>
       ) : null}
 
-      {puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
+      {!modoOperativo && puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
         <div className="rounded-lg border border-slate-200 p-4">
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registrar cumplimiento</h3>
           {sesion.requiere_certificado ? (

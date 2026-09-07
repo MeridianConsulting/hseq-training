@@ -115,12 +115,14 @@ class CumplimientoRepository
     public function sesionPorId(int $sesionId): ?array
     {
         return $this->db->fetch(
-            'SELECT s.sesion_id, s.capacitacion_id, s.fecha_hora, s.estado,
+            'SELECT s.sesion_id, s.capacitacion_id, s.fecha_hora, s.estado, s.plan_detalle_id,
                     cap.certificado AS capacitacion_certificado,
                     cap.evaluacion AS capacitacion_evaluacion,
-                    cap.nota_minima AS capacitacion_nota_minima
+                    cap.nota_minima AS capacitacion_nota_minima,
+                    d.estado_programacion
              FROM sesiones_capacitacion s
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = s.capacitacion_id
+             LEFT JOIN plan_anual_detalle d ON d.plan_detalle_id = s.plan_detalle_id
              WHERE s.sesion_id = ?
              LIMIT 1',
             [$sesionId]

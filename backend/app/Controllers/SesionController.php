@@ -180,6 +180,22 @@ class SesionController extends Controller
         $this->success($actualizada, 'Control de asistencia registrado correctamente.');
     }
 
+    public function finalizar(Request $request, string $id): void
+    {
+        $sesionId = (int)$id;
+        $actualizada = $this->service->finalizar($sesionId);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'finalizar',
+            'sesiones_capacitacion',
+            $sesionId,
+            $actualizada
+        );
+
+        $this->success($actualizada, 'Capacitación finalizada correctamente.');
+    }
+
     public function reprogramar(Request $request, string $id): void
     {
         $datos = $this->validate($request, [

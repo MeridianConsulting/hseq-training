@@ -769,8 +769,15 @@ class CumplimientoService
         if ($sesion === null) {
             throw new HttpException('La sesión no existe.', 404);
         }
-        if (($sesion['estado'] ?? '') === 'CANCELADA') {
+        $estado = strtoupper((string)($sesion['estado'] ?? ''));
+        if ($estado === 'EJECUTADA') {
+            throw new HttpException('No es posible registrar en una capacitación finalizada.', 409);
+        }
+        if ($estado === 'CANCELADA') {
             throw new HttpException('No es posible registrar cumplimiento en una sesión cancelada.', 409);
+        }
+        if (strtoupper((string)($sesion['estado_programacion'] ?? '')) === 'CANCELADA') {
+            throw new HttpException('No es posible operar sobre una programación cancelada.', 409);
         }
 
         return $sesion;

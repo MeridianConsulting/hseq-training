@@ -98,7 +98,7 @@ class SoporteService
         ?int $usuarioId,
         ?array $actor = null
     ): array {
-        $this->exigirCumplimiento($cumplimientoId);
+        $this->exigirCumplimientoEditable($cumplimientoId);
         $tipo = $this->normalizarTipo($tipoSoporte);
         $validado = $this->validarArchivo($archivo);
 
@@ -201,6 +201,7 @@ class SoporteService
         }
 
         $cumplimientoId = (int)$fila['cumplimiento_id'];
+        $this->exigirCumplimientoEditable($cumplimientoId);
         $ruta = $this->rutaAbsoluta((string)$fila['ruta_archivo']);
         $nombre = (string)($fila['nombre_archivo'] ?? '');
         $tipo = (string)($fila['tipo_soporte'] ?? '');
@@ -267,6 +268,33 @@ class SoporteService
         $fila = $this->cumplimientos->buscarPorId($cumplimientoId);
         if ($fila === null) {
             throw new HttpException('El cumplimiento no existe.', 404);
+        }
+
+        return $fila;
+    }
+
+    /** @return array<string,mixed> */
+    private function exigirCumplimientoEditable(int $cumplimientoId): array
+    {
+        $fila = $this->exigirCumplimiento($cumplimientoId);
+        $sesionId = (int)($fila['sesion_id'] ?? 0);
+        if ($sesionId < 1) {
+            return $fila;
+        }
+
+        $sesion = $this->cumplimientos->sesionPorId($sesionId);
+        if ($sesion === null) {
+            return $fila;
+        }
+        $estado = strtoupper((string)($sesion['estado'] ?? ''));
+        if ($estado === 'EJECUTADA') {
+            throw new HttpException('No es posible modificar soportes de una capacitación finalizada.', 409);
+        }
+        if ($estado === 'CANCELADA') {
+            throw new HttpException('No es posible modificar soportes de una sesión cancelada.', 409);
+        }
+        if (strtoupper((string)($sesion['estado_programacion'] ?? '')) === 'CANCELADA') {
+            throw new HttpException('No es posible operar sobre una programación cancelada.', 409);
         }
 
         return $fila;

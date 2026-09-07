@@ -59,7 +59,14 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->get('', [AlertaController::class, 'index'], [[PermisoMiddleware::class, 'alertas.ver']]);
     });
 
-    $router->get('/cronograma', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
+    $router->group(['prefix' => '/cronograma'], function ($router) {
+        $router->get('', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->get('/{detalleId}/trabajadores', [CronogramaController::class, 'trabajadores'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->put('/{detalleId}/reprogramar', [CronogramaController::class, 'reprogramar'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->post('/{detalleId}/cancelar', [CronogramaController::class, 'cancelar'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->post('/{detalleId}/iniciar', [CronogramaController::class, 'iniciar'], [[PermisoMiddleware::class, 'sesiones.crear']]);
+        $router->get('/{detalleId}', [CronogramaController::class, 'ver'], [[PermisoMiddleware::class, 'planes.ver']]);
+    });
 
     $router->group(['prefix' => '/sesiones'], function ($router) {
         $router->get('/convocables', [SesionController::class, 'convocables'], [[PermisoMiddleware::class, 'sesiones.ver']]);
@@ -70,6 +77,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->post('/{id}/participantes', [SesionController::class, 'convocar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->delete('/{id}/participantes/{asignacionId}', [SesionController::class, 'retirar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->put('/{id}/asistencia', [SesionController::class, 'asistencia'], [[PermisoMiddleware::class, 'sesiones.editar']]);
+        $router->post('/{id}/finalizar', [SesionController::class, 'finalizar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->post('/{id}/reprogramar', [SesionController::class, 'reprogramar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->get('/{id}', [SesionController::class, 'show'], [[PermisoMiddleware::class, 'sesiones.ver']]);
         $router->put('/{id}', [SesionController::class, 'update'], [[PermisoMiddleware::class, 'sesiones.editar']]);

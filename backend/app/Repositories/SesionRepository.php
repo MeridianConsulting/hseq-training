@@ -22,6 +22,7 @@ class SesionRepository
                     d.plan_anual_id,
                     d.capacitacion_id,
                     d.mes_programado,
+                    d.estado_programacion,
                     p.anio,
                     p.estado AS plan_estado,
                     c.codigo AS capacitacion_codigo,

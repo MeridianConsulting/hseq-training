@@ -1,14 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { FormularioSesion, PanelConvocados, tipoModalidad } from "@/app/(app)/cronograma/formulario-sesion";
-import { useAuth } from "@/components/auth-provider";
+import { tipoModalidad } from "@/app/(app)/cronograma/formulario-sesion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Modal } from "@/components/ui/modal";
-import { CalendarPlus, ClipboardCheck, Pencil, Users } from "lucide-react";
 import type { ItemCronograma, SesionCronograma } from "@/lib/tipos";
 
 const LIMITE_OBJETIVO = 160;
@@ -62,30 +58,18 @@ function lugarSesion(sesion: SesionCronograma): string {
 
 export function TarjetaCronograma({
   item,
-  onCambio,
 }: {
   item: ItemCronograma;
   onCambio?: () => void;
 }) {
-  const { puede } = useAuth();
   const [abierta, setAbierta] = useState(false);
   const [objetivoCompleto, setObjetivoCompleto] = useState(false);
-  const [crearAbierta, setCrearAbierta] = useState(false);
-  const [editar, setEditar] = useState<SesionCronograma | null>(null);
-  const [convocar, setConvocar] = useState<SesionCronograma | null>(null);
   const objetivoLargo = item.objetivo.length > LIMITE_OBJETIVO;
   const objetivoVisible =
     !objetivoLargo || objetivoCompleto
       ? item.objetivo
       : `${item.objetivo.slice(0, LIMITE_OBJETIVO).trim()}…`;
   const sesiones = item.sesiones ?? [];
-
-  function cerrado() {
-    setCrearAbierta(false);
-    setEditar(null);
-    setConvocar(null);
-    onCambio?.();
-  }
 
   return (
     <Card>
@@ -137,29 +121,9 @@ export function TarjetaCronograma({
                   <Badge tono="ok">Cupos disponibles</Badge>
                 )}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {puede("sesiones.ver") ? (
-                  <Link
-                    href={`/sesiones?sesion_id=${sesion.sesion_id}`}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg px-0 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
-                  >
-                    <ClipboardCheck className="h-4 w-4" aria-hidden />
-                    Asistencia
-                  </Link>
-                ) : null}
-                {puede("sesiones.editar") ? (
-                  <>
-                    <Button type="button" variante="ghost" className="px-0" onClick={() => setEditar(sesion)}>
-                      <Pencil className="h-4 w-4" aria-hidden />
-                      Editar sesión
-                    </Button>
-                    <Button type="button" variante="ghost" className="px-0" onClick={() => setConvocar(sesion)}>
-                      <Users className="h-4 w-4" aria-hidden />
-                      Gestionar convocados
-                    </Button>
-                  </>
-                ) : null}
-              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                La asistencia y el cierre se gestionan en el tablero.
+              </p>
             </li>
           ))}
         </ul>
@@ -217,38 +181,7 @@ export function TarjetaCronograma({
         <Button type="button" variante="ghost" className="px-0" onClick={() => setAbierta((v) => !v)}>
           {abierta ? "Ocultar detalles" : "Ver detalles"}
         </Button>
-        {puede("sesiones.crear") ? (
-          <Button type="button" variante="secondary" onClick={() => setCrearAbierta(true)}>
-            <CalendarPlus className="h-4 w-4" aria-hidden />
-            Crear sesión
-          </Button>
-        ) : null}
       </div>
-
-      <Modal abierto={crearAbierta} titulo="Crear sesión" onCerrar={() => setCrearAbierta(false)}>
-        <FormularioSesion
-          item={item}
-          onCancelar={() => setCrearAbierta(false)}
-          onGuardado={cerrado}
-        />
-      </Modal>
-      <Modal abierto={editar !== null} titulo="Editar sesión" onCerrar={() => setEditar(null)}>
-        {editar ? (
-          <FormularioSesion
-            item={item}
-            sesion={editar}
-            onCancelar={() => setEditar(null)}
-            onGuardado={cerrado}
-          />
-        ) : null}
-      </Modal>
-      <Modal
-        abierto={convocar !== null}
-        titulo="Gestionar convocados"
-        onCerrar={() => setConvocar(null)}
-      >
-        {convocar ? <PanelConvocados sesionId={convocar.sesion_id} onCambio={onCambio ?? (() => undefined)} /> : null}
-      </Modal>
     </Card>
   );
 }

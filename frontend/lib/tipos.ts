@@ -229,6 +229,7 @@ export type DetalleSesion = SesionCronograma & {
 
 export type ItemCronograma = {
   plan_detalle_id: number;
+  plan_anual_id?: number;
   capacitacion_id: number;
   codigo: string;
   tema: string;
@@ -237,11 +238,32 @@ export type ItemCronograma = {
   metodologia: string | null;
   mes: number;
   mes_nombre: string;
+  fecha_programada: string | null;
   cantidad_programada: number;
   anio: number;
   proceso_id: number | null;
   proceso_nombre: string | null;
+  ambito: string | null;
+  proyecto: string | null;
+  estado_programacion: string;
+  estado_operativo: string;
+  requiere_evaluacion?: boolean;
+  requiere_certificado?: boolean;
+  vigencia_id?: number | null;
+  vigencia_nombre?: string | null;
+  vigencia_cantidad?: number | null;
+  vigencia_unidad?: string | null;
+  cargos_aplicables: CargoCorporativo[];
   sesiones: SesionCronograma[];
+};
+
+export type TrabajadorCronograma = {
+  asignacion_id: number;
+  persona_id_ext: number;
+  numero_documento: string;
+  persona_nombre: string;
+  nombre_cargo: string | null;
+  estado_asignacion: string;
 };
 
 export type MesCronograma = {
@@ -255,9 +277,12 @@ export type TableroCronograma = {
   periodo: PeriodoDashboard;
   proceso_id: number | null;
   proceso_nombre: string | null;
+  proyecto?: string | null;
   total: number;
   estado_plan: string;
   procesos: ProcesoCronograma[];
+  proyectos?: string[];
+  items?: ItemCronograma[];
   meses: MesCronograma[];
 };
 
