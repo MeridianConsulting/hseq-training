@@ -228,6 +228,26 @@ class PersonalRepository
         return $mapa;
     }
 
+    /** @param list<int> $cargoIds */
+    public function contarActivosPorCargos(array $cargoIds): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
+        if ($ids === []) {
+            return 0;
+        }
+
+        $personas = Database::personalTable('personas');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $fila = $this->db->fetch(
+            "SELECT COUNT(*) AS total
+             FROM {$personas}
+             WHERE estado = 'Activo' AND cargo_id IN ({$placeholders})",
+            $ids
+        );
+
+        return (int)($fila['total'] ?? 0);
+    }
+
     /**
      * @return array{por_nombre: array<string,int>, por_id: array<int,string>}
      */

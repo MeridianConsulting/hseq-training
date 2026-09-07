@@ -23,14 +23,36 @@ class PlanAnualController extends Controller
     public function index(Request $request): void
     {
         $anioRaw = $request->query('anio');
+        $procesoRaw = $request->query('proceso_id');
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
             (int)$request->query('per_page', 20),
             ($anioRaw !== null && $anioRaw !== '') ? (int)$anioRaw : null,
-            nullable_trimmed_string($request->query('estado'))
+            nullable_trimmed_string($request->query('estado')),
+            nullable_trimmed_string($request->query('buscar')),
+            ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+            nullable_trimmed_string($request->query('proyecto'))
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+    }
+
+    public function opciones(Request $request): void
+    {
+        $this->success($this->service->opciones());
+    }
+
+    public function alcance(Request $request): void
+    {
+        $capRaw = $request->query('capacitacion_id');
+        $procesoRaw = $request->query('proceso_id');
+        $this->success(
+            $this->service->alcance(
+                ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : 0,
+                ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : 0,
+                nullable_trimmed_string($request->query('proyecto'))
+            )
+        );
     }
 
     public function show(Request $request, string $id): void
@@ -53,7 +75,59 @@ class PlanAnualController extends Controller
             $creado
         );
 
-        $this->created($creado, 'Plan anual creado en borrador');
+        $this->created($creado, 'Plan Anual guardado correctamente.');
+    }
+
+    public function crearActividad(Request $request, string $id): void
+    {
+        $datos = $this->validate($request, $this->service->reglasActividad());
+        $plan = $this->service->crearActividad((int)$id, $datos);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'crear_actividad',
+            'plan_anual_detalle',
+            (int)$id,
+            $datos
+        );
+
+        $this->success($plan, 'Actividad agregada correctamente al Plan Anual.');
+    }
+
+    public function verActividad(Request $request, string $id, string $detalleId): void
+    {
+        $this->success($this->service->verActividad((int)$id, (int)$detalleId));
+    }
+
+    public function actualizarActividad(Request $request, string $id, string $detalleId): void
+    {
+        $datos = $this->validate($request, $this->service->reglasActividad());
+        $plan = $this->service->actualizarActividad((int)$id, (int)$detalleId, $datos);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'editar_actividad',
+            'plan_anual_detalle',
+            (int)$detalleId,
+            $datos
+        );
+
+        $this->success($plan, 'Plan Anual guardado correctamente.');
+    }
+
+    public function eliminarActividad(Request $request, string $id, string $detalleId): void
+    {
+        $plan = $this->service->eliminarActividad((int)$id, (int)$detalleId);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'eliminar_actividad',
+            'plan_anual_detalle',
+            (int)$detalleId,
+            ['plan_anual_id' => (int)$id]
+        );
+
+        $this->success($plan, 'Actividad retirada del Plan Anual.');
     }
 
     public function disponibles(Request $request, string $id): void
@@ -134,7 +208,22 @@ class PlanAnualController extends Controller
             ['estado_anterior' => 'BORRADOR', 'estado_nuevo' => 'EN_REVISION']
         );
 
-        $this->success($plan, 'Plan enviado a revisión');
+        $this->success($plan, 'Plan Anual enviado a aprobación.');
+    }
+
+    public function devolver(Request $request, string $id): void
+    {
+        $plan = $this->service->devolver((int)$id);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'devolver',
+            'planes_anuales',
+            (int)$id,
+            ['estado_anterior' => 'EN_REVISION', 'estado_nuevo' => 'BORRADOR']
+        );
+
+        $this->success($plan, 'Plan Anual devuelto para corrección.');
     }
 
     public function aprobar(Request $request, string $id): void
@@ -149,6 +238,6 @@ class PlanAnualController extends Controller
             ['estado_anterior' => 'EN_REVISION', 'estado_nuevo' => 'APROBADO']
         );
 
-        $this->success($plan, 'Plan anual aprobado');
+        $this->success($plan, 'Plan Anual aprobado correctamente.');
     }
 }

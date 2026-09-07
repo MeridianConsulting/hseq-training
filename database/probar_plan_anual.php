@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Pruebas plan anual: borrador/revisión no cuentan, APROBADO sí, duplicados e histórico.
+ * Pruebas RF-PA: plan por año, actividades desde catálogo+matriz, estados y historial.
  * Uso: php database/probar_plan_anual.php
  */
 
@@ -13,15 +13,19 @@ require BASE_PATH . '/vendor/autoload.php';
 use App\Core\Database;
 use App\Core\Env;
 use App\Core\Exceptions\HttpException;
-use App\Repositories\AsignacionRepository;
+use App\Repositories\AlertaRepository;
 use App\Repositories\DashboardRepository;
-use App\Services\AsignacionService;
+use App\Repositories\PersonalRepository;
+use App\Services\CapacitacionService;
 use App\Services\CronogramaService;
 use App\Services\DashboardService;
+use App\Services\MatrizService;
 use App\Services\PersonalService;
 use App\Services\PlanAnualService;
+use App\Services\SesionService;
 
 Env::load(BASE_PATH);
+date_default_timezone_set('America/Bogota');
 
 function ok(bool $condicion, string $mensaje): void
 {
@@ -45,8 +49,13 @@ function borrarPlanAnio(Database $db, int $anio): void
     );
     foreach ($detalles as $d) {
         $id = (int)$d['plan_detalle_id'];
+        $sesiones = $db->fetchAll('SELECT sesion_id FROM sesiones_capacitacion WHERE plan_detalle_id = ?', [$id]);
+        foreach ($sesiones as $s) {
+            $sid = (int)$s['sesion_id'];
+            $db->query('DELETE FROM sesion_participantes WHERE sesion_id = ?', [$sid]);
+            $db->query('DELETE FROM sesiones_capacitacion WHERE sesion_id = ?', [$sid]);
+        }
         $db->query('DELETE FROM plan_detalle_asignaciones WHERE plan_detalle_id = ?', [$id]);
-        $db->query('UPDATE sesiones_capacitacion SET plan_detalle_id = NULL WHERE plan_detalle_id = ?', [$id]);
         $db->query('DELETE FROM plan_anual_detalle WHERE plan_detalle_id = ?', [$id]);
     }
     $db->query('DELETE FROM planes_anuales WHERE plan_anual_id = ?', [$planId]);
@@ -55,102 +64,101 @@ function borrarPlanAnio(Database $db, int $anio): void
 $db = Database::getInstance();
 $personalDb = Database::personal();
 $personal = new PersonalService();
-$asignaciones = new AsignacionService();
-$asigRepo = new AsignacionRepository();
+$cargosRepo = new PersonalRepository();
+$caps = new CapacitacionService();
+$matriz = new MatrizService();
+$alertas = new AlertaRepository();
 $planes = new PlanAnualService();
+$sesiones = new SesionService();
 $dashRepo = new DashboardRepository();
 $periodos = new DashboardService();
 $cronograma = new CronogramaService();
 
 $anioPrueba = 2027;
+$doc = '9000770201';
 $personasT = Database::personalTable('personas');
 $contratosT = Database::personalTable('contratos');
-$docs = ['9000770201', '9000770202'];
 
 echo "== Limpieza previa año {$anioPrueba} ==\n";
 borrarPlanAnio($db, $anioPrueba);
-foreach ($docs as $doc) {
-    $prev = $personalDb->fetch("SELECT persona_id FROM {$personasT} WHERE numero_documento = ?", [$doc]);
-    if ($prev !== null) {
-        $pid = (int)$prev['persona_id'];
-        $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$pid]);
-        foreach ($asigs as $a) {
-            $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
-            $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
-        }
-        $personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$pid]);
-        $personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$pid]);
+$prev = $personalDb->fetch("SELECT persona_id FROM {$personasT} WHERE numero_documento = ?", [$doc]);
+if ($prev !== null) {
+    $pid = (int)$prev['persona_id'];
+    $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$pid]);
+    foreach ($asigs as $a) {
+        $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
+        $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
+    }
+    $personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$pid]);
+    $personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$pid]);
+}
+
+$opciones = $planes->opciones();
+ok($opciones['procesos'] !== [], 'Opciones incluyen procesos');
+ok($opciones['proyectos'] === ['FRONTERA'], 'Catálogo de proyecto es FRONTERA');
+
+$procesoGp = null;
+$procesoOtro = null;
+foreach ($opciones['procesos'] as $proceso) {
+    if ($alertas->procesoEsGestionProyectos((int)$proceso['proceso_id'])) {
+        $procesoGp = $proceso;
+    } elseif ($procesoOtro === null) {
+        $procesoOtro = $proceso;
     }
 }
+ok($procesoGp !== null, 'Existe Gestión de Proyectos');
+ok($procesoOtro !== null, 'Existe un proceso de oficina');
+$procesoGpId = (int)$procesoGp['proceso_id'];
+$procesoOtroId = (int)$procesoOtro['proceso_id'];
 
-$cargos = $personal->cargos();
-ok(count($cargos) >= 1, 'Hay cargos corporativos');
-$cargoId = (int)$cargos[0]['cargo_id'];
+$mapaCargos = $cargosRepo->mapaCargos();
+$nombreCargoPrueba = 'PLAN ANUAL PRUEBA PA';
+$claveCargo = $cargosRepo->claveCargo($nombreCargoPrueba);
+$cargoId = $mapaCargos['por_nombre'][$claveCargo] ?? $cargosRepo->insertarCargo($nombreCargoPrueba);
 
-$capsCreadas = [];
-for ($i = 1; $i <= 3; $i++) {
-    $codigo = 'PLAN-R' . $i . '-' . date('YmdHis');
-    $capsCreadas[] = [
-        'capacitacion_id' => (int)$db->insert('capacitaciones', [
-            'codigo' => $codigo,
-            'nombre' => "Cap plan anual prueba {$i}",
-            'objetivo' => 'Prueba plan anual',
-            'duracion_estimada_horas' => 1,
-            'criticidad' => 'BAJA',
-            'estado' => 'ACTIVA',
-        ]),
-        'codigo' => $codigo,
-    ];
-}
-$caps = $capsCreadas;
+$tipo = $db->fetch('SELECT tipo_capacitacion_id FROM tipos_capacitacion WHERE activo = 1 ORDER BY tipo_capacitacion_id ASC LIMIT 1');
+$modalidad = $db->fetch('SELECT modalidad_id FROM modalidades WHERE activo = 1 ORDER BY modalidad_id ASC LIMIT 1');
+$ubicacion = $db->fetch('SELECT ubicacion_id FROM ubicaciones WHERE activo = 1 ORDER BY ubicacion_id ASC LIMIT 1');
+$proveedor = $db->fetch('SELECT proveedor_id FROM proveedores_capacitadores WHERE activo = 1 ORDER BY proveedor_id ASC LIMIT 1');
+ok($tipo !== null && $modalidad !== null, 'Hay tipo y modalidad');
+ok($ubicacion !== null && $proveedor !== null, 'Hay ubicación y proveedor');
 
-$p1 = $personal->crear([
-    'numero_documento' => $docs[0],
+$stamp = date('YmdHis');
+$creada = $caps->crear([
+    'codigo' => 'CAP-PA-' . $stamp,
+    'nombre' => 'Trabajo en alturas (prueba plan)',
+    'objetivo' => 'Prueba RF-PA-042',
+    'duracion_estimada_horas' => 4,
+    'tipo_capacitacion_id' => (int)$tipo['tipo_capacitacion_id'],
+    'modalidad_default_id' => (int)$modalidad['modalidad_id'],
+    'es_tarea_critica' => 1,
+    'evaluacion' => 1,
+    'nota_minima' => 3,
+    'estado' => 'ACTIVA',
+], 1);
+$capId = (int)$creada['capacitacion_id'];
+ok($capId > 0, 'Capacitación de catálogo creada');
+ok($creada['es_tarea_critica'] === true, 'Conserva tarea crítica del catálogo');
+
+$matriz->crear([
+    'capacitacion_id' => $capId,
+    'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoGpId,
+    'ambito' => 'PROYECTO',
+    'proyecto' => 'FRONTERA',
+    'obligatoria' => 1,
+    'activa' => 1,
+], 1);
+
+$persona = $personal->crear([
+    'numero_documento' => $doc,
     'nombre_completo' => 'Prueba Plan Anual Uno',
     'correo' => 'plananual1@hseq.test',
     'cargo_id' => $cargoId,
-    'proyecto' => 'HSEQ-PLAN-2027',
+    'proyecto' => 'FRONTERA',
     'fecha_ingreso' => '2026-01-15',
 ]);
-$p2 = $personal->crear([
-    'numero_documento' => $docs[1],
-    'nombre_completo' => 'Prueba Plan Anual Dos',
-    'correo' => 'plananual2@hseq.test',
-    'cargo_id' => $cargoId,
-    'proyecto' => 'HSEQ-PLAN-2027',
-    'fecha_ingreso' => '2026-01-15',
-]);
-$persona1 = (int)$p1['persona_id'];
-$persona2 = (int)$p2['persona_id'];
-
-$man1 = $asignaciones->crear([
-    'persona_id_ext' => $persona1,
-    'capacitacion_id' => (int)$caps[0]['capacitacion_id'],
-    'fecha_limite_cumplimiento' => '2027-12-31',
-], 0);
-$man2 = $asignaciones->crear([
-    'persona_id_ext' => $persona1,
-    'capacitacion_id' => (int)$caps[1]['capacitacion_id'],
-    'fecha_limite_cumplimiento' => '2027-12-31',
-], 0);
-$autoId = $asigRepo->crear([
-    'persona_id_ext' => $persona2,
-    'contrato_id_ext' => $p2['contrato_id'],
-    'capacitacion_id' => (int)$caps[2]['capacitacion_id'],
-    'matriz_aplicabilidad_id' => null,
-    'fecha_asignacion' => date('Y-m-d'),
-    'fecha_limite_cumplimiento' => '2027-12-31',
-    'origen' => 'AUTOMATICA',
-    'cargo_id_ext' => $cargoId,
-    'area_id' => null,
-    'proceso_id' => null,
-    'ambito' => null,
-    'proyecto' => 'HSEQ-PLAN-2027',
-    'creada_por_usuario_id_ext' => null,
-]);
-ok($man1['origen'] === 'MANUAL', 'Asignacion manual 1');
-ok($man2['origen'] === 'MANUAL', 'Asignacion manual 2');
-ok($autoId > 0, 'Asignacion automatica creada');
+$personaId = (int)$persona['persona_id'];
 
 echo "\n== Crear plan 2027 borrador ==\n";
 $plan = $planes->crear(['anio' => $anioPrueba], 1);
@@ -158,87 +166,158 @@ ok($plan['estado'] === 'BORRADOR', 'Estado BORRADOR');
 ok((int)$plan['anio'] === $anioPrueba, 'Año 2027');
 $planId = (int)$plan['plan_anual_id'];
 
-$disp = $planes->disponibles($planId, null);
-$idsDisp = array_map(static fn (array $a): int => (int)$a['asignacion_id'], $disp['items']);
-ok(in_array((int)$man1['asignacion_id'], $idsDisp, true), 'Manual disponible');
-ok(in_array($autoId, $idsDisp, true), 'Automatica disponible');
-
-echo "\n== Incluir 3 asignaciones en ene/feb/mar ==\n";
-$r1 = $planes->incluirAsignaciones($planId, [
-    'asignacion_ids' => [(int)$man1['asignacion_id']],
-    'mes_programado' => 1,
-]);
-$r2 = $planes->incluirAsignaciones($planId, [
-    'asignacion_ids' => [(int)$man2['asignacion_id']],
-    'mes_programado' => 2,
-]);
-$r3 = $planes->incluirAsignaciones($planId, [
-    'asignacion_ids' => [$autoId],
-    'mes_programado' => 3,
-]);
-ok($r1['creadas'] === 1 && $r2['creadas'] === 1 && $r3['creadas'] === 1, 'Tres incluidas');
-
-$dup = $planes->incluirAsignaciones($planId, [
-    'asignacion_ids' => [(int)$man1['asignacion_id']],
-    'mes_programado' => 4,
-]);
-ok($dup['creadas'] === 0 && $dup['omitidas'] === 1, 'Duplicado omitido');
-
-$periodo2027 = $periodos->periodo(['tipo' => 'anual', 'anio' => $anioPrueba]);
-ok($dashRepo->programado($periodo2027, 'general') === 0, 'Borrador no cuenta en RF-001');
-
-$tableroBorrador = $cronograma->tablero(['tipo' => 'anual', 'anio' => $anioPrueba]);
-ok($tableroBorrador['total'] === 0, 'Cronograma no muestra borrador total=' . $tableroBorrador['total']);
-
-echo "\n== En revision ==\n";
-$enRev = $planes->enviarRevision($planId);
-ok($enRev['estado'] === 'EN_REVISION', 'Estado EN_REVISION');
-ok($dashRepo->programado($periodo2027, 'general') === 0, 'En revision no cuenta en RF-001');
+try {
+    $planes->crearActividad($planId, [
+        'capacitacion_id' => 999999999,
+        'proceso_id' => $procesoGpId,
+        'proyecto' => 'FRONTERA',
+        'fecha_programada' => '2027-03-15',
+    ]);
+    ok(false, 'Cap inexistente debió fallar');
+} catch (HttpException $e) {
+    ok($e->getStatusCode() === 422, 'Cap inexistente = 422');
+    ok(str_contains($e->getMessage(), 'no existe o no se encuentra disponible'), 'Mensaje de capacitación no disponible');
+}
 
 try {
-    $planes->incluirAsignaciones($planId, [
-        'asignacion_ids' => [(int)$man1['asignacion_id']],
-        'mes_programado' => 5,
+    $planes->crearActividad($planId, [
+        'capacitacion_id' => $capId,
+        'proceso_id' => $procesoGpId,
+        'proyecto' => null,
+        'fecha_programada' => '2027-03-15',
     ]);
-    ok(false, 'No debe editar en revision');
+    ok(false, 'GP sin proyecto debió fallar');
 } catch (HttpException $e) {
-    ok($e->getStatusCode() === 409, 'Edicion en revision rechazada');
+    ok($e->getStatusCode() === 422, 'GP sin proyecto = 422');
 }
+
+try {
+    $planes->crearActividad($planId, [
+        'capacitacion_id' => $capId,
+        'proceso_id' => $procesoOtroId,
+        'proyecto' => null,
+        'fecha_programada' => '2027-03-15',
+    ]);
+    ok(false, 'Sin matriz debió fallar');
+} catch (HttpException $e) {
+    ok($e->getStatusCode() === 422, 'Sin aplicabilidad = 422');
+    ok(str_contains($e->getMessage(), 'no está definida como aplicable'), 'Mensaje de matriz');
+}
+
+$plan = $planes->crearActividad($planId, [
+    'capacitacion_id' => $capId,
+    'proceso_id' => $procesoGpId,
+    'proyecto' => 'FRONTERA',
+    'fecha_programada' => '2027-03-15',
+]);
+ok(count($plan['detalles']) === 1, 'Actividad de marzo creada');
+$marzo = $plan['detalles'][0];
+ok($marzo['fecha_programada'] === '2027-03-15', 'Fecha 15/03/2027');
+ok((int)$marzo['mes_programado'] === 3, 'mes_programado derivado = 3');
+ok($marzo['es_tarea_critica'] === true, 'Tarea crítica viene del catálogo');
+ok((float)$marzo['duracion_estimada_horas'] === 4.0, 'Duración viene del catálogo');
+ok($marzo['proyecto'] === 'FRONTERA', 'Proyecto Frontera');
+$idsCargos = array_map(static fn (array $c): int => (int)$c['cargo_id'], $marzo['cargos_aplicables']);
+ok(in_array((int)$cargoId, $idsCargos, true), 'Alcance incluye el cargo de la matriz');
+ok((int)$marzo['cantidad_programada'] >= 1, 'cantidad_programada cubre gente del cargo');
+$detalleMarzoId = (int)$marzo['plan_detalle_id'];
+
+try {
+    $planes->crearActividad($planId, [
+        'capacitacion_id' => $capId,
+        'proceso_id' => $procesoGpId,
+        'proyecto' => 'FRONTERA',
+        'fecha_programada' => '2027-03-15',
+    ]);
+    ok(false, 'Duplicado debió fallar');
+} catch (HttpException $e) {
+    ok($e->getStatusCode() === 409, 'Duplicado = 409');
+}
+
+$plan = $planes->crearActividad($planId, [
+    'capacitacion_id' => $capId,
+    'proceso_id' => $procesoGpId,
+    'proyecto' => 'FRONTERA',
+    'fecha_programada' => '2027-09-15',
+]);
+ok(count($plan['detalles']) === 2, 'Misma cap en marzo y septiembre = dos filas');
+ok((float)$plan['total_horas'] === 8.0, 'Total horas 4+4');
+
+$periodo2027 = $periodos->periodo(['tipo' => 'anual', 'anio' => $anioPrueba]);
+ok($dashRepo->programado($periodo2027, 'general') === 0, 'Borrador no cuenta en programado');
+ok($cronograma->tablero(['tipo' => 'anual', 'anio' => $anioPrueba])['total'] === 0, 'Cronograma no muestra borrador');
+
+echo "\n== Enviar, devolver y volver a enviar ==\n";
+$enRev = $planes->enviarRevision($planId);
+ok($enRev['estado'] === 'EN_REVISION', 'Pendiente de aprobación (EN_REVISION)');
+ok($dashRepo->programado($periodo2027, 'general') === 0, 'En revisión no cuenta');
+
+try {
+    $planes->crearActividad($planId, [
+        'capacitacion_id' => $capId,
+        'proceso_id' => $procesoGpId,
+        'proyecto' => 'FRONTERA',
+        'fecha_programada' => '2027-04-01',
+    ]);
+    ok(false, 'No debe editar en revisión');
+} catch (HttpException $e) {
+    ok($e->getStatusCode() === 409, 'Edición en revisión rechazada');
+}
+
+$devuelto = $planes->devolver($planId);
+ok($devuelto['estado'] === 'BORRADOR', 'Devuelto vuelve a BORRADOR');
+ok(count($devuelto['detalles']) === 2, 'No se borra el plan al devolver');
+
+$enRev = $planes->enviarRevision($planId);
+ok($enRev['estado'] === 'EN_REVISION', 'Reenviado a aprobación');
 
 echo "\n== Aprobar ==\n";
 $aprobado = $planes->aprobar($planId, 1);
 ok($aprobado['estado'] === 'APROBADO', 'Estado APROBADO');
 ok($aprobado['aprobado_por_usuario_id_ext'] === 1, 'Usuario aprobador');
-ok($aprobado['fecha_aprobacion'] !== null && $aprobado['fecha_aprobacion'] !== '', 'Fecha de aprobacion');
+ok($aprobado['fecha_aprobacion'] !== null && $aprobado['fecha_aprobacion'] !== '', 'Fecha de aprobación');
 
 $programado = $dashRepo->programado($periodo2027, 'general');
-ok($programado === 3, "RF-001 programado 2027={$programado}");
+ok($programado >= 1, "Programado 2027={$programado}");
 
 $tablero = $cronograma->tablero(['tipo' => 'anual', 'anio' => $anioPrueba]);
-ok($tablero['total'] === 3, 'Cronograma 2027 muestra 3 total=' . $tablero['total']);
+ok($tablero['total'] === 2, 'Cronograma muestra 2 actividades total=' . $tablero['total']);
 $mesesVistos = [];
 foreach ($tablero['meses'] as $bloque) {
     if ($bloque['total'] > 0) {
         $mesesVistos[] = (int)$bloque['mes'];
     }
 }
-ok(in_array(1, $mesesVistos, true) && in_array(2, $mesesVistos, true) && in_array(3, $mesesVistos, true), 'Meses ene/feb/mar');
+ok(in_array(3, $mesesVistos, true) && in_array(9, $mesesVistos, true), 'Meses marzo y septiembre');
 
 try {
     $planes->aprobar($planId, 1);
     ok(false, 'Re-aprobar no debe pasar');
 } catch (HttpException $e) {
-    ok($e->getStatusCode() === 409, 'Aprobacion idempotente rechazada');
+    ok($e->getStatusCode() === 409, 'Aprobación idempotente rechazada');
 }
 
 try {
-    $planes->enviarRevision($planId);
-    ok(false, 'No enviar a revision un aprobado');
+    $planes->eliminarActividad($planId, $detalleMarzoId);
+    ok(false, 'No eliminar en aprobado');
 } catch (HttpException $e) {
-    ok($e->getStatusCode() === 409, 'Transicion invalida desde APROBADO');
+    ok($e->getStatusCode() === 409, 'Eliminar aprobado rechazado');
 }
 
-echo "\n== Un plan por año e historico ==\n";
+echo "\n== Sesión usa el detalle aprobado ==\n";
+$sesion = $sesiones->crear([
+    'plan_detalle_id' => $detalleMarzoId,
+    'fecha' => '2027-03-15',
+    'hora' => '08:00',
+    'modalidad_id' => (int)$modalidad['modalidad_id'],
+    'ubicacion_id' => (int)$ubicacion['ubicacion_id'],
+    'proveedor_id' => (int)$proveedor['proveedor_id'],
+    'cupo_maximo' => 10,
+], 1);
+ok((int)$sesion['plan_detalle_id'] === $detalleMarzoId, 'Sesión ligada al plan_detalle_id');
+ok((int)$sesion['capacitacion_id'] === $capId, 'Sesión reutiliza la capacitación del plan');
+
+echo "\n== Un plan por año e histórico ==\n";
 try {
     $planes->crear(['anio' => $anioPrueba], 1);
     ok(false, 'No duplicar año');
@@ -246,13 +325,15 @@ try {
     ok($e->getStatusCode() === 409, 'Año duplicado 409');
 }
 
-$plan2026 = $db->fetch("SELECT plan_anual_id, estado FROM planes_anuales WHERE anio = 2026");
-ok($plan2026 !== null, 'Plan 2026 historico se conserva');
-ok($plan2026['estado'] === 'APROBADO', 'Plan 2026 sigue APROBADO');
+$plan2026 = $db->fetch('SELECT plan_anual_id, estado FROM planes_anuales WHERE anio = 2026');
+ok($plan2026 !== null, 'Plan 2026 histórico se conserva');
 
 $lista = $planes->listar(1, 20, null, null);
 $anios = array_map(static fn (array $p): int => (int)$p['anio'], $lista['items']);
 ok(in_array(2026, $anios, true) && in_array(2027, $anios, true), 'Listado muestra 2026 y 2027');
+
+$filtrado = $planes->listar(1, 20, $anioPrueba, null, 'alturas');
+ok($filtrado['total'] >= 1, 'Búsqueda por nombre de capacitación');
 
 try {
     $nuevo = $planes->crear(['anio' => 2028], 1);
@@ -265,27 +346,21 @@ try {
 
 echo "\n== Limpieza ==\n";
 borrarPlanAnio($db, $anioPrueba);
-foreach ([$persona1, $persona2] as $pid) {
-    $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$pid]);
-    foreach ($asigs as $a) {
-        $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
-        $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
-    }
-    $personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$pid]);
-    $personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$pid]);
+$asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$personaId]);
+foreach ($asigs as $a) {
+    $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
+    $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [(int)$a['asignacion_id']]);
 }
-foreach ($capsCreadas as $cap) {
-    $ref = $db->fetch(
-        'SELECT plan_detalle_id FROM plan_anual_detalle WHERE capacitacion_id = ? LIMIT 1',
-        [(int)$cap['capacitacion_id']]
-    );
-    $asig = $db->fetch(
-        'SELECT asignacion_id FROM asignaciones_capacitacion WHERE capacitacion_id = ? LIMIT 1',
-        [(int)$cap['capacitacion_id']]
-    );
-    if ($ref === null && $asig === null) {
-        $db->query('DELETE FROM capacitaciones WHERE capacitacion_id = ?', [(int)$cap['capacitacion_id']]);
-    }
+$personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$personaId]);
+$personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$personaId]);
+$db->query('UPDATE matriz_aplicabilidad SET activa = 0 WHERE capacitacion_id = ?', [$capId]);
+$ref = $db->fetch('SELECT plan_detalle_id FROM plan_anual_detalle WHERE capacitacion_id = ? LIMIT 1', [$capId]);
+$asig = $db->fetch('SELECT asignacion_id FROM asignaciones_capacitacion WHERE capacitacion_id = ? LIMIT 1', [$capId]);
+$mat = $db->fetch('SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad WHERE capacitacion_id = ? LIMIT 1', [$capId]);
+if ($ref === null && $asig === null && $mat === null) {
+    $db->query('DELETE FROM capacitaciones WHERE capacitacion_id = ?', [$capId]);
+} else {
+    $db->query("UPDATE capacitaciones SET estado = 'INACTIVA' WHERE capacitacion_id = ?", [$capId]);
 }
 
 echo "\nPruebas de plan anual OK.\n";

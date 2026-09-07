@@ -52,15 +52,24 @@ class CapacitacionRepository
     /**
      * Catálogo ACTIVA para la grilla de matriz (sin paginar).
      *
-     * @return list<array{capacitacion_id:int,codigo:string,nombre:string,es_tarea_critica:bool}>
+     * @return list<array{capacitacion_id:int,codigo:string,nombre:string,es_tarea_critica:bool,duracion_estimada_horas:?float,tipo_nombre:?string,vigencia_nombre:?string,objetivo:?string,modalidad_nombre:?string}>
      */
     public function listarActivasResumen(): array
     {
         $filas = $this->db->fetchAll(
-            'SELECT capacitacion_id, codigo, nombre, es_tarea_critica
-             FROM capacitaciones
-             WHERE estado = \'ACTIVA\'
-             ORDER BY codigo ASC'
+            'SELECT c.capacitacion_id, c.codigo, c.nombre, c.es_tarea_critica,
+                    c.duracion_estimada_horas, c.objetivo,
+                    tip.nombre AS tipo_nombre,
+                    vig.nombre AS vigencia_nombre,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad,
+                    md.nombre AS modalidad_nombre
+             FROM capacitaciones c
+             LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = c.tipo_capacitacion_id
+             LEFT JOIN vigencias vig ON vig.vigencia_id = c.vigencia_id
+             LEFT JOIN modalidades md ON md.modalidad_id = c.modalidad_default_id
+             WHERE c.estado = \'ACTIVA\'
+             ORDER BY c.codigo ASC'
         );
 
         $salida = [];
@@ -70,6 +79,25 @@ class CapacitacionRepository
                 'codigo' => (string)$fila['codigo'],
                 'nombre' => (string)$fila['nombre'],
                 'es_tarea_critica' => (int)$fila['es_tarea_critica'] === 1,
+                'duracion_estimada_horas' => $fila['duracion_estimada_horas'] !== null
+                    ? (float)$fila['duracion_estimada_horas']
+                    : null,
+                'tipo_nombre' => $fila['tipo_nombre'] !== null && $fila['tipo_nombre'] !== ''
+                    ? (string)$fila['tipo_nombre']
+                    : null,
+                'vigencia_nombre' => $fila['vigencia_nombre'] !== null && $fila['vigencia_nombre'] !== ''
+                    ? (string)$fila['vigencia_nombre']
+                    : null,
+                'vigencia_cantidad' => $fila['vigencia_cantidad'] !== null ? (int)$fila['vigencia_cantidad'] : null,
+                'vigencia_unidad' => $fila['vigencia_unidad'] !== null && $fila['vigencia_unidad'] !== ''
+                    ? (string)$fila['vigencia_unidad']
+                    : null,
+                'objetivo' => $fila['objetivo'] !== null && $fila['objetivo'] !== ''
+                    ? (string)$fila['objetivo']
+                    : null,
+                'modalidad_nombre' => $fila['modalidad_nombre'] !== null && $fila['modalidad_nombre'] !== ''
+                    ? (string)$fila['modalidad_nombre']
+                    : null,
             ];
         }
 

@@ -136,6 +136,33 @@ class MatrizRepository
         return $this->db->fetchAll($sql, $params);
     }
 
+    /**
+     * Cargos con marca activa para una capacitación en un proceso/proyecto.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function cargosActivosDeCapacitacion(int $capacitacionId, int $procesoId, ?string $proyecto): array
+    {
+        $sql = $this->selectBase() . '
+                WHERE m.activa = 1
+                  AND cap.estado = \'ACTIVA\'
+                  AND m.capacitacion_id = ?
+                  AND m.proceso_id = ?
+                  AND m.cargo_id_ext IS NOT NULL';
+        $params = [$capacitacionId, $procesoId];
+
+        if ($proyecto === null || $proyecto === '') {
+            $sql .= " AND (m.proyecto IS NULL OR TRIM(m.proyecto) = '')";
+        } else {
+            $sql .= ' AND m.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $proyecto;
+        }
+
+        $sql .= ' ORDER BY m.cargo_id_ext ASC';
+
+        return $this->db->fetchAll($sql, $params);
+    }
+
     public function buscarPorClave(array $datos): ?array
     {
         return $this->db->fetch(

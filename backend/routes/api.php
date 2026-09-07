@@ -78,11 +78,18 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     $router->group(['prefix' => '/planes-anuales'], function ($router) {
         $router->get('', [PlanAnualController::class, 'index'], [[PermisoMiddleware::class, 'planes.ver']]);
         $router->post('', [PlanAnualController::class, 'store'], [[PermisoMiddleware::class, 'planes.crear']]);
+        $router->get('/opciones', [PlanAnualController::class, 'opciones'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->get('/alcance', [PlanAnualController::class, 'alcance'], [[PermisoMiddleware::class, 'planes.ver']]);
         $router->get('/{id}/asignaciones-disponibles', [PlanAnualController::class, 'disponibles'], [[PermisoMiddleware::class, 'planes.ver']]);
         $router->post('/{id}/asignaciones', [PlanAnualController::class, 'incluir'], [[PermisoMiddleware::class, 'planes.editar']]);
         $router->delete('/{id}/asignaciones/{asignacionId}', [PlanAnualController::class, 'quitarAsignacion'], [[PermisoMiddleware::class, 'planes.editar']]);
         $router->put('/{id}/asignaciones/{asignacionId}', [PlanAnualController::class, 'moverAsignacion'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->post('/{id}/actividades', [PlanAnualController::class, 'crearActividad'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->get('/{id}/actividades/{detalleId}', [PlanAnualController::class, 'verActividad'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->put('/{id}/actividades/{detalleId}', [PlanAnualController::class, 'actualizarActividad'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->delete('/{id}/actividades/{detalleId}', [PlanAnualController::class, 'eliminarActividad'], [[PermisoMiddleware::class, 'planes.editar']]);
         $router->post('/{id}/enviar-revision', [PlanAnualController::class, 'enviarRevision'], [[PermisoMiddleware::class, 'planes.editar']]);
+        $router->post('/{id}/devolver', [PlanAnualController::class, 'devolver'], [[PermisoMiddleware::class, 'planes.aprobar']]);
         $router->post('/{id}/aprobar', [PlanAnualController::class, 'aprobar'], [[PermisoMiddleware::class, 'planes.aprobar']]);
         $router->get('/{id}', [PlanAnualController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
     });

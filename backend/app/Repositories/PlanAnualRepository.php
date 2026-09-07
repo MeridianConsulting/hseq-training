@@ -18,9 +18,9 @@ class PlanAnualRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listar(int $limite, int $offset, ?int $anio, ?string $estado): array
+    public function listar(int $limite, int $offset, ?int $anio, ?string $estado, ?string $buscar = null, ?int $procesoId = null, ?string $proyecto = null): array
     {
-        [$where, $params] = $this->filtros($anio, $estado);
+        [$where, $params] = $this->filtros($anio, $estado, $buscar, $procesoId, $proyecto);
 
         return $this->db->fetchAll(
             $this->selectPlan() . " {$where}
@@ -30,9 +30,9 @@ class PlanAnualRepository
         );
     }
 
-    public function contar(?int $anio, ?string $estado): int
+    public function contar(?int $anio, ?string $estado, ?string $buscar = null, ?int $procesoId = null, ?string $proyecto = null): int
     {
-        [$where, $params] = $this->filtros($anio, $estado);
+        [$where, $params] = $this->filtros($anio, $estado, $buscar, $procesoId, $proyecto);
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total FROM planes_anuales p {$where}",
             $params
@@ -75,6 +75,7 @@ class PlanAnualRepository
                     d.plan_anual_id,
                     d.capacitacion_id,
                     d.mes_programado,
+                    d.fecha_programada,
                     d.cantidad_programada,
                     d.area_id,
                     d.proceso_id,
@@ -82,12 +83,24 @@ class PlanAnualRepository
                     d.proyecto,
                     c.codigo AS capacitacion_codigo,
                     c.nombre AS capacitacion_nombre,
+                    c.objetivo AS capacitacion_objetivo,
+                    c.duracion_estimada_horas,
+                    c.es_tarea_critica,
+                    c.evaluacion,
+                    tip.nombre AS tipo_nombre,
+                    vig.nombre AS vigencia_nombre,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad,
+                    md.nombre AS modalidad_nombre,
                     pr.nombre AS proceso_nombre
              FROM plan_anual_detalle d
              INNER JOIN capacitaciones c ON c.capacitacion_id = d.capacitacion_id
+             LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = c.tipo_capacitacion_id
+             LEFT JOIN vigencias vig ON vig.vigencia_id = c.vigencia_id
+             LEFT JOIN modalidades md ON md.modalidad_id = c.modalidad_default_id
              LEFT JOIN procesos pr ON pr.proceso_id = d.proceso_id
              WHERE d.plan_anual_id = ?
-             ORDER BY d.mes_programado ASC, c.nombre ASC',
+             ORDER BY d.fecha_programada ASC, c.nombre ASC',
             [$planId]
         );
     }
@@ -100,6 +113,72 @@ class PlanAnualRepository
              LIMIT 1',
             [$planId, $capacitacionId, $mes]
         );
+    }
+
+    public function buscarDetallePorId(int $planId, int $detalleId): ?array
+    {
+        return $this->db->fetch(
+            'SELECT d.plan_detalle_id,
+                    d.plan_anual_id,
+                    d.capacitacion_id,
+                    d.mes_programado,
+                    d.fecha_programada,
+                    d.cantidad_programada,
+                    d.area_id,
+                    d.proceso_id,
+                    d.ambito,
+                    d.proyecto,
+                    c.codigo AS capacitacion_codigo,
+                    c.nombre AS capacitacion_nombre,
+                    c.objetivo AS capacitacion_objetivo,
+                    c.duracion_estimada_horas,
+                    c.es_tarea_critica,
+                    c.evaluacion,
+                    tip.nombre AS tipo_nombre,
+                    vig.nombre AS vigencia_nombre,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad,
+                    md.nombre AS modalidad_nombre,
+                    pr.nombre AS proceso_nombre
+             FROM plan_anual_detalle d
+             INNER JOIN capacitaciones c ON c.capacitacion_id = d.capacitacion_id
+             LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = c.tipo_capacitacion_id
+             LEFT JOIN vigencias vig ON vig.vigencia_id = c.vigencia_id
+             LEFT JOIN modalidades md ON md.modalidad_id = c.modalidad_default_id
+             LEFT JOIN procesos pr ON pr.proceso_id = d.proceso_id
+             WHERE d.plan_anual_id = ? AND d.plan_detalle_id = ?
+             LIMIT 1',
+            [$planId, $detalleId]
+        );
+    }
+
+    public function buscarDetalleActividad(
+        int $planId,
+        int $capacitacionId,
+        ?int $procesoId,
+        ?string $proyecto,
+        string $fecha,
+        ?int $exceptoDetalleId = null
+    ): ?array {
+        $sql = 'SELECT * FROM plan_anual_detalle
+                WHERE plan_anual_id = ?
+                  AND capacitacion_id = ?
+                  AND (proceso_id <=> ?)
+                  AND (proyecto <=> ?)
+                  AND fecha_programada = ?';
+        $params = [$planId, $capacitacionId, $procesoId, $proyecto, $fecha];
+        if ($exceptoDetalleId !== null && $exceptoDetalleId > 0) {
+            $sql .= ' AND plan_detalle_id <> ?';
+            $params[] = $exceptoDetalleId;
+        }
+        $sql .= ' LIMIT 1';
+
+        return $this->db->fetch($sql, $params);
+    }
+
+    public function actualizarDetalle(int $detalleId, array $datos): int
+    {
+        return $this->db->update('plan_anual_detalle', $datos, 'plan_detalle_id = ?', [$detalleId]);
     }
 
     public function crearDetalle(array $datos): int
@@ -211,6 +290,11 @@ class PlanAnualRepository
         );
     }
 
+    public function eliminarEnlacesDetalle(int $detalleId): int
+    {
+        return $this->db->delete('plan_detalle_asignaciones', 'plan_detalle_id = ?', [$detalleId]);
+    }
+
     /** @return list<array<string,mixed>> */
     public function asignacionesDisponibles(int $planId, ?string $buscar, int $limite): array
     {
@@ -307,7 +391,7 @@ class PlanAnualRepository
     /**
      * @return array{0:string,1:list<mixed>}
      */
-    private function filtros(?int $anio, ?string $estado): array
+    private function filtros(?int $anio, ?string $estado, ?string $buscar = null, ?int $procesoId = null, ?string $proyecto = null): array
     {
         $condiciones = [];
         $params = [];
@@ -320,6 +404,35 @@ class PlanAnualRepository
         if ($estado !== null && $estado !== '') {
             $condiciones[] = 'p.estado = ?';
             $params[] = $estado;
+        }
+
+        if ($procesoId !== null && $procesoId > 0) {
+            $condiciones[] = 'EXISTS (
+                SELECT 1 FROM plan_anual_detalle d
+                WHERE d.plan_anual_id = p.plan_anual_id AND d.proceso_id = ?
+            )';
+            $params[] = $procesoId;
+        }
+
+        if ($proyecto !== null && $proyecto !== '') {
+            $condiciones[] = 'EXISTS (
+                SELECT 1 FROM plan_anual_detalle d
+                WHERE d.plan_anual_id = p.plan_anual_id
+                  AND d.proyecto COLLATE utf8mb4_unicode_ci = ?
+            )';
+            $params[] = $proyecto;
+        }
+
+        if ($buscar !== null && $buscar !== '') {
+            $condiciones[] = 'EXISTS (
+                SELECT 1 FROM plan_anual_detalle d
+                INNER JOIN capacitaciones c ON c.capacitacion_id = d.capacitacion_id
+                WHERE d.plan_anual_id = p.plan_anual_id
+                  AND (c.codigo LIKE ? OR c.nombre LIKE ?)
+            )';
+            $like = '%' . $buscar . '%';
+            $params[] = $like;
+            $params[] = $like;
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

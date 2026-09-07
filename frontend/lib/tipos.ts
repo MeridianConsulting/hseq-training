@@ -674,16 +674,24 @@ export type FilaMatriz = {
   activa: boolean;
 };
 
-export type AsignacionEnPlan = {
-  asignacion_id: number;
-  persona_id_ext: number | null;
-  persona_nombre: string | null;
-  numero_documento: string | null;
+export type CapacitacionPlanOpcion = {
   capacitacion_id: number;
-  capacitacion_codigo: string;
-  capacitacion_nombre: string;
-  origen: string;
-  proyecto: string | null;
+  codigo: string;
+  nombre: string;
+  es_tarea_critica: boolean;
+  duracion_estimada_horas: number | null;
+  tipo_nombre: string | null;
+  vigencia_nombre: string | null;
+  vigencia_cantidad: number | null;
+  vigencia_unidad: string | null;
+  objetivo: string | null;
+  modalidad_nombre: string | null;
+};
+
+export type OpcionesPlanAnual = {
+  procesos: { proceso_id: number; nombre: string }[];
+  proyectos: string[];
+  capacitaciones: CapacitacionPlanOpcion[];
 };
 
 export type DetallePlanAnual = {
@@ -691,6 +699,14 @@ export type DetallePlanAnual = {
   capacitacion_id: number;
   capacitacion_codigo: string;
   capacitacion_nombre: string;
+  capacitacion_objetivo: string | null;
+  tipo_nombre: string | null;
+  duracion_estimada_horas: number | null;
+  es_tarea_critica: boolean;
+  evaluacion: boolean;
+  vigencia_nombre: string | null;
+  modalidad_nombre: string | null;
+  fecha_programada: string | null;
   mes_programado: number;
   mes_nombre: string;
   trimestre: number;
@@ -699,7 +715,7 @@ export type DetallePlanAnual = {
   proceso_nombre: string | null;
   ambito: string | null;
   proyecto: string | null;
-  asignaciones: AsignacionEnPlan[];
+  cargos_aplicables: CargoCorporativo[];
 };
 
 export type PlanAnual = {
@@ -707,6 +723,7 @@ export type PlanAnual = {
   anio: number;
   estado: "BORRADOR" | "EN_REVISION" | "APROBADO" | string;
   total_programadas: number;
+  total_horas?: number;
   aprobado_por_usuario_id_ext: number | null;
   fecha_aprobacion: string | null;
   creado_por_usuario_id_ext: number | null;
