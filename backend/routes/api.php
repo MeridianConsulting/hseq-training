@@ -146,8 +146,11 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->group(['prefix' => '/matriz'], function ($router) {
         $router->get('', [MatrizController::class, 'index'], [[PermisoMiddleware::class, 'matriz.ver']]);
+        $router->get('/opciones', [MatrizController::class, 'opciones'], [[PermisoMiddleware::class, 'matriz.ver']]);
+        $router->get('/vista', [MatrizController::class, 'vista'], [[PermisoMiddleware::class, 'matriz.ver']]);
         $router->get('/aplicables', [MatrizController::class, 'aplicables'], [[PermisoMiddleware::class, 'matriz.ver']]);
         $router->post('/asociar-masivo', [MatrizController::class, 'asociarMasivo'], [[PermisoMiddleware::class, 'matriz.crear']]);
+        $router->post('/sincronizar', [MatrizController::class, 'sincronizar']);
         $router->get('/{id}', [MatrizController::class, 'show'], [[PermisoMiddleware::class, 'matriz.ver']]);
         $router->post('', [MatrizController::class, 'store'], [[PermisoMiddleware::class, 'matriz.crear']]);
         $router->put('/{id}', [MatrizController::class, 'update'], [[PermisoMiddleware::class, 'matriz.editar']]);

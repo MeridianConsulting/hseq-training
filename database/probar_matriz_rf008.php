@@ -55,7 +55,12 @@ $cap = $db->fetch("SELECT capacitacion_id, codigo, nombre, estado FROM capacitac
 ok($cap !== null, 'Hay una capacitacion ACTIVA');
 $capId = (int)$cap['capacitacion_id'];
 
-$proceso = $db->fetch("SELECT proceso_id, nombre FROM procesos WHERE activo = 1 ORDER BY (nombre = 'Operaciones') DESC, proceso_id ASC LIMIT 1");
+$proceso = $db->fetch(
+    "SELECT proceso_id, nombre FROM procesos
+     WHERE activo = 1
+     ORDER BY (nombre LIKE '%Gestión de Proyectos%' OR nombre LIKE '%Gestion de Proyectos%') DESC, proceso_id ASC
+     LIMIT 1"
+);
 ok($proceso !== null, 'Hay un proceso activo');
 $procesoId = (int)$proceso['proceso_id'];
 

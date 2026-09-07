@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -9,28 +9,34 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
-import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
-import { Pagination } from "@/components/ui/pagination";
-import { Table } from "@/components/ui/table";
-import { useDebouncedCallback } from "@/hooks/useFiltrosUrl";
-import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import type { Capacitacion, CargoCorporativo, FilaMatriz, ItemCatalogo } from "@/lib/tipos";
-import { FormularioMatriz, type DatosMatriz } from "./formulario";
-import { FormularioMatrizMasiva, type DatosMatrizMasiva } from "./formulario-masivo";
-import { Link2, Pencil, Plus, UserMinus, WandSparkles } from "lucide-react";
+import { apiGet, apiPost, withQuery } from "@/lib/api";
+import type { OpcionesMatriz, ResultadoSincronizarMatriz, VistaMatriz } from "@/lib/tipos";
+import { Save } from "lucide-react";
 
-type ResultadoMasivo = {
-  creadas: number;
-  omitidas: number;
-  items: FilaMatriz[];
-  omitidas_detalle: { cargo_id_ext: number; motivo: string }[];
-};
+function procesoPermiteProyecto(procesoId: string, procesos: OpcionesMatriz["procesos"]): boolean {
+  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
+  if (!seleccionado) return false;
+  const n = seleccionado.nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return n.includes("gestion de proyectos");
+}
 
-type ResultadoMotor = {
-  creadas: number;
-  omitidas: number;
-};
+function claveCelda(cargoId: number, capId: number): string {
+  return `${cargoId}:${capId}`;
+}
+
+function marcasDesdeVista(vista: VistaMatriz): Record<string, boolean> {
+  const marcas: Record<string, boolean> = {};
+  for (const celda of vista.celdas) {
+    if (celda.activa) {
+      marcas[claveCelda(celda.cargo_id_ext, celda.capacitacion_id)] = true;
+    }
+  }
+  return marcas;
+}
 
 export default function MatrizPage() {
   return (
@@ -42,210 +48,176 @@ export default function MatrizPage() {
 
 function Contenido() {
   const { puede } = useAuth();
-  const [items, setItems] = useState<FilaMatriz[]>([]);
-  const [pagina, setPagina] = useState(1);
-  const [ultima, setUltima] = useState(1);
-  const [capacitacionId, setCapacitacionId] = useState("");
-  const [cargoId, setCargoId] = useState("");
+  const puedeGuardar = puede("matriz.crear") || puede("matriz.editar");
+  const [opciones, setOpciones] = useState<OpcionesMatriz>({
+    procesos: [],
+    proyectos: [],
+    cargos: [],
+    capacitaciones: [],
+  });
   const [procesoId, setProcesoId] = useState("");
   const [proyecto, setProyecto] = useState("");
-  const [estado, setEstado] = useState("activas");
+  const [buscarCargo, setBuscarCargo] = useState("");
+  const [buscarCap, setBuscarCap] = useState("");
+  const [verTodos, setVerTodos] = useState(false);
+  const [vista, setVista] = useState<VistaMatriz | null>(null);
+  const [marcas, setMarcas] = useState<Record<string, boolean>>({});
+  const [inicial, setInicial] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
-  const [abierto, setAbierto] = useState(false);
-  const [masivoAbierto, setMasivoAbierto] = useState(false);
-  const [editando, setEditando] = useState<FilaMatriz | null>(null);
-  const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
-  const [cargos, setCargos] = useState<CargoCorporativo[]>([]);
-  const [areas, setAreas] = useState<ItemCatalogo[]>([]);
-  const [procesos, setProcesos] = useState<ItemCatalogo[]>([]);
-  const [periodicidades, setPeriodicidades] = useState<ItemCatalogo[]>([]);
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState(false);
+  const [guardando, setGuardando] = useState(false);
 
-  async function cargar(paginaActual = pagina) {
-    setCargando(true);
-    const respuesta = await apiGet<ListaPaginada<FilaMatriz>>(
-      withQuery("/api/matriz", {
-        page: paginaActual,
-        per_page: 15,
-        capacitacion_id: capacitacionId || undefined,
-        cargo_id_ext: cargoId || undefined,
-        proceso_id: procesoId || undefined,
-        proyecto: proyecto.trim() || undefined,
-        estado: estado || undefined,
-      }),
-    );
-    setCargando(false);
-
-    if (!respuesta.success || !respuesta.data) {
-      setError(respuesta.message || "No fue posible cargar la matriz.");
-      return;
-    }
-
-    setItems(respuesta.data.items);
-    setPagina(respuesta.data.pagination.current_page);
-    setUltima(respuesta.data.pagination.last_page);
-    setError(null);
-  }
-
-  useDebouncedCallback(() => {
-    void cargar(1);
-  }, [capacitacionId, cargoId, procesoId, proyecto, estado]);
+  const muestraProyecto = procesoPermiteProyecto(procesoId, opciones.procesos);
+  const contextoListo = procesoId !== "" && (!muestraProyecto || proyecto !== "");
 
   useEffect(() => {
     void (async () => {
-      const [caps, car, ar, pr, pe] = await Promise.all([
-        apiGet<ListaPaginada<Capacitacion>>(withQuery("/api/capacitaciones", { per_page: 100, estado: "ACTIVA" })),
-        apiGet<CargoCorporativo[]>("/api/personal/cargos"),
-        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/areas?activos=1"),
-        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/procesos?activos=1"),
-        apiGet<{ items: ItemCatalogo[] }>("/api/catalogs/periodicidades?activos=1"),
-      ]);
-      setCapacitaciones(caps.data?.items ?? []);
-      setCargos(car.data ?? []);
-      setAreas(ar.data?.items ?? []);
-      setProcesos(pr.data?.items ?? []);
-      setPeriodicidades(pe.data?.items ?? []);
+      const respuesta = await apiGet<OpcionesMatriz>("/api/matriz/opciones");
+      if (!respuesta.success || !respuesta.data) {
+        setError(respuesta.message || "No fue posible cargar los filtros de la matriz.");
+        return;
+      }
+      setOpciones(respuesta.data);
+      setError(null);
     })();
   }, []);
 
-  function limpiarFiltros() {
-    setCapacitacionId("");
-    setCargoId("");
-    setProcesoId("");
-    setProyecto("");
-    setEstado("activas");
-  }
+  useEffect(() => {
+    if (!contextoListo) {
+      setVista(null);
+      setMarcas({});
+      setInicial({});
+      setCargando(false);
+      return;
+    }
+
+    const abortado = { actual: false };
+    void (async () => {
+      setCargando(true);
+      const respuesta = await apiGet<VistaMatriz>(
+        withQuery("/api/matriz/vista", {
+          proceso_id: procesoId,
+          proyecto: muestraProyecto ? proyecto : undefined,
+        }),
+      );
+      if (abortado.actual) {
+        return;
+      }
+      setCargando(false);
+      if (!respuesta.success || !respuesta.data) {
+        setError(respuesta.message || "No fue posible cargar la matriz.");
+        setVista(null);
+        return;
+      }
+      const siguientes = marcasDesdeVista(respuesta.data);
+      setVista(respuesta.data);
+      setMarcas(siguientes);
+      setInicial(siguientes);
+      setError(null);
+    })();
+
+    return () => {
+      abortado.actual = true;
+    };
+  }, [contextoListo, procesoId, proyecto, muestraProyecto]);
+
+  const catalogoCargos = vista?.cargos_catalogo ?? opciones.cargos ?? [];
+  const capsFuente = vista?.capacitaciones ?? opciones.capacitaciones ?? [];
+  const cargosContexto = vista?.cargos ?? [];
+  const mostrarCatalogoSinContexto = verTodos && !contextoListo;
+
+  const cargosBase = useMemo(() => {
+    return verTodos ? catalogoCargos : cargosContexto;
+  }, [verTodos, catalogoCargos, cargosContexto]);
+
+  const cargosVisibles = useMemo(() => {
+    const q = buscarCargo.trim().toLowerCase();
+    if (q === "") return cargosBase;
+    return cargosBase.filter((c) => c.nombre_cargo.toLowerCase().includes(q));
+  }, [cargosBase, buscarCargo]);
+
+  const capsVisibles = useMemo(() => {
+    const q = buscarCap.trim().toLowerCase();
+    if (q === "") return capsFuente;
+    return capsFuente.filter(
+      (c) => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q),
+    );
+  }, [capsFuente, buscarCap]);
+
+  const sucio = useMemo(() => {
+    const claves = new Set([...Object.keys(marcas), ...Object.keys(inicial)]);
+    for (const clave of claves) {
+      if (Boolean(marcas[clave]) !== Boolean(inicial[clave])) {
+        return true;
+      }
+    }
+    return false;
+  }, [marcas, inicial]);
 
   const chips: ChipFiltro[] = [];
-  if (cargoId) {
-    const cargo = cargos.find((c) => String(c.cargo_id) === cargoId);
-    chips.push({ clave: "cargo_id", etiqueta: "Cargo", valor: cargo?.nombre_cargo ?? cargoId });
-  }
   if (procesoId) {
-    const proceso = procesos.find((p) => String(p.proceso_id) === procesoId);
-    chips.push({
-      clave: "proceso_id",
-      etiqueta: "Proceso",
-      valor: proceso ? String(proceso.nombre) : procesoId,
-    });
+    const proceso = opciones.procesos.find((p) => String(p.proceso_id) === procesoId);
+    chips.push({ clave: "proceso_id", etiqueta: "Proceso", valor: proceso?.nombre ?? procesoId });
   }
-  if (proyecto.trim()) {
-    chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: proyecto.trim() });
+  if (muestraProyecto && proyecto) {
+    chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: proyecto });
   }
-  if (capacitacionId) {
-    const cap = capacitaciones.find((c) => String(c.capacitacion_id) === capacitacionId);
-    chips.push({
-      clave: "capacitacion_id",
-      etiqueta: "Capacitación",
-      valor: cap ? `${cap.codigo} — ${cap.nombre}` : capacitacionId,
-    });
+  if (buscarCargo.trim()) {
+    chips.push({ clave: "buscar_cargo", etiqueta: "Cargo", valor: buscarCargo.trim() });
   }
-  if (estado !== "activas") {
-    chips.push({
-      clave: "estado",
-      etiqueta: "Estado",
-      valor: estado === "todos" ? "Todas" : estado === "inactivas" ? "Inactivas" : estado,
-    });
+  if (buscarCap.trim()) {
+    chips.push({ clave: "buscar_cap", etiqueta: "Capacitación", valor: buscarCap.trim() });
+  }
+  if (verTodos) {
+    chips.push({ clave: "ver_todos", etiqueta: "Cargos", valor: "Todos los del catálogo" });
   }
 
   function quitarChip(clave: string) {
-    if (clave === "cargo_id") setCargoId("");
-    if (clave === "proceso_id") setProcesoId("");
+    if (clave === "proceso_id") {
+      setProcesoId("");
+      setProyecto("");
+    }
     if (clave === "proyecto") setProyecto("");
-    if (clave === "capacitacion_id") setCapacitacionId("");
-    if (clave === "estado") setEstado("activas");
+    if (clave === "buscar_cargo") setBuscarCargo("");
+    if (clave === "buscar_cap") setBuscarCap("");
+    if (clave === "ver_todos") setVerTodos(false);
   }
 
-  async function guardar(evento: FormEvent, datos: DatosMatriz) {
-    evento.preventDefault();
-    const n = (valor: string) => (valor === "" ? null : Number(valor));
-    const cuerpo = {
-      capacitacion_id: Number(datos.capacitacion_id),
-      cargo_id_ext: n(datos.cargo_id_ext),
-      area_id: n(datos.area_id),
-      proceso_id: n(datos.proceso_id),
-      ambito: datos.ambito || null,
-      proyecto: datos.proyecto || null,
-      periodicidad_id: n(datos.periodicidad_id),
-      obligatoria: datos.obligatoria ? 1 : 0,
-      activa: datos.activa ? 1 : 0,
-    };
+  function aplicarVista(siguiente: VistaMatriz) {
+    const siguientes = marcasDesdeVista(siguiente);
+    setVista(siguiente);
+    setMarcas(siguientes);
+    setInicial(siguientes);
+  }
 
-    const respuesta = editando
-      ? await apiPut<FilaMatriz>(`/api/matriz/${editando.matriz_aplicabilidad_id}`, cuerpo)
-      : await apiPost<FilaMatriz>("/api/matriz", cuerpo);
-
-    if (!respuesta.success) {
-      setError(respuesta.message || "No se pudo guardar.");
+  async function guardar() {
+    if (!contextoListo || !puedeGuardar) {
       return;
     }
 
-    setMensaje(respuesta.message);
-    setError(null);
-    setAbierto(false);
-    setEditando(null);
-    await cargar();
-  }
+    const aplica = Object.entries(marcas)
+      .filter(([, marcada]) => marcada)
+      .map(([clave]) => {
+        const [cargo, cap] = clave.split(":");
+        return { cargo_id_ext: Number(cargo), capacitacion_id: Number(cap) };
+      });
 
-  async function guardarMasivo(evento: FormEvent, datos: DatosMatrizMasiva) {
-    evento.preventDefault();
-    const n = (valor: string) => (valor === "" ? null : Number(valor));
-    const respuesta = await apiPost<ResultadoMasivo>("/api/matriz/asociar-masivo", {
-      capacitacion_id: Number(datos.capacitacion_id),
-      cargo_ids_ext: datos.cargo_ids_ext.map((id) => Number(id)),
-      proceso_id: n(datos.proceso_id),
-      proyecto: datos.proyecto.trim() || null,
-      periodicidad_id: n(datos.periodicidad_id),
-      obligatoria: datos.obligatoria ? 1 : 0,
+    setGuardando(true);
+    const respuesta = await apiPost<ResultadoSincronizarMatriz>("/api/matriz/sincronizar", {
+      proceso_id: Number(procesoId),
+      proyecto: muestraProyecto ? proyecto : null,
+      aplica,
     });
+    setGuardando(false);
 
-    if (!respuesta.success) {
-      setError(respuesta.message || "No se pudo asociar.");
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No se pudo guardar la matriz.");
       return;
     }
 
-    setMensaje(respuesta.message);
-    setError(null);
-    setMasivoAbierto(false);
-    await cargar(1);
-  }
-
-  async function inactivar(item: FilaMatriz) {
-    if (!confirm("¿Está seguro de inactivar esta regla de aplicabilidad?")) {
-      return;
-    }
-    const r = await apiDelete(`/api/matriz/${item.matriz_aplicabilidad_id}`);
-    if (!r.success) {
-      setError(r.message || "No se pudo inactivar.");
-      return;
-    }
-    setMensaje(r.message);
-    setError(null);
-    await cargar();
-  }
-
-  async function reactivar(item: FilaMatriz) {
-    const r = await apiPut<FilaMatriz>(`/api/matriz/${item.matriz_aplicabilidad_id}`, { activa: 1 });
-    if (!r.success) {
-      setError(r.message || "No se pudo reactivar.");
-      return;
-    }
-    setMensaje(r.message || "Registro reactivado");
-    setError(null);
-    await cargar();
-  }
-
-  async function generarAutomaticas() {
-    if (!confirm("¿Generar asignaciones automáticas a partir de las reglas activas de la matriz?")) {
-      return;
-    }
-    const r = await apiPost<ResultadoMotor>("/api/asignaciones/generar-automaticas", {});
-    if (!r.success) {
-      setError(r.message || "No se pudieron generar las asignaciones.");
-      return;
-    }
-    setMensaje(r.message);
+    aplicarVista(respuesta.data.vista);
+    setMensaje(respuesta.message || "Matriz de aplicabilidad guardada");
     setError(null);
   }
 
@@ -253,35 +225,14 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Matriz de aplicabilidad"
-        descripcion="Define qué capacitaciones aplican a cada combinación de cargo, proceso y proyecto. El motor de asignación automática consulta estas reglas activas."
+        descripcion="Marque las capacitaciones que aplican a cada cargo según el proceso y, si corresponde, el proyecto. Las asignaciones se generan en el módulo de asignaciones."
         acciones={
-          <div className="flex flex-wrap gap-2">
-            {puede("asignaciones.crear") ? (
-              <Button type="button" variante="secondary" onClick={() => void generarAutomaticas()}>
-                <WandSparkles className="h-4 w-4" aria-hidden />
-                Generar asignaciones automáticas
-              </Button>
-            ) : null}
-            {puede("matriz.crear") ? (
-              <>
-                  <Button
-                    type="button"
-                    variante="secondary"
-                    onClick={() => {
-                      setEditando(null);
-                      setAbierto(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden />
-                    Nueva fila
-                  </Button>
-                  <Button type="button" onClick={() => setMasivoAbierto(true)}>
-                    <Link2 className="h-4 w-4" aria-hidden />
-                    Asociar capacitación
-                  </Button>
-              </>
-            ) : null}
-          </div>
+          puedeGuardar ? (
+            <Button type="button" disabled={!contextoListo || !sucio || guardando} onClick={() => void guardar()}>
+              <Save className="h-4 w-4" aria-hidden />
+              {guardando ? "Guardando…" : "Guardar"}
+            </Button>
+          ) : null
         }
       />
 
@@ -289,149 +240,175 @@ function Contenido() {
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
 
       <Filters>
-        <Field etiqueta="Cargo">
-          <select className={inputClass} value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
-            <option value="">Todos</option>
-            {cargos.map((c) => (
-              <option key={c.cargo_id} value={c.cargo_id}>
-                {c.nombre_cargo}
-              </option>
-            ))}
-          </select>
-        </Field>
         <Field etiqueta="Proceso">
-          <select className={inputClass} value={procesoId} onChange={(e) => setProcesoId(e.target.value)}>
-            <option value="">Todos</option>
-            {procesos.map((p) => (
-              <option key={String(p.proceso_id)} value={String(p.proceso_id)}>
-                {String(p.nombre)}
+          <select
+            className={inputClass}
+            value={procesoId}
+            onChange={(e) => {
+              const valor = e.target.value;
+              setProcesoId(valor);
+              if (!procesoPermiteProyecto(valor, opciones.procesos)) {
+                setProyecto("");
+              }
+            }}
+          >
+            <option value="">Seleccione</option>
+            {opciones.procesos.map((item) => (
+              <option key={item.proceso_id} value={item.proceso_id}>
+                {item.nombre}
               </option>
             ))}
           </select>
         </Field>
-        <Field etiqueta="Proyecto">
+
+        {muestraProyecto ? (
+          <Field etiqueta="Proyecto">
+            <select className={inputClass} value={proyecto} onChange={(e) => setProyecto(e.target.value)}>
+              <option value="">Seleccione</option>
+              {opciones.proyectos.map((nombre) => (
+                <option key={nombre} value={nombre}>
+                  {nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+
+        <Field etiqueta="Cargos del contexto">
+          <label className="flex items-center gap-2 pt-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-hseq-800"
+              checked={verTodos}
+              onChange={(e) => setVerTodos(e.target.checked)}
+            />
+            Ver todos los cargos
+          </label>
+        </Field>
+        <Field etiqueta="Buscar cargo">
           <input
             className={inputClass}
-            value={proyecto}
-            onChange={(e) => setProyecto(e.target.value)}
-            placeholder="Texto del proyecto"
+            value={buscarCargo}
+            onChange={(e) => setBuscarCargo(e.target.value)}
+            placeholder="Nombre del cargo"
           />
         </Field>
-        <Field etiqueta="Capacitación">
-          <select className={inputClass} value={capacitacionId} onChange={(e) => setCapacitacionId(e.target.value)}>
-            <option value="">Todas</option>
-            {capacitaciones.map((c) => (
-              <option key={c.capacitacion_id} value={c.capacitacion_id}>
-                {c.codigo} — {c.nombre}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field etiqueta="Estado">
-          <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
-            <option value="todos">Todas</option>
-            <option value="activas">Activas</option>
-            <option value="inactivas">Inactivas</option>
-          </select>
+        <Field etiqueta="Buscar capacitación">
+          <input
+            className={inputClass}
+            value={buscarCap}
+            onChange={(e) => setBuscarCap(e.target.value)}
+            placeholder="Código o nombre"
+          />
         </Field>
       </Filters>
 
-      <FiltrosActivos chips={chips} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
+      <FiltrosActivos
+        chips={chips}
+        onQuitar={quitarChip}
+        onLimpiar={() => {
+          setProcesoId("");
+          setProyecto("");
+          setBuscarCargo("");
+          setBuscarCap("");
+          setVerTodos(false);
+        }}
+      />
 
-      {cargando ? (
+      {!contextoListo && !verTodos ? (
+        <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+          {procesoId === ""
+            ? "Seleccione un proceso para editar la matriz, o active «Ver todos los cargos» para consultar el catálogo."
+            : "Seleccione un proyecto para editar la matriz, o active «Ver todos los cargos» para consultar el catálogo."}
+        </p>
+      ) : cargando && contextoListo ? (
         <ListaCargando />
-      ) : (
-        <Table
-          columnas={[
-            { clave: "cargo", etiqueta: "Cargo" },
-            { clave: "proceso", etiqueta: "Proceso" },
-            { clave: "proyecto", etiqueta: "Proyecto" },
-            { clave: "cap", etiqueta: "Capacitación" },
-            { clave: "periodicidad", etiqueta: "Periodicidad" },
-            { clave: "obligatoria", etiqueta: "Obligatoria" },
-            { clave: "estado", etiqueta: "Estado" },
-            { clave: "acciones", etiqueta: "" },
-          ]}
-          filas={items.map((item) => [
-            item.cargo_nombre ?? (item.cargo_id_ext ? `Cargo ${item.cargo_id_ext}` : "Cualquier cargo"),
-            item.proceso_nombre ?? "—",
-            item.proyecto ?? "—",
-            <div key="c">
-              <p className="font-medium">{item.capacitacion_codigo}</p>
-              <p className="text-xs text-slate-500">{item.capacitacion_nombre}</p>
-            </div>,
-            item.periodicidad_nombre ?? "—",
-            <Badge key="o" tono={item.obligatoria ? "alto" : "neutral"}>
-              {item.obligatoria ? "Sí" : "No"}
-            </Badge>,
-            <Badge key="e" tono={item.activa ? "ok" : "neutral"}>
-              {item.activa ? "Activa" : "Inactiva"}
-            </Badge>,
-            <div key="a" className="flex justify-end gap-2">
-              {puede("matriz.editar") ? (
-                <Button
-                  type="button"
-                  variante="ghost"
-                  onClick={() => {
-                    setEditando(item);
-                    setAbierto(true);
-                  }}
-                >
-                  <Pencil className="h-4 w-4" aria-hidden />
-                  Editar
-                </Button>
-              ) : null}
-              {item.activa
-                ? puede("matriz.eliminar")
-                  ? (
-                    <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
-                      <UserMinus className="h-4 w-4" aria-hidden />
-                      Inactivar
-                    </Button>
-                  )
-                  : null
-                : puede("matriz.editar")
-                  ? (
-                    <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
-                      Reactivar
-                    </Button>
-                  )
-                  : null}
-            </div>,
-          ])}
-        />
-      )}
-      <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
-
-      <Modal
-        abierto={abierto}
-        titulo={editando ? "Editar fila de matriz" : "Nueva fila de matriz"}
-        onCerrar={() => setAbierto(false)}
-      >
-        <FormularioMatriz
-          key={editando?.matriz_aplicabilidad_id ?? "nueva"}
-          inicial={editando}
-          capacitaciones={capacitaciones}
-          cargos={cargos}
-          areas={areas}
-          procesos={procesos}
-          periodicidades={periodicidades}
-          onCancelar={() => setAbierto(false)}
-          onGuardar={guardar}
-        />
-      </Modal>
-
-      <Modal abierto={masivoAbierto} titulo="Asociar capacitación a cargos" onCerrar={() => setMasivoAbierto(false)}>
-        <FormularioMatrizMasiva
-          key={masivoAbierto ? "masivo-abierto" : "masivo"}
-          capacitaciones={capacitaciones}
-          cargos={cargos}
-          procesos={procesos}
-          periodicidades={periodicidades}
-          onCancelar={() => setMasivoAbierto(false)}
-          onGuardar={guardarMasivo}
-        />
-      </Modal>
+      ) : (vista && contextoListo) || mostrarCatalogoSinContexto ? (
+        <>
+        {catalogoCargos.length !== cargosContexto.length || mostrarCatalogoSinContexto ? (
+          <p className="mb-2 text-xs text-slate-500">
+            {mostrarCatalogoSinContexto
+              ? `Mostrando los ${catalogoCargos.length} cargos del catálogo. Seleccione un proceso para marcar qué aplica.`
+              : verTodos
+                ? `Mostrando los ${catalogoCargos.length} cargos del catálogo. Desactive «Ver todos» para volver a los ${cargosContexto.length} de este contexto.`
+                : `Mostrando ${cargosContexto.length} cargos de este contexto (de ${catalogoCargos.length} del catálogo).`}
+          </p>
+        ) : null}
+        <div className="overflow-auto rounded-xl border border-slate-200 bg-white max-h-[70vh]">
+          <table className="min-w-full border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className="sticky left-0 top-0 z-30 min-w-[12rem] border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Cargo
+                </th>
+                {capsVisibles.map((cap) => (
+                  <th
+                    key={cap.capacitacion_id}
+                    className="sticky top-0 z-20 min-w-[7.5rem] border-b border-slate-200 bg-slate-50 px-2 py-2 text-center align-bottom"
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="font-semibold text-slate-800">{cap.codigo}</span>
+                      <span className="max-w-[8rem] text-[11px] font-normal leading-tight text-slate-500">
+                        {cap.nombre}
+                      </span>
+                      {cap.es_tarea_critica ? <Badge tono="alto">Crítica</Badge> : null}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {cargosVisibles.length === 0 || capsVisibles.length === 0 ? (
+                <tr>
+                  <td
+                    className="px-4 py-8 text-center text-slate-500"
+                    colSpan={Math.max(1, capsVisibles.length + 1)}
+                  >
+                    {cargosContexto.length === 0 && !verTodos && buscarCargo.trim() === ""
+                      ? "No hay cargos definidos para este proceso en la matriz. Active «Ver todos los cargos» para marcar uno del catálogo."
+                      : "No hay cargos o capacitaciones que coincidan con la búsqueda."}
+                  </td>
+                </tr>
+              ) : (
+                cargosVisibles.map((cargo) => (
+                  <tr key={cargo.cargo_id} className="hover:bg-hseq-50/40">
+                    <th className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-3 py-2 text-left font-medium text-slate-800">
+                      {cargo.nombre_cargo}
+                    </th>
+                    {capsVisibles.map((cap) => {
+                      const clave = claveCelda(cargo.cargo_id, cap.capacitacion_id);
+                      return (
+                        <td key={cap.capacitacion_id} className="border-b border-slate-100 px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-hseq-800"
+                            checked={Boolean(marcas[clave])}
+                            disabled={!puedeGuardar || !contextoListo}
+                            aria-label={`${cargo.nombre_cargo} × ${cap.codigo}`}
+                            onChange={(e) => {
+                              const marcada = e.target.checked;
+                              setMarcas((prev) => {
+                                const siguiente = { ...prev };
+                                if (marcada) {
+                                  siguiente[clave] = true;
+                                } else {
+                                  delete siguiente[clave];
+                                }
+                                return siguiente;
+                              });
+                            }}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        </>
+      ) : null}
     </>
   );
 }

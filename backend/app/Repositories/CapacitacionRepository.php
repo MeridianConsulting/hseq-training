@@ -49,6 +49,33 @@ class CapacitacionRepository
         );
     }
 
+    /**
+     * Catálogo ACTIVA para la grilla de matriz (sin paginar).
+     *
+     * @return list<array{capacitacion_id:int,codigo:string,nombre:string,es_tarea_critica:bool}>
+     */
+    public function listarActivasResumen(): array
+    {
+        $filas = $this->db->fetchAll(
+            'SELECT capacitacion_id, codigo, nombre, es_tarea_critica
+             FROM capacitaciones
+             WHERE estado = \'ACTIVA\'
+             ORDER BY codigo ASC'
+        );
+
+        $salida = [];
+        foreach ($filas as $fila) {
+            $salida[] = [
+                'capacitacion_id' => (int)$fila['capacitacion_id'],
+                'codigo' => (string)$fila['codigo'],
+                'nombre' => (string)$fila['nombre'],
+                'es_tarea_critica' => (int)$fila['es_tarea_critica'] === 1,
+            ];
+        }
+
+        return $salida;
+    }
+
     public function buscarPorCodigo(string $codigo): ?array
     {
         return $this->db->fetch(

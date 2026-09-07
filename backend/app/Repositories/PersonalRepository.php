@@ -127,6 +127,60 @@ class PersonalRepository
         );
     }
 
+    /**
+     * Cargos de personas Activo según obra del contrato vigente.
+     * $proyecto = FRONTERA → cargos en esa obra.
+     * $proyecto = null → cargos de quien no está en ninguna obra del catálogo.
+     *
+     * @param list<string> $proyectosObra
+     * @return list<array{cargo_id:int|string,nombre_cargo:string}>
+     */
+    public function cargosDeContexto(?string $proyecto, array $proyectosObra = []): array
+    {
+        $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
+        $contratos = Database::personalTable('contratos');
+
+        $sql = "SELECT DISTINCT c.cargo_id, c.nombre_cargo
+                FROM {$personas} p
+                INNER JOIN {$cargos} c ON c.cargo_id = p.cargo_id
+                LEFT JOIN {$contratos} ct
+                    ON ct.contrato_id = (
+                        SELECT ct2.contrato_id
+                        FROM {$contratos} ct2
+                        WHERE ct2.persona_id = p.persona_id
+                        ORDER BY (ct2.fecha_terminacion IS NULL) DESC, ct2.fecha_inicio DESC, ct2.contrato_id DESC
+                        LIMIT 1
+                    )
+                WHERE p.estado = 'Activo'
+                  AND p.cargo_id IS NOT NULL";
+        $params = [];
+
+        if ($proyecto !== null && $proyecto !== '') {
+            $sql .= ' AND UPPER(TRIM(ct.proyecto)) = ?';
+            $params[] = mb_strtoupper(trim($proyecto), 'UTF-8');
+        } else {
+            $obras = [];
+            foreach ($proyectosObra as $nombre) {
+                $clave = mb_strtoupper(trim((string)$nombre), 'UTF-8');
+                if ($clave !== '') {
+                    $obras[$clave] = $clave;
+                }
+            }
+            if ($obras !== []) {
+                $placeholders = implode(',', array_fill(0, count($obras), '?'));
+                $sql .= " AND (ct.proyecto IS NULL OR TRIM(ct.proyecto) = '' OR UPPER(TRIM(ct.proyecto)) NOT IN ({$placeholders}))";
+                $params = array_values($obras);
+            } else {
+                $sql .= " AND (ct.proyecto IS NULL OR TRIM(ct.proyecto) = '')";
+            }
+        }
+
+        $sql .= ' ORDER BY c.nombre_cargo ASC';
+
+        return $this->db->fetchAll($sql, $params);
+    }
+
     public function cargoExiste(int $cargoId): bool
     {
         $cargos = Database::personalTable('cargos');

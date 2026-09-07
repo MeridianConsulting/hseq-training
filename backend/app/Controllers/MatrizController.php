@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Core\Request;
+use App\Core\Response;
 use App\Services\AuditoriaService;
 use App\Services\MatrizService;
 
@@ -44,6 +45,39 @@ class MatrizController extends Controller
         );
 
         $this->success($resultado, 'Reglas activas de aplicabilidad');
+    }
+
+    public function opciones(Request $request): void
+    {
+        $this->success($this->service->opciones());
+    }
+
+    public function vista(Request $request): void
+    {
+        $procesoRaw = $request->query('proceso_id');
+        $procesoId = ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null;
+
+        $this->success(
+            $this->service->vista($procesoId, nullable_trimmed_string($request->query('proyecto'))),
+            'Vista de aplicabilidad'
+        );
+    }
+
+    public function sincronizar(Request $request): void
+    {
+        $this->exigirEscritura($request);
+        $datos = $this->validate($request, $this->service->reglasSincronizar());
+        $resultado = $this->service->sincronizar($datos, $request->userId());
+
+        $this->auditoria->dePeticion(
+            $request,
+            'sincronizar',
+            'matriz_aplicabilidad',
+            null,
+            $resultado
+        );
+
+        $this->success($resultado, 'Matriz de aplicabilidad guardada');
     }
 
     public function show(Request $request, string $id): void
@@ -160,5 +194,17 @@ class MatrizController extends Controller
             'proyecto' => nullable_trimmed_string($request->query('proyecto')),
             'activa' => $activa,
         ];
+    }
+
+    private function exigirEscritura(Request $request): void
+    {
+        $permisos = $request->user()['permisos'] ?? [];
+        if (!is_array($permisos)) {
+            $permisos = [];
+        }
+
+        if (!in_array('matriz.crear', $permisos, true) && !in_array('matriz.editar', $permisos, true)) {
+            Response::forbidden('No tiene permiso para realizar esta acción.');
+        }
     }
 }

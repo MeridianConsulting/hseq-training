@@ -114,6 +114,49 @@ class MatrizRepository
         );
     }
 
+    /**
+     * Filas del contexto (activas e inactivas) para la grilla.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listarContexto(int $procesoId, ?string $proyecto): array
+    {
+        $sql = $this->selectBase() . ' WHERE m.proceso_id = ? AND m.area_id IS NULL AND m.cargo_id_ext IS NOT NULL';
+        $params = [$procesoId];
+
+        if ($proyecto === null || $proyecto === '') {
+            $sql .= " AND (m.proyecto IS NULL OR TRIM(m.proyecto) = '')";
+        } else {
+            $sql .= ' AND m.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $proyecto;
+        }
+
+        $sql .= ' ORDER BY cap.codigo ASC, m.cargo_id_ext ASC';
+
+        return $this->db->fetchAll($sql, $params);
+    }
+
+    public function buscarPorClave(array $datos): ?array
+    {
+        return $this->db->fetch(
+            $this->selectBase() . ' WHERE m.capacitacion_id = ?
+                  AND (m.cargo_id_ext <=> ?)
+                  AND (m.area_id <=> ?)
+                  AND (m.proceso_id <=> ?)
+                  AND (m.ambito <=> ?)
+                  AND (m.proyecto <=> ?)
+             LIMIT 1',
+            [
+                $datos['capacitacion_id'],
+                $datos['cargo_id_ext'] ?? null,
+                $datos['area_id'] ?? null,
+                $datos['proceso_id'] ?? null,
+                $datos['ambito'] ?? null,
+                $datos['proyecto'] ?? null,
+            ]
+        );
+    }
+
     public function duplicado(array $datos, ?int $exceptoId = null): bool
     {
         $sql = 'SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad
@@ -153,6 +196,11 @@ class MatrizRepository
     public function inactivar(int $id): int
     {
         return $this->db->update('matriz_aplicabilidad', ['activa' => 0], 'matriz_aplicabilidad_id = ?', [$id]);
+    }
+
+    public function activar(int $id): int
+    {
+        return $this->db->update('matriz_aplicabilidad', ['activa' => 1], 'matriz_aplicabilidad_id = ?', [$id]);
     }
 
     /**

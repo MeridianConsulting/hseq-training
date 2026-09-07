@@ -5,31 +5,40 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
+use App\Repositories\AlertaRepository;
 use App\Repositories\CapacitacionRepository;
 use App\Repositories\MatrizRepository;
+use App\Repositories\PersonalRepository;
 
 class MatrizService
 {
     private const MENSAJE_DUPLICADO = 'La capacitación ya está asociada a este cargo, proceso y proyecto.';
 
+    /** Obra de Gestión de Proyectos en esta versión. */
+    private const PROYECTOS_OBRA = ['FRONTERA'];
+
     private MatrizRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
+    private AlertaRepository $alertas;
 
     public function __construct()
     {
         $this->repo = new MatrizRepository();
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
+        $this->alertas = new AlertaRepository();
     }
 
     public function reglas(bool $esActualizacion = false): array
     {
+        $obligatorio = $esActualizacion ? 'nullable' : 'required';
+
         return [
             'capacitacion_id' => ($esActualizacion ? 'nullable' : 'required') . '|integer',
-            'cargo_id_ext' => 'nullable|integer',
+            'cargo_id_ext' => $obligatorio . '|integer',
             'area_id' => 'nullable|integer',
-            'proceso_id' => 'nullable|integer',
+            'proceso_id' => $obligatorio . '|integer',
             'ambito' => 'nullable|in:ADMINISTRACION,PROYECTO',
             'proyecto' => 'nullable|string|max:120',
             'periodicidad_id' => 'nullable|integer',
@@ -44,11 +53,20 @@ class MatrizService
             'capacitacion_id' => 'required|integer',
             'cargo_ids_ext' => 'required|array',
             'area_id' => 'nullable|integer',
-            'proceso_id' => 'nullable|integer',
+            'proceso_id' => 'required|integer',
             'ambito' => 'nullable|in:ADMINISTRACION,PROYECTO',
             'proyecto' => 'nullable|string|max:120',
             'periodicidad_id' => 'nullable|integer',
             'obligatoria' => 'nullable|integer|min:0|max:1',
+        ];
+    }
+
+    public function reglasSincronizar(): array
+    {
+        return [
+            'proceso_id' => 'required|integer',
+            'proyecto' => 'nullable|string|max:120',
+            'aplica' => 'nullable|array',
         ];
     }
 
@@ -106,9 +124,151 @@ class MatrizService
         ];
     }
 
+    /**
+     * @return array{procesos:list<array{proceso_id:int,nombre:string}>,proyectos:list<string>,cargos:list<array{cargo_id:int,nombre_cargo:string}>,capacitaciones:list<array{capacitacion_id:int,codigo:string,nombre:string,es_tarea_critica:bool}>}
+     */
+    public function opciones(): array
+    {
+        return [
+            'procesos' => $this->alertas->procesosActivos(),
+            'proyectos' => self::PROYECTOS_OBRA,
+            'cargos' => $this->personal->cargos(),
+            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+        ];
+    }
+
+    public function vista(?int $procesoId, ?string $proyecto): array
+    {
+        if ($procesoId === null || $procesoId < 1) {
+            throw new HttpException('El proceso es obligatorio.', 422);
+        }
+
+        $proceso = $this->procesoDeMatriz($procesoId);
+        $proyectoNorm = $this->proyectoSegunProceso($procesoId, $proyecto, true, true);
+
+        $filas = $this->repo->listarContexto($procesoId, $proyectoNorm);
+        $celdas = [];
+        foreach ($filas as $fila) {
+            $clave = (int)$fila['cargo_id_ext'] . ':' . (int)$fila['capacitacion_id'];
+            $activa = (int)$fila['activa'] === 1;
+            if (!isset($celdas[$clave]) || $activa) {
+                $celdas[$clave] = [
+                    'cargo_id_ext' => (int)$fila['cargo_id_ext'],
+                    'capacitacion_id' => (int)$fila['capacitacion_id'],
+                    'matriz_aplicabilidad_id' => (int)$fila['matriz_aplicabilidad_id'],
+                    'activa' => $activa,
+                ];
+            }
+        }
+
+        $catalogo = $this->personal->cargos();
+
+        return [
+            'proceso_id' => $procesoId,
+            'proceso_nombre' => $proceso['nombre'],
+            'proyecto' => $proyectoNorm,
+            'cargos' => $this->cargosDeVista($filas, $catalogo, $proceso['nombre']),
+            'cargos_catalogo' => $catalogo,
+            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+            'celdas' => array_values($celdas),
+        ];
+    }
+
+    /**
+     * @return array{creadas:int, reactivadas:int, inactivadas:int, vista:array<string,mixed>}
+     */
+    public function sincronizar(array $entrada, int $usuarioId): array
+    {
+        $procesoId = (int)($entrada['proceso_id'] ?? 0);
+        if ($procesoId < 1) {
+            throw new HttpException('El proceso es obligatorio.', 422);
+        }
+
+        $this->procesoDeMatriz($procesoId);
+        $proyecto = $this->proyectoSegunProceso($procesoId, $entrada['proyecto'] ?? null, true, true);
+        $ambito = $this->ambitoDeProceso($procesoId);
+        $aplica = $this->normalizarAplica($entrada['aplica'] ?? []);
+
+        $existentes = $this->repo->listarContexto($procesoId, $proyecto);
+        $porCelda = [];
+        foreach ($existentes as $fila) {
+            $clave = (int)$fila['cargo_id_ext'] . ':' . (int)$fila['capacitacion_id'];
+            $porCelda[$clave][] = $fila;
+        }
+
+        $creadas = 0;
+        $reactivadas = 0;
+        $inactivadas = 0;
+
+        $this->repo->transaccion(function () use (
+            $aplica,
+            $porCelda,
+            $procesoId,
+            $proyecto,
+            $ambito,
+            $usuarioId,
+            &$creadas,
+            &$reactivadas,
+            &$inactivadas
+        ): void {
+            foreach ($aplica as $clave => $par) {
+                $filas = $porCelda[$clave] ?? [];
+                if ($filas === []) {
+                    $this->repo->crear([
+                        'capacitacion_id' => $par['capacitacion_id'],
+                        'cargo_id_ext' => $par['cargo_id_ext'],
+                        'area_id' => null,
+                        'proceso_id' => $procesoId,
+                        'ambito' => $ambito,
+                        'proyecto' => $proyecto,
+                        'periodicidad_id' => null,
+                        'obligatoria' => 1,
+                        'activa' => 1,
+                        'creado_por_usuario_id_ext' => $usuarioId,
+                    ]);
+                    $creadas++;
+                    continue;
+                }
+
+                $primera = array_shift($filas);
+                if ((int)$primera['activa'] !== 1) {
+                    $this->repo->activar((int)$primera['matriz_aplicabilidad_id']);
+                    $reactivadas++;
+                }
+
+                foreach ($filas as $extra) {
+                    if ((int)$extra['activa'] === 1) {
+                        $this->repo->inactivar((int)$extra['matriz_aplicabilidad_id']);
+                        $inactivadas++;
+                    }
+                }
+            }
+
+            foreach ($porCelda as $clave => $filas) {
+                if (isset($aplica[$clave])) {
+                    continue;
+                }
+                foreach ($filas as $fila) {
+                    if ((int)$fila['activa'] === 1) {
+                        $this->repo->inactivar((int)$fila['matriz_aplicabilidad_id']);
+                        $inactivadas++;
+                    }
+                }
+            }
+        });
+
+        return [
+            'creadas' => $creadas,
+            'reactivadas' => $reactivadas,
+            'inactivadas' => $inactivadas,
+            'vista' => $this->vista($procesoId, $proyecto),
+        ];
+    }
+
     public function crear(array $datos, int $usuarioId): array
     {
         $datos = $this->preparar($datos);
+        $this->aplicarContextoObligatorio($datos, false);
         $this->validarReferencias($datos, false);
 
         if ($this->repo->duplicado($datos)) {
@@ -137,6 +297,7 @@ class MatrizService
             'activa' => 1,
         ]);
 
+        $this->aplicarContextoObligatorio($base, false);
         $this->validarReferencias($base, true);
 
         $cargos = $this->normalizarCargosMasivos($entrada['cargo_ids_ext'] ?? []);
@@ -191,6 +352,10 @@ class MatrizService
             'proyecto' => $actual['proyecto'],
         ], $datos);
 
+        $this->aplicarContextoObligatorio($combinado, true);
+        if (array_key_exists('proyecto', $datos) || array_key_exists('proceso_id', $datos)) {
+            $datos['proyecto'] = $combinado['proyecto'] ?? null;
+        }
         $this->validarReferencias($combinado, false);
 
         if ($this->repo->duplicado($combinado, $id)) {
@@ -300,6 +465,273 @@ class MatrizService
         unset($datos['cargo_ids_ext']);
 
         return $datos;
+    }
+
+    /**
+     * @param array<string,mixed> $datos
+     */
+    private function aplicarContextoObligatorio(array &$datos, bool $parcial): void
+    {
+        if (!$parcial) {
+            if (empty($datos['proceso_id'])) {
+                throw new HttpException('El proceso es obligatorio.', 422);
+            }
+            if (array_key_exists('cargo_id_ext', $datos) && empty($datos['cargo_id_ext'])) {
+                throw new HttpException('El cargo es obligatorio.', 422);
+            }
+        }
+
+        $procesoId = isset($datos['proceso_id']) ? (int)$datos['proceso_id'] : 0;
+        if ($procesoId < 1) {
+            return;
+        }
+
+        $datos['proyecto'] = $this->proyectoSegunProceso($procesoId, $datos['proyecto'] ?? null, !$parcial);
+        if (!array_key_exists('ambito', $datos) || $datos['ambito'] === null || $datos['ambito'] === '') {
+            $datos['ambito'] = $this->ambitoDeProceso($procesoId);
+        }
+    }
+
+    /**
+     * Unión: cargos del Excel para el proceso + cargos con marca activa en esta hoja.
+     * No se arma la lista con la nómina ni con filas inactivas.
+     *
+     * @param list<array<string,mixed>> $filasContexto
+     * @param list<array{cargo_id:int,nombre_cargo:string}> $catalogo
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    private function cargosDeVista(array $filasContexto, array $catalogo, string $nombreProceso): array
+    {
+        $porId = [];
+        foreach ($catalogo as $cargo) {
+            $porId[(int)$cargo['cargo_id']] = $cargo;
+        }
+
+        $salida = [];
+        $ids = [];
+        foreach ($this->cargosDelProcesoExcel($nombreProceso) as $cargo) {
+            $id = (int)$cargo['cargo_id'];
+            $ids[$id] = true;
+            $salida[] = $cargo;
+        }
+
+        $extras = [];
+        foreach ($filasContexto as $fila) {
+            $id = (int)($fila['cargo_id_ext'] ?? 0);
+            if ($id > 0 && (int)($fila['activa'] ?? 0) === 1 && !isset($ids[$id])) {
+                $extras[$id] = true;
+                $ids[$id] = true;
+            }
+        }
+
+        $faltantes = [];
+        foreach (array_keys($extras) as $id) {
+            if (!isset($porId[$id])) {
+                $faltantes[] = $id;
+            }
+        }
+        if ($faltantes !== []) {
+            foreach ($this->personal->nombresCargosPorIds($faltantes) as $id => $nombre) {
+                $porId[$id] = [
+                    'cargo_id' => $id,
+                    'nombre_cargo' => $nombre,
+                ];
+            }
+        }
+
+        foreach (array_keys($extras) as $id) {
+            if (isset($porId[$id])) {
+                $salida[] = $porId[$id];
+            }
+        }
+
+        return $salida;
+    }
+
+    /**
+     * Filas de la hoja MATRIZ POR CARGO, con el nombre del Excel.
+     *
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    private function cargosDelProcesoExcel(string $nombreProceso): array
+    {
+        $repo = $this->personal->repositorio();
+        $mapa = $repo->mapaCargos();
+        $usados = [];
+        $salida = [];
+
+        foreach ($this->filasCargosExcel($nombreProceso) as $fila) {
+            $id = $this->resolverCargoPorAlias($fila['alias'], $repo, $mapa);
+            if ($id === null || isset($usados[$id])) {
+                continue;
+            }
+            $usados[$id] = true;
+            $salida[] = [
+                'cargo_id' => $id,
+                'nombre_cargo' => $fila['nombre'],
+            ];
+        }
+
+        return $salida;
+    }
+
+    /**
+     * @return list<array{nombre:string, alias:list<string>}>
+     */
+    private function filasCargosExcel(string $nombreProceso): array
+    {
+        $porProceso = config('matriz_cargos.por_proceso', []);
+        $items = $porProceso[$this->claveProcesoExcel($nombreProceso)] ?? [];
+        if (!is_array($items)) {
+            return [];
+        }
+
+        $filas = [];
+        foreach ($items as $item) {
+            if (is_string($item)) {
+                $nombre = trim($item);
+                if ($nombre === '') {
+                    continue;
+                }
+                $filas[] = ['nombre' => $nombre, 'alias' => [$nombre]];
+                continue;
+            }
+            if (!is_array($item)) {
+                continue;
+            }
+            $nombre = trim((string)($item['nombre'] ?? ''));
+            if ($nombre === '') {
+                continue;
+            }
+            $alias = $item['alias'] ?? [$nombre];
+            if (!is_array($alias) || $alias === []) {
+                $alias = [$nombre];
+            }
+            $filas[] = [
+                'nombre' => $nombre,
+                'alias' => array_values(array_filter(array_map('strval', $alias))),
+            ];
+        }
+
+        return $filas;
+    }
+
+    /**
+     * @param list<string> $alias
+     * @param array{por_nombre: array<string,int>, por_id: array<int,string>} $mapa
+     */
+    private function resolverCargoPorAlias(array $alias, PersonalRepository $repo, array $mapa): ?int
+    {
+        foreach ($alias as $nombre) {
+            $clave = $repo->claveCargo((string)$nombre);
+            if ($clave !== '' && isset($mapa['por_nombre'][$clave])) {
+                return (int)$mapa['por_nombre'][$clave];
+            }
+        }
+
+        return null;
+    }
+
+    private function claveProcesoExcel(string $nombre): string
+    {
+        $nombre = mb_strtoupper(trim($nombre), 'UTF-8');
+        $nombre = strtr($nombre, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
+            'Ñ' => 'N',
+        ]);
+
+        return preg_replace('/\s+/', ' ', $nombre) ?? $nombre;
+    }
+
+    /**
+     * @return array{proceso_id:int,nombre:string}
+     */
+    private function procesoDeMatriz(int $procesoId): array
+    {
+        foreach ($this->alertas->procesosActivos() as $proceso) {
+            if ((int)$proceso['proceso_id'] === $procesoId) {
+                return $proceso;
+            }
+        }
+
+        throw new HttpException('El proceso seleccionado no es válido para la matriz.', 422);
+    }
+
+    private function proyectoSegunProceso(int $procesoId, mixed $proyecto, bool $exigirSiGestion, bool $soloCatalogo = false): ?string
+    {
+        if (!$this->alertas->procesoEsGestionProyectos($procesoId)) {
+            return null;
+        }
+
+        $normalizado = nullable_trimmed_string($proyecto);
+        if ($normalizado === null || $normalizado === '') {
+            if ($exigirSiGestion) {
+                throw new HttpException('El proyecto es obligatorio para Gestión de Proyectos.', 422);
+            }
+
+            return null;
+        }
+
+        if (!$soloCatalogo) {
+            return $normalizado;
+        }
+
+        $clave = mb_strtoupper($normalizado, 'UTF-8');
+        foreach (self::PROYECTOS_OBRA as $canonico) {
+            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
+                return $canonico;
+            }
+        }
+
+        throw new HttpException('El proyecto no es válido.', 422);
+    }
+
+    private function ambitoDeProceso(int $procesoId): string
+    {
+        return $this->alertas->procesoEsGestionProyectos($procesoId) ? 'PROYECTO' : 'ADMINISTRACION';
+    }
+
+    /**
+     * @return array<string,array{cargo_id_ext:int,capacitacion_id:int}>
+     */
+    private function normalizarAplica(mixed $bruto): array
+    {
+        if (!is_array($bruto)) {
+            throw new HttpException('Debe enviar las celdas que aplican.', 422);
+        }
+
+        $pares = [];
+        foreach ($bruto as $item) {
+            if (!is_array($item)) {
+                throw new HttpException('Cada celda debe indicar cargo y capacitación.', 422);
+            }
+
+            $cargoId = (int)($item['cargo_id_ext'] ?? 0);
+            $capId = (int)($item['capacitacion_id'] ?? 0);
+            if ($cargoId < 1 || $capId < 1) {
+                throw new HttpException('Cada celda debe indicar cargo y capacitación.', 422);
+            }
+
+            if (!$this->personal->cargoExiste($cargoId)) {
+                throw new HttpException('El cargo no existe en el maestro de personal corporativo', 422);
+            }
+
+            $cap = $this->capacitaciones->buscarPorId($capId);
+            if ($cap === null) {
+                throw new HttpException('La capacitación no existe', 422);
+            }
+            if (strtoupper((string)($cap['estado'] ?? '')) !== 'ACTIVA') {
+                throw new HttpException('Solo se pueden asociar capacitaciones activas.', 422);
+            }
+
+            $pares[$cargoId . ':' . $capId] = [
+                'cargo_id_ext' => $cargoId,
+                'capacitacion_id' => $capId,
+            ];
+        }
+
+        return $pares;
     }
 
     private function validarReferencias(array $datos, bool $altaNueva): void

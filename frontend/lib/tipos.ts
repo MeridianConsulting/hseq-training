@@ -614,6 +614,47 @@ export type Capacitacion = {
   estado: "ACTIVA" | "INACTIVA";
 };
 
+export type OpcionesMatriz = {
+  procesos: { proceso_id: number; nombre: string }[];
+  proyectos: string[];
+  cargos: CargoCorporativo[];
+  capacitaciones: {
+    capacitacion_id: number;
+    codigo: string;
+    nombre: string;
+    es_tarea_critica: boolean;
+  }[];
+};
+
+export type CeldaMatriz = {
+  cargo_id_ext: number;
+  capacitacion_id: number;
+  matriz_aplicabilidad_id: number;
+  activa: boolean;
+};
+
+export type VistaMatriz = {
+  proceso_id: number;
+  proceso_nombre: string;
+  proyecto: string | null;
+  cargos: CargoCorporativo[];
+  cargos_catalogo?: CargoCorporativo[];
+  capacitaciones: {
+    capacitacion_id: number;
+    codigo: string;
+    nombre: string;
+    es_tarea_critica: boolean;
+  }[];
+  celdas: CeldaMatriz[];
+};
+
+export type ResultadoSincronizarMatriz = {
+  creadas: number;
+  reactivadas: number;
+  inactivadas: number;
+  vista: VistaMatriz;
+};
+
 export type FilaMatriz = {
   matriz_aplicabilidad_id: number;
   capacitacion_id: number;

@@ -94,15 +94,40 @@ class PersonalService
     public function cargos(): array
     {
         try {
-            return array_map(static function (array $fila): array {
-                return [
-                    'cargo_id' => (int)$fila['cargo_id'],
-                    'nombre_cargo' => (string)$fila['nombre_cargo'],
-                ];
-            }, $this->repo->cargos());
+            return $this->mapearCargos($this->repo->cargos());
         } catch (Throwable $e) {
             $this->falloPersonal($e);
         }
+    }
+
+    /**
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    /**
+     * @param list<string> $proyectosObra
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    public function cargosDeContexto(?string $proyecto, array $proyectosObra = []): array
+    {
+        try {
+            return $this->mapearCargos($this->repo->cargosDeContexto($proyecto, $proyectosObra));
+        } catch (Throwable $e) {
+            $this->falloPersonal($e);
+        }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $filas
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    private function mapearCargos(array $filas): array
+    {
+        return array_map(static function (array $fila): array {
+            return [
+                'cargo_id' => (int)$fila['cargo_id'],
+                'nombre_cargo' => (string)$fila['nombre_cargo'],
+            ];
+        }, $filas);
     }
 
     public function tiposDocumento(): array
