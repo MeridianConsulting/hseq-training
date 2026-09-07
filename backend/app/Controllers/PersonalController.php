@@ -32,10 +32,26 @@ class PersonalController extends Controller
         $estado = nullable_trimmed_string($request->query('estado'));
         $cargoRaw = $request->query('cargo_id');
         $cargoId = ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null;
+        $proyecto = nullable_trimmed_string($request->query('proyecto'));
+        $procesoRaw = $request->query('proceso_id');
+        $procesoId = ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null;
 
-        $resultado = $this->service->listar($pagina, $porPagina, $buscar, $estado, $cargoId);
+        $resultado = $this->service->listar(
+            $pagina,
+            $porPagina,
+            $buscar,
+            $estado,
+            $cargoId,
+            $proyecto,
+            $procesoId
+        );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+    }
+
+    public function opciones(Request $request): void
+    {
+        $this->success($this->service->opciones(), 'Opciones de consulta de personal');
     }
 
     public function cargos(Request $request): void
@@ -51,6 +67,14 @@ class PersonalController extends Controller
     public function show(Request $request, string $id): void
     {
         $this->success($this->service->ver((int)$id));
+    }
+
+    public function perfil(Request $request, string $id): void
+    {
+        $this->success(
+            $this->service->perfil((int)$id),
+            'Información del trabajador cargada correctamente.'
+        );
     }
 
     public function store(Request $request): void

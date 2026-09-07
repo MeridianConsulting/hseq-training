@@ -556,10 +556,17 @@ export type ProximasAsignaciones = {
   items: Asignacion[];
 };
 
+export type ProcesoPersona = {
+  proceso_id: number;
+  nombre: string;
+};
+
 export type PersonaCorporativa = {
   persona_id: number;
   numero_documento: string;
   tipo_documento_id: number | null;
+  tipo_documento_nombre?: string | null;
+  tipo_documento_abreviatura?: string | null;
   nombre_completo: string;
   estado: string;
   cargo_id: number | null;
@@ -572,12 +579,58 @@ export type PersonaCorporativa = {
   proyecto: string | null;
   contrato_fecha_inicio: string | null;
   contrato_fecha_terminacion: string | null;
+  procesos?: ProcesoPersona[];
   sincronizacion?: {
     creadas: number;
     omitidas: number;
     creadas_especiales?: string[];
     error: string | null;
   };
+};
+
+export type OpcionesPersonal = {
+  procesos: ProcesoCronograma[];
+  proyectos: string[];
+  cargos: CargoCorporativo[];
+};
+
+export type CapacitacionAplicable = {
+  matriz_aplicabilidad_id: number | null;
+  capacitacion_id: number | null;
+  capacitacion_codigo: string | null;
+  capacitacion_nombre: string | null;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
+  proyecto: string | null;
+  periodicidad_nombre: string | null;
+};
+
+export type HistorialSesionPersona = {
+  sesion_participante_id: number;
+  sesion_id: number;
+  asignacion_id: number;
+  persona_id_ext: number;
+  estado_asistencia: string;
+  motivo_ausencia: string | null;
+  observacion: string | null;
+  fecha_hora: string;
+  fecha: string | null;
+  sesion_estado: string;
+  capacitacion_codigo: string;
+  capacitacion_nombre: string;
+  updated_at: string | null;
+};
+
+export type PerfilTrabajador = {
+  ficha: PersonaCorporativa;
+  aplicables: CapacitacionAplicable[];
+  pendientes: Asignacion[];
+  ejecutadas: Asignacion[];
+  cumplimientos: Cumplimiento[];
+  evaluaciones: Cumplimiento[];
+  soportes: SoporteCumplimiento[];
+  historial_sesiones: HistorialSesionPersona[];
+  alertas: AlertaProximaVencer[];
 };
 
 export type CargoCorporativo = {

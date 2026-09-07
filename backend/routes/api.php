@@ -117,11 +117,13 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
     $router->group(['prefix' => '/personal'], function ($router) {
         $router->get('/cargos', [PersonalController::class, 'cargos'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->get('/tipos-documento', [PersonalController::class, 'tiposDocumento'], [[PermisoMiddleware::class, 'personal.ver']]);
+        $router->get('/opciones', [PersonalController::class, 'opciones'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->get('/plantilla', [PersonalController::class, 'plantilla'], [[PermisoMiddleware::class, 'personal.importar']]);
         $router->post('/importar', [PersonalController::class, 'importar'], [[PermisoMiddleware::class, 'personal.importar']]);
         $router->get('', [PersonalController::class, 'index'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->post('', [PersonalController::class, 'store'], [[PermisoMiddleware::class, 'personal.crear']]);
         $router->post('/{id}/inactivar', [PersonalController::class, 'inactivar'], [[PermisoMiddleware::class, 'personal.editar']]);
+        $router->get('/{id}/perfil', [PersonalController::class, 'perfil'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->get('/{id}', [PersonalController::class, 'show'], [[PermisoMiddleware::class, 'personal.ver']]);
         $router->put('/{id}', [PersonalController::class, 'update'], [[PermisoMiddleware::class, 'personal.editar']]);
     });

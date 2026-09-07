@@ -163,6 +163,90 @@ class MatrizRepository
         return $this->db->fetchAll($sql, $params);
     }
 
+    /**
+     * Cargos con al menos una marca activa en el proceso (capacitaciones ACTIVA).
+     *
+     * @return list<int>
+     */
+    public function cargoIdsActivosPorProceso(int $procesoId): array
+    {
+        if ($procesoId < 1) {
+            return [];
+        }
+
+        $filas = $this->db->fetchAll(
+            'SELECT DISTINCT m.cargo_id_ext
+             FROM matriz_aplicabilidad m
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = m.capacitacion_id
+             WHERE m.activa = 1
+               AND cap.estado = \'ACTIVA\'
+               AND m.proceso_id = ?
+               AND m.cargo_id_ext IS NOT NULL',
+            [$procesoId]
+        );
+
+        $ids = [];
+        foreach ($filas as $fila) {
+            $id = (int)($fila['cargo_id_ext'] ?? 0);
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    /**
+     * Procesos de matriz para los cargos indicados.
+     *
+     * @param list<int> $cargoIds
+     * @return list<array{cargo_id:int,proyecto:?string,proceso_id:int,proceso_nombre:string}>
+     */
+    public function procesosDeCargos(array $cargoIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
+        if ($ids === []) {
+            return [];
+        }
+
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $filas = $this->db->fetchAll(
+            "SELECT DISTINCT m.cargo_id_ext,
+                    m.proyecto,
+                    m.proceso_id,
+                    pr.nombre AS proceso_nombre
+             FROM matriz_aplicabilidad m
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = m.capacitacion_id
+             INNER JOIN procesos pr ON pr.proceso_id = m.proceso_id
+             WHERE m.activa = 1
+               AND cap.estado = 'ACTIVA'
+               AND m.cargo_id_ext IN ({$in})
+               AND m.proceso_id IS NOT NULL
+             ORDER BY pr.nombre ASC",
+            $ids
+        );
+
+        $salida = [];
+        foreach ($filas as $fila) {
+            $procesoId = (int)($fila['proceso_id'] ?? 0);
+            $cargoId = (int)($fila['cargo_id_ext'] ?? 0);
+            if ($procesoId < 1 || $cargoId < 1) {
+                continue;
+            }
+            $proyecto = $fila['proyecto'] !== null && trim((string)$fila['proyecto']) !== ''
+                ? (string)$fila['proyecto']
+                : null;
+            $salida[] = [
+                'cargo_id' => $cargoId,
+                'proyecto' => $proyecto,
+                'proceso_id' => $procesoId,
+                'proceso_nombre' => (string)($fila['proceso_nombre'] ?? ''),
+            ];
+        }
+
+        return $salida;
+    }
+
     public function buscarPorClave(array $datos): ?array
     {
         return $this->db->fetch(

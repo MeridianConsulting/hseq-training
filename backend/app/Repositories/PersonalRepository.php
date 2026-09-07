@@ -21,14 +21,23 @@ class PersonalRepository
         $this->db = Database::personal();
     }
 
+    /**
+     * @param list<int>|null $cargoIds
+     */
     public function listar(
         int $limite,
         int $offset,
         ?string $buscar,
         ?string $estado,
-        ?int $cargoId
+        ?int $cargoId,
+        ?string $proyecto = null,
+        ?array $cargoIds = null
     ): array {
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId);
+        if ($cargoIds !== null && $cargoIds === []) {
+            return [];
+        }
+
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds);
 
         $sql = $this->selectPersona()
             . " {$where}
@@ -38,13 +47,36 @@ class PersonalRepository
         return $this->db->fetchAll($sql, $params);
     }
 
-    public function contar(?string $buscar, ?string $estado, ?int $cargoId): int
-    {
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId);
+    /**
+     * @param list<int>|null $cargoIds
+     */
+    public function contar(
+        ?string $buscar,
+        ?string $estado,
+        ?int $cargoId,
+        ?string $proyecto = null,
+        ?array $cargoIds = null
+    ): int {
+        if ($cargoIds !== null && $cargoIds === []) {
+            return 0;
+        }
+
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds);
         $personas = Database::personalTable('personas');
+        $contratos = Database::personalTable('contratos');
 
         $fila = $this->db->fetch(
-            "SELECT COUNT(*) AS total FROM {$personas} p {$where}",
+            "SELECT COUNT(*) AS total
+             FROM {$personas} p
+             LEFT JOIN {$contratos} ct
+                ON ct.contrato_id = (
+                    SELECT ct2.contrato_id
+                    FROM {$contratos} ct2
+                    WHERE ct2.persona_id = p.persona_id
+                    ORDER BY (ct2.fecha_terminacion IS NULL) DESC, ct2.fecha_inicio DESC, ct2.contrato_id DESC
+                    LIMIT 1
+                )
+             {$where}",
             $params
         );
 
@@ -461,11 +493,14 @@ class PersonalRepository
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
         $contratos = Database::personalTable('contratos');
+        $tipos = Database::personalTable('tipos_documento');
 
         return "SELECT
                     p.persona_id,
                     p.numero_documento,
                     p.tipo_documento_id,
+                    td.descripcion AS tipo_documento_nombre,
+                    td.abreviatura AS tipo_documento_abreviatura,
                     p.nombre_completo_nombres_primero AS nombre_completo,
                     p.primer_nombre,
                     p.primer_apellido,
@@ -482,6 +517,7 @@ class PersonalRepository
                     ct.fecha_terminacion AS contrato_fecha_terminacion
                 FROM {$personas} p
                 LEFT JOIN {$cargos} c ON c.cargo_id = p.cargo_id
+                LEFT JOIN {$tipos} td ON td.tipo_documento_id = p.tipo_documento_id
                 LEFT JOIN {$contratos} ct
                     ON ct.contrato_id = (
                         SELECT ct2.contrato_id
@@ -492,9 +528,17 @@ class PersonalRepository
                     )";
     }
 
-    /** @return array{0:string,1:list<mixed>} */
-    private function filtros(?string $buscar, ?string $estado, ?int $cargoId): array
-    {
+    /**
+     * @param list<int>|null $cargoIds
+     * @return array{0:string,1:list<mixed>}
+     */
+    private function filtros(
+        ?string $buscar,
+        ?string $estado,
+        ?int $cargoId,
+        ?string $proyecto = null,
+        ?array $cargoIds = null
+    ): array {
         $condiciones = [];
         $params = [];
 
@@ -502,9 +546,11 @@ class PersonalRepository
             $condiciones[] = '(p.numero_documento LIKE ?
                 OR p.nombre_completo_nombres_primero LIKE ?
                 OR p.primer_apellido LIKE ?
-                OR p.primer_nombre LIKE ?)';
+                OR p.primer_nombre LIKE ?
+                OR p.correo_corporativo LIKE ?
+                OR p.correo_personal LIKE ?)';
             $like = '%' . $buscar . '%';
-            array_push($params, $like, $like, $like, $like);
+            array_push($params, $like, $like, $like, $like, $like, $like);
         }
 
         if ($estado !== null && $estado !== '') {
@@ -515,6 +561,22 @@ class PersonalRepository
         if ($cargoId !== null && $cargoId > 0) {
             $condiciones[] = 'p.cargo_id = ?';
             $params[] = $cargoId;
+        }
+
+        if ($cargoIds !== null) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
+            if ($ids === []) {
+                $condiciones[] = '1 = 0';
+            } else {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $condiciones[] = "p.cargo_id IN ({$placeholders})";
+                array_push($params, ...$ids);
+            }
+        }
+
+        if ($proyecto !== null && $proyecto !== '') {
+            $condiciones[] = 'ct.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $proyecto;
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

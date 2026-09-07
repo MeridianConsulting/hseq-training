@@ -115,6 +115,9 @@ class AlertaService
      */
     private function normalizarFiltros(array $filtros): array
     {
+        $personaId = isset($filtros['persona_id'])
+            ? (int)$filtros['persona_id']
+            : (isset($filtros['persona_id_ext']) ? (int)$filtros['persona_id_ext'] : 0);
         $procesoId = isset($filtros['proceso_id']) ? (int)$filtros['proceso_id'] : 0;
         $cargoId = isset($filtros['cargo_id_ext']) ? (int)$filtros['cargo_id_ext'] : 0;
         $capId = isset($filtros['capacitacion_id']) ? (int)$filtros['capacitacion_id'] : 0;
@@ -134,6 +137,7 @@ class AlertaService
         }
 
         return [
+            'persona_id' => $personaId > 0 ? $personaId : null,
             'proceso_id' => $procesoFinal,
             'proyecto' => $proyectoFinal,
             'cargo_id_ext' => $cargoId > 0 ? $cargoId : null,

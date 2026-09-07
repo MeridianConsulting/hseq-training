@@ -269,6 +269,12 @@ class AlertaRepository
         $condiciones = [];
         $params = [];
 
+        $personaId = $filtros['persona_id'] ?? $filtros['persona_id_ext'] ?? null;
+        if ($personaId !== null && (int)$personaId > 0) {
+            $condiciones[] = 'v.persona_id_ext = ?';
+            $params[] = (int)$personaId;
+        }
+
         $procesoId = $filtros['proceso_id'] ?? null;
         if ($procesoId !== null && $procesoId > 0) {
             $condiciones[] = 'a.proceso_id = ?';

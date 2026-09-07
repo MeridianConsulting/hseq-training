@@ -6,7 +6,9 @@ namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
 use App\Core\Logger;
+use App\Repositories\AlertaRepository;
 use App\Repositories\HistorialContextoRepository;
+use App\Repositories\MatrizRepository;
 use App\Repositories\PersonalRepository;
 use PDOException;
 use Throwable;
@@ -16,11 +18,19 @@ class PersonalService
     public const TIPO_DOCUMENTO_CC = 1;
     public const FECHA_NACIMIENTO_TECNICA = '01011900';
     public const MAX_DOCUMENTO = 15;
+    public const MENSAJE_404 = 'El trabajador no existe en la base corporativa.';
+    public const MENSAJE_LISTAR = 'Error al obtener la información del sistema corporativo.';
+    public const MENSAJE_VER = 'No fue posible consultar la información del trabajador.';
+
+    /** @var list<string> */
+    private const PROYECTOS_OBRA = ['FRONTERA'];
 
     private PersonalRepository $repo;
     private HistorialContextoRepository $historial;
     private AuditoriaService $auditoria;
     private ?MotorAsignacionService $motor = null;
+    private ?MatrizRepository $matriz = null;
+    private ?AlertaRepository $alertasRepo = null;
 
     public function __construct()
     {
@@ -34,8 +44,15 @@ class PersonalService
         return $this->motor ??= new MotorAsignacionService();
     }
 
-    public function listar(int $pagina, int $porPagina, ?string $buscar, ?string $estado, ?int $cargoId): array
-    {
+    public function listar(
+        int $pagina,
+        int $porPagina,
+        ?string $buscar,
+        ?string $estado,
+        ?int $cargoId,
+        ?string $proyecto = null,
+        ?int $procesoId = null
+    ): array {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
@@ -45,22 +62,34 @@ class PersonalService
         }
 
         try {
-            $items = array_map([$this, 'normalizar'], $this->repo->listar(
-                $porPagina,
-                $offset,
-                $buscar,
-                $estado,
-                $cargoId
+            $cargoIds = null;
+            if ($procesoId !== null && $procesoId > 0) {
+                $cargoIds = $this->matriz()->cargoIdsActivosPorProceso($procesoId);
+            }
+
+            $proyectoFiltro = $this->proyectoListado($procesoId, $proyecto);
+
+            $items = $this->adjuntarProcesos(array_map(
+                [$this, 'normalizar'],
+                $this->repo->listar(
+                    $porPagina,
+                    $offset,
+                    $buscar,
+                    $estado,
+                    $cargoId,
+                    $proyectoFiltro,
+                    $cargoIds
+                )
             ));
 
             return [
                 'items' => $items,
-                'total' => $this->repo->contar($buscar, $estado, $cargoId),
+                'total' => $this->repo->contar($buscar, $estado, $cargoId, $proyectoFiltro, $cargoIds),
                 'page' => $pagina,
                 'per_page' => $porPagina,
             ];
         } catch (Throwable $e) {
-            $this->falloPersonal($e);
+            $this->falloPersonal($e, self::MENSAJE_LISTAR);
         }
     }
 
@@ -81,14 +110,97 @@ class PersonalService
         try {
             $fila = $this->repo->buscarPorId($personaId);
         } catch (Throwable $e) {
-            $this->falloPersonal($e);
+            $this->falloPersonal($e, self::MENSAJE_VER);
         }
 
         if ($fila === null) {
-            throw new HttpException('La persona no existe en el maestro de personal corporativo', 404);
+            throw new HttpException(self::MENSAJE_404, 404);
         }
 
-        return $this->normalizar($fila);
+        $items = $this->adjuntarProcesos([$this->normalizar($fila)]);
+
+        return $items[0];
+    }
+
+    /**
+     * @return array{procesos:list<array{proceso_id:int,nombre:string}>,proyectos:list<string>,cargos:list<array{cargo_id:int,nombre_cargo:string}>}
+     */
+    public function opciones(): array
+    {
+        try {
+            return [
+                'procesos' => $this->alertasRepo()->procesosActivos(),
+                'proyectos' => self::PROYECTOS_OBRA,
+                'cargos' => $this->cargos(),
+            ];
+        } catch (Throwable $e) {
+            $this->falloPersonal($e, self::MENSAJE_LISTAR);
+        }
+    }
+
+    /**
+     * Hoja de vida: ficha corporativa + capacitación (sin duplicar lógica de otros módulos).
+     *
+     * @return array<string,mixed>
+     */
+    public function perfil(int $personaId): array
+    {
+        $ficha = $this->ver($personaId);
+
+        try {
+            $aplicables = [];
+            foreach ($this->matriz()->aplicables(
+                $ficha['cargo_id'] !== null ? (int)$ficha['cargo_id'] : null,
+                null,
+                is_string($ficha['proyecto'] ?? null) ? (string)$ficha['proyecto'] : null
+            ) as $fila) {
+                $aplicables[] = $this->normalizarAplicable($fila);
+            }
+
+            $asignaciones = (new AsignacionService())->listar(1, 100, $personaId, null, null, null, null);
+            $pendientes = [];
+            $ejecutadas = [];
+            foreach ($asignaciones['items'] as $asig) {
+                $estado = (string)($asig['estado_calculado'] ?? '');
+                $resultado = $asig['cumplimiento_resultado'] ?? null;
+                if ($estado === 'COMPLETADA' || $resultado === 'APROBADO') {
+                    $ejecutadas[] = $asig;
+                } else {
+                    $pendientes[] = $asig;
+                }
+            }
+
+            $cumplimientos = (new CumplimientoService())->listar(1, 100, ['persona_id' => $personaId]);
+            $evaluaciones = [];
+            $soportes = [];
+            foreach ($cumplimientos['items'] as $cump) {
+                if (($cump['nota_evaluacion'] ?? null) !== null) {
+                    $evaluaciones[] = $cump;
+                }
+                foreach ($cump['soportes'] ?? [] as $soporte) {
+                    $soportes[] = $soporte;
+                }
+            }
+
+            $historial = (new SesionService())->historialPersona($personaId);
+            $alertas = (new AlertaService())->listarTodos(['persona_id' => $personaId]);
+
+            return [
+                'ficha' => $ficha,
+                'aplicables' => $aplicables,
+                'pendientes' => $pendientes,
+                'ejecutadas' => $ejecutadas,
+                'cumplimientos' => $cumplimientos['items'],
+                'evaluaciones' => $evaluaciones,
+                'soportes' => $soportes,
+                'historial_sesiones' => $historial,
+                'alertas' => $alertas['items'],
+            ];
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            $this->falloPersonal($e, self::MENSAJE_VER);
+        }
     }
 
     public function cargos(): array
@@ -746,12 +858,132 @@ class PersonalService
         );
     }
 
+    private function matriz(): MatrizRepository
+    {
+        return $this->matriz ??= new MatrizRepository();
+    }
+
+    private function alertasRepo(): AlertaRepository
+    {
+        return $this->alertasRepo ??= new AlertaRepository();
+    }
+
+    private function proyectoListado(?int $procesoId, ?string $proyecto): ?string
+    {
+        $normalizado = nullable_trimmed_string($proyecto);
+        if ($normalizado === null || $normalizado === '') {
+            return null;
+        }
+
+        if ($procesoId !== null && $procesoId > 0 && !$this->alertasRepo()->procesoEsGestionProyectos($procesoId)) {
+            return null;
+        }
+
+        $clave = mb_strtoupper($normalizado, 'UTF-8');
+        foreach (self::PROYECTOS_OBRA as $canonico) {
+            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
+                return $canonico;
+            }
+        }
+
+        throw new HttpException('El proyecto no es válido.', 422);
+    }
+
+    /**
+     * @param list<array<string,mixed>> $items
+     * @return list<array<string,mixed>>
+     */
+    private function adjuntarProcesos(array $items): array
+    {
+        $cargoIds = [];
+        foreach ($items as $item) {
+            $cargoId = isset($item['cargo_id']) ? (int)$item['cargo_id'] : 0;
+            if ($cargoId > 0) {
+                $cargoIds[] = $cargoId;
+            }
+        }
+
+        $filas = $this->matriz()->procesosDeCargos($cargoIds);
+        $salida = [];
+        foreach ($items as $item) {
+            $item['procesos'] = $this->procesosDeItem(
+                $filas,
+                isset($item['cargo_id']) ? (int)$item['cargo_id'] : 0,
+                is_string($item['proyecto'] ?? null) ? (string)$item['proyecto'] : null
+            );
+            $salida[] = $item;
+        }
+
+        return $salida;
+    }
+
+    /**
+     * @param list<array{cargo_id:int,proyecto:?string,proceso_id:int,proceso_nombre:string}> $filas
+     * @return list<array{proceso_id:int,nombre:string}>
+     */
+    private function procesosDeItem(array $filas, int $cargoId, ?string $proyecto): array
+    {
+        if ($cargoId < 1) {
+            return [];
+        }
+
+        $vistos = [];
+        $salida = [];
+        foreach ($filas as $fila) {
+            if ((int)$fila['cargo_id'] !== $cargoId) {
+                continue;
+            }
+            $filaProyecto = $fila['proyecto'];
+            if ($filaProyecto !== null && ($proyecto === null || $proyecto === '')) {
+                continue;
+            }
+            if ($filaProyecto !== null && strcasecmp($filaProyecto, (string)$proyecto) !== 0) {
+                continue;
+            }
+            $procesoId = (int)$fila['proceso_id'];
+            if (isset($vistos[$procesoId])) {
+                continue;
+            }
+            $vistos[$procesoId] = true;
+            $salida[] = [
+                'proceso_id' => $procesoId,
+                'nombre' => (string)$fila['proceso_nombre'],
+            ];
+        }
+
+        return $salida;
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function normalizarAplicable(array $fila): array
+    {
+        return [
+            'matriz_aplicabilidad_id' => isset($fila['matriz_aplicabilidad_id'])
+                ? (int)$fila['matriz_aplicabilidad_id']
+                : null,
+            'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
+            'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? null,
+            'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? null,
+            'proceso_id' => isset($fila['proceso_id']) && $fila['proceso_id'] !== null
+                ? (int)$fila['proceso_id']
+                : null,
+            'proceso_nombre' => $fila['proceso_nombre'] ?? null,
+            'proyecto' => $fila['proyecto'] ?? null,
+            'periodicidad_nombre' => $fila['periodicidad_nombre'] ?? null,
+        ];
+    }
+
     private function normalizar(array $fila): array
     {
         return [
             'persona_id' => (int)$fila['persona_id'],
             'numero_documento' => $fila['numero_documento'],
             'tipo_documento_id' => isset($fila['tipo_documento_id']) ? (int)$fila['tipo_documento_id'] : null,
+            'tipo_documento_nombre' => $fila['tipo_documento_nombre'] ?? null,
+            'tipo_documento_abreviatura' => $fila['tipo_documento_abreviatura'] ?? null,
             'nombre_completo' => $fila['nombre_completo'],
             'estado' => $fila['estado'],
             'cargo_id' => $fila['cargo_id'] !== null ? (int)$fila['cargo_id'] : null,
@@ -764,6 +996,7 @@ class PersonalService
             'proyecto' => $fila['proyecto'],
             'contrato_fecha_inicio' => $fila['contrato_fecha_inicio'],
             'contrato_fecha_terminacion' => $fila['contrato_fecha_terminacion'],
+            'procesos' => [],
         ];
     }
 }
