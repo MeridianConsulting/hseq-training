@@ -416,6 +416,133 @@ export type Cumplimiento = {
   soportes?: SoporteCumplimiento[];
 };
 
+export type ConsultaCumplimiento = {
+  asignacion_id: number;
+  persona_id_ext: number;
+  persona_nombre: string | null;
+  numero_documento: string | null;
+  cargo: string | null;
+  proyecto: string | null;
+  estado_laboral: string | null;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
+  capacitacion_id: number;
+  capacitacion_codigo: string | null;
+  capacitacion_nombre: string | null;
+  tipo_nombre: string | null;
+  es_tarea_critica: boolean;
+  origen: string | null;
+  fecha_asignacion: string | null;
+  fecha_limite_cumplimiento: string | null;
+  cumplimiento_id: number | null;
+  sesion_id: number | null;
+  fecha_realizacion: string | null;
+  fecha_vencimiento: string | null;
+  resultado: string | null;
+  horas_efectivas: number | null;
+  requiere_evaluacion: boolean;
+  nota_minima: number;
+  nota_evaluacion: number | null;
+  evaluacion_aprobada: boolean | null;
+  requiere_certificado: boolean;
+  requiere_listado_asistencia: boolean;
+  vigencia_nombre: string | null;
+  estado_calculado: string;
+  soportes: SoporteCumplimiento[];
+  soportes_count: number;
+};
+
+export type DetalleConsultaCumplimiento = {
+  asignacion: ConsultaCumplimiento;
+  trabajador: {
+    persona_id_ext: number;
+    nombre: string | null;
+    documento: string | null;
+    cargo: string | null;
+    proyecto: string | null;
+    estado_laboral: string | null;
+  };
+  capacitacion: {
+    capacitacion_id: number;
+    codigo: string | null;
+    nombre: string | null;
+    requiere_evaluacion: boolean;
+    nota_minima: number;
+    requiere_certificado: boolean;
+    requiere_listado_asistencia: boolean;
+    es_tarea_critica: boolean;
+    vigencia_nombre: string | null;
+    tipo_nombre: string | null;
+  };
+  aplicabilidad: {
+    aplica: boolean;
+    matriz_aplicabilidad_id: number | null;
+    activa: boolean | null;
+    obligatoria: boolean | null;
+    proceso_nombre: string | null;
+    proyecto: string | null;
+    fuente: string;
+  };
+  obligacion: {
+    asignacion_id: number;
+    origen: string | null;
+    fecha_asignacion: string | null;
+    fecha_limite_cumplimiento: string | null;
+    fuente: string;
+  };
+  programacion: { fecha_programada: string | null; fuente: string };
+  ejecucion: {
+    sesion_id: number | null;
+    fecha_sesion: string | null;
+    fecha_realizacion: string | null;
+    fuente: string;
+  };
+  asistencia: { estado: string | null; valida: boolean; fuente: string };
+  evaluacion: {
+    requiere: boolean;
+    nota_obtenida: number | null;
+    nota_minima: number;
+    aprobada: boolean | null;
+    fuente: string;
+  };
+  soportes: {
+    requiere_certificado: boolean;
+    requiere_listado: boolean;
+    items: SoporteCumplimiento[];
+    fuente: string;
+  };
+  vigencia: {
+    nombre: string | null;
+    fecha_vencimiento: string | null;
+    periodicidad_nombre: string | null;
+    origen_periodicidad: string | null;
+    fuente: string;
+  };
+  estado_actual: string;
+};
+
+export type OpcionesConsultaCumplimientos = {
+  procesos: { proceso_id: number; nombre: string }[];
+  proyectos: string[];
+  cargos: CargoCorporativo[];
+  tipos: { tipo_capacitacion_id: number; nombre: string }[];
+  capacitaciones: { capacitacion_id: number; codigo: string; nombre: string }[];
+};
+
+export type SituacionTrabajadorCumplimiento = {
+  trabajador: {
+    persona_id_ext: number;
+    nombre: string | null;
+    documento: string | null;
+    cargo: string | null;
+    proyecto: string | null;
+    estado_laboral: string | null;
+    cargo_id?: number | null;
+  };
+  aplicables: CapacitacionAplicable[];
+  items: ConsultaCumplimiento[];
+};
+
 export type PreviewItemCumplimiento = {
   asignacion_id: number;
   cumplimiento_id: number | null;

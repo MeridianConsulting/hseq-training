@@ -173,6 +173,15 @@ $cargos = $personal->cargos();
 ok(count($cargos) >= 1, 'Hay cargos corporativos');
 $cargoId = (int)$cargos[0]['cargo_id'];
 
+$proceso = $db->fetch(
+    "SELECT proceso_id FROM procesos
+     WHERE activo = 1
+       AND (nombre LIKE '%Gestión de Proyectos%' OR nombre LIKE '%Gestion de Proyectos%')
+     LIMIT 1"
+);
+ok($proceso !== null, 'Hay proceso Gestión de Proyectos');
+$procesoId = (int)$proceso['proceso_id'];
+
 $per12 = periodicidadId($db, 12, 'MESES', 'CUMP-PRU-12M');
 $per6 = periodicidadId($db, 6, 'MESES', 'CUMP-PRU-6M');
 $vig = $db->fetch("SELECT vigencia_id FROM vigencias WHERE cantidad = 24 AND unidad = 'MESES' LIMIT 1");
@@ -215,6 +224,7 @@ for ($i = 0; $i < 12; $i++) {
 $matriz->crear([
     'capacitacion_id' => $cap12,
     'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoId,
     'proyecto' => $proyecto12,
     'periodicidad_id' => $per12,
     'obligatoria' => 1,
@@ -291,8 +301,8 @@ ok($db->fetch(
 
 $ejecutadoTrasAsis = $dashRepo->ejecutado($periodo, 'general');
 ok(
-    $ejecutadoTrasAsis === $ejecutadoAntes + 11,
-    "Dashboard +11 por asistencia ({$ejecutadoAntes} -> {$ejecutadoTrasAsis})"
+    $ejecutadoTrasAsis === $ejecutadoAntes,
+    "Asistencia no cuenta como ejecutado hasta APROBADO ({$ejecutadoAntes} -> {$ejecutadoTrasAsis})"
 );
 
 echo "\n== Masivo 10 trabajadores ==\n";
@@ -330,8 +340,8 @@ ok((int)$unicos['t'] === 1, 'UNIQUE: una sola fila por asignación');
 
 $ejecutadoTrasCump = $dashRepo->ejecutado($periodo, 'general');
 ok(
-    $ejecutadoTrasCump === $ejecutadoTrasAsis,
-    "Completar no duplica Dashboard ({$ejecutadoTrasAsis} -> {$ejecutadoTrasCump})"
+    $ejecutadoTrasCump === $ejecutadoAntes + 10,
+    "Dashboard +10 al completar masivo ({$ejecutadoAntes} -> {$ejecutadoTrasCump})"
 );
 
 echo "\n== Individual ==\n";
@@ -344,6 +354,10 @@ $uno = $cumplimientos->registrar([
 ], 1);
 ok((string)$uno['resultado'] === 'APROBADO', 'Individual APROBADO');
 ok((string)$uno['fecha_vencimiento'] === '2032-09-15', 'Individual vence +12 meses');
+ok(
+    $dashRepo->ejecutado($periodo, 'general') === $ejecutadoAntes + 11,
+    'Individual APROBADO suma el KPI ejecutado'
+);
 
 echo "\n== Rechazos ==\n";
 esperaRechazo(
@@ -474,6 +488,7 @@ $p6 = $personal->crear([
 $matriz->crear([
     'capacitacion_id' => $cap6,
     'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoId,
     'proyecto' => $proyecto6,
     'periodicidad_id' => $per6,
     'obligatoria' => 1,
@@ -514,6 +529,7 @@ $pm6 = $personal->crear([
 $matriz->crear([
     'capacitacion_id' => $capMix,
     'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoId,
     'proyecto' => 'HSEQ-CUMP-MIX12',
     'periodicidad_id' => $per12,
     'obligatoria' => 1,
@@ -521,6 +537,7 @@ $matriz->crear([
 $matriz->crear([
     'capacitacion_id' => $capMix,
     'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoId,
     'proyecto' => 'HSEQ-CUMP-MIX6',
     'periodicidad_id' => $per6,
     'obligatoria' => 1,
@@ -556,6 +573,14 @@ $pUna = $personal->crear([
     'proyecto' => 'HSEQ-CUMP-UNA',
     'fecha_ingreso' => '2026-01-15',
 ]);
+$matriz->crear([
+    'capacitacion_id' => $capUna,
+    'cargo_id_ext' => $cargoId,
+    'proceso_id' => $procesoId,
+    'proyecto' => 'HSEQ-CUMP-UNA',
+    'periodicidad_id' => null,
+    'obligatoria' => 1,
+], 1);
 $asigUnaId = (int)$asignaciones->crear([
     'persona_id_ext' => (int)$pUna['persona_id'],
     'capacitacion_id' => $capUna,

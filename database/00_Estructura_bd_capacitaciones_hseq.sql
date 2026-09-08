@@ -403,6 +403,7 @@ CREATE TABLE auditoria (
 -- Estado vigente de cada asignacion:
 -- - Pendiente: usa fecha_limite_cumplimiento (plazo para realizar).
 -- - Realizada: usa cumplimientos.fecha_vencimiento (vigencia del curso tomado).
+-- COMPLETADA exige APROBADO + evaluacion/soportes cuando la capacitacion los requiere.
 CREATE OR REPLACE VIEW vw_estado_asignaciones AS
 SELECT
   a.asignacion_id,
@@ -422,6 +423,20 @@ SELECT
       THEN 'PENDIENTE_PROXIMA_A_VENCER'
     WHEN c.cumplimiento_id IS NULL
       THEN 'PENDIENTE'
+    WHEN c.resultado IS NULL OR c.resultado <> 'APROBADO'
+      THEN 'PENDIENTE'
+    WHEN cap.evaluacion = 1 AND (c.nota_evaluacion IS NULL OR c.nota_evaluacion < cap.nota_minima)
+      THEN 'PENDIENTE'
+    WHEN cap.certificado = 1 AND NOT EXISTS (
+           SELECT 1 FROM soportes_cumplimiento so WHERE so.cumplimiento_id = c.cumplimiento_id
+         )
+      THEN 'PENDIENTE'
+    WHEN cap.requiere_listado_asistencia = 1 AND NOT EXISTS (
+           SELECT 1 FROM soportes_cumplimiento so
+           WHERE so.cumplimiento_id = c.cumplimiento_id
+             AND so.tipo_soporte = 'LISTADO_ASISTENCIA'
+         )
+      THEN 'PENDIENTE'
     WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()
       THEN 'VENCIDA'
     WHEN c.fecha_vencimiento IS NOT NULL
@@ -430,7 +445,8 @@ SELECT
     ELSE 'COMPLETADA'
   END COLLATE utf8mb4_unicode_ci AS estado_calculado
 FROM asignaciones_capacitacion a
-LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id;
+LEFT JOIN cumplimientos_capacitacion c ON c.asignacion_id = a.asignacion_id
+INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id;
 
 -- Alertas de:
 -- 1) capacitaciones pendientes proximas o pasadas de su fecha limite

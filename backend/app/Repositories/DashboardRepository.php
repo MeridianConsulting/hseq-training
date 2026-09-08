@@ -7,7 +7,7 @@ namespace App\Repositories;
 use App\Core\Database;
 
 /**
- * Agregados del dashboard. Programado = plan anual APROBADO; ejecutado = cumplimientos.
+ * Agregados del dashboard. Programado = plan anual APROBADO; ejecutado = cumplimientos APROBADO.
  * No une sesion_participantes (evitar duplicar personas).
  * Los KPIs no filtran por estado actual del trabajador (histórico ≠ población actual).
  */
@@ -66,6 +66,7 @@ class DashboardRepository
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 {$extraJoin}
                 WHERE cump.fecha_realizacion BETWEEN ? AND ?
+                  AND cump.resultado = 'APROBADO'
                   {$filtroAlcance}
                   {$extraWhere}";
 
@@ -366,6 +367,7 @@ class DashboardRepository
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 {$extraJoin}
                 WHERE cump.fecha_realizacion BETWEEN ? AND ?
+                  AND cump.resultado = 'APROBADO'
                   {$filtroAlcance}
                   {$extraWhere}";
 

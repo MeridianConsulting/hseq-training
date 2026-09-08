@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Database;
 use App\Core\Exceptions\HttpException;
+use App\Core\Logger;
+use App\Repositories\AlertaRepository;
 use App\Repositories\CumplimientoRepository;
+use App\Repositories\MatrizRepository;
+use App\Repositories\PersonalRepository;
 use PDOException;
+use Throwable;
 
 class CumplimientoService
 {
@@ -19,6 +25,9 @@ class CumplimientoService
     public const MENSAJE_NOTA_MINIMA = 'La nota no alcanza la mínima aprobatoria.';
     public const NOTA_MIN = 0.0;
     public const NOTA_MAX = 5.0;
+
+    public const MENSAJE_CONSULTA = 'No fue posible consultar la información de cumplimientos.';
+    public const MENSAJE_CORPORATIVA = 'No fue posible consultar la base corporativa de personal.';
 
     private const SQLSTATE_INTEGRIDAD = '23000';
     private const ASISTENCIAS_VALIDAS = ['ASISTIO', 'TARDE'];
@@ -139,6 +148,396 @@ class CumplimientoService
         }
 
         return $this->normalizarConSoportes([$fila])[0];
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array{items:list<array<string,mixed>>,total:int,page:int,per_page:int}
+     */
+    public function consultar(int $pagina, int $porPagina, array $filtros): array
+    {
+        $pagina = max(1, $pagina);
+        $porPagina = min(100, max(1, $porPagina));
+        $offset = ($pagina - 1) * $porPagina;
+
+        try {
+            $filas = $this->repo->consultar($porPagina, $offset, $filtros);
+            $items = $this->normalizarConsultaConSoportes($filas);
+
+            return [
+                'items' => $items,
+                'total' => $this->repo->contarConsulta($filtros),
+                'page' => $pagina,
+                'per_page' => $porPagina,
+            ];
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            $this->falloConsulta($e);
+        }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function consultarDetalle(int $asignacionId): array
+    {
+        try {
+            $fila = $this->repo->consultarPorAsignacion($asignacionId);
+        } catch (Throwable $e) {
+            $this->falloConsulta($e);
+        }
+
+        if ($fila === null) {
+            throw new HttpException('La asignación no existe.', 404);
+        }
+
+        $item = $this->normalizarConsultaConSoportes([$fila])[0];
+        $asistencia = $this->repo->ultimaAsistencia($asignacionId);
+        $programacion = $this->repo->programacionAsignacion($asignacionId);
+        $matrizId = (int)($fila['matriz_aplicabilidad_id'] ?? 0);
+        $regla = $matrizId > 0 ? $this->repo->reglaMatriz($matrizId) : null;
+        if ($regla === null) {
+            $cargoSnap = isset($fila['cargo_id_ext']) ? (int)$fila['cargo_id_ext'] : 0;
+            $proyectoSnap = is_string($fila['proyecto'] ?? null) ? (string)$fila['proyecto'] : null;
+            $regla = $this->repo->reglaMatrizPorContexto(
+                (int)$fila['capacitacion_id'],
+                $cargoSnap > 0 ? $cargoSnap : null,
+                $proyectoSnap
+            );
+            if (is_array($regla)) {
+                $matrizId = (int)($regla['matriz_aplicabilidad_id'] ?? 0);
+            }
+        }
+        $periodicidad = $this->vencimiento->resolverPeriodicidad($asignacionId);
+
+        $fechaSesion = null;
+        $asistenciaEstado = null;
+        $sesionId = $item['sesion_id'] ?? null;
+        if (is_array($asistencia)) {
+            $fechaSesion = $asistencia['fecha_sesion'] ?? null;
+            $asistenciaEstado = $asistencia['estado_asistencia'] ?? null;
+            if ($sesionId === null && isset($asistencia['sesion_id'])) {
+                $sesionId = (int)$asistencia['sesion_id'];
+            }
+        }
+
+        $fechaProgramada = null;
+        if (is_array($programacion) && isset($programacion['anio'], $programacion['mes_programado'])) {
+            $mes = str_pad((string)(int)$programacion['mes_programado'], 2, '0', STR_PAD_LEFT);
+            $fechaProgramada = (int)$programacion['anio'] . '-' . $mes;
+        }
+
+        $fuentes = [
+            'aplicabilidad' => 'Matriz',
+            'obligacion' => 'Asignaciones',
+            'fecha_programada' => 'Plan anual / Cronograma',
+            'ejecucion' => 'Sesión',
+            'asistencia' => 'Sesiones y asistencia',
+            'evaluacion' => 'Evaluación',
+            'soportes' => 'Evidencias',
+            'vigencia' => 'Capacitaciones',
+        ];
+
+        return [
+            'asignacion' => $item,
+            'trabajador' => [
+                'persona_id_ext' => $item['persona_id_ext'],
+                'nombre' => $item['persona_nombre'],
+                'documento' => $item['numero_documento'],
+                'cargo' => $item['cargo'],
+                'proyecto' => $item['proyecto'],
+                'estado_laboral' => $item['estado_laboral'],
+            ],
+            'capacitacion' => [
+                'capacitacion_id' => $item['capacitacion_id'],
+                'codigo' => $item['capacitacion_codigo'],
+                'nombre' => $item['capacitacion_nombre'],
+                'requiere_evaluacion' => $item['requiere_evaluacion'],
+                'nota_minima' => $item['nota_minima'],
+                'requiere_certificado' => $item['requiere_certificado'],
+                'requiere_listado_asistencia' => $item['requiere_listado_asistencia'],
+                'es_tarea_critica' => $item['es_tarea_critica'],
+                'vigencia_nombre' => $item['vigencia_nombre'],
+                'tipo_nombre' => $item['tipo_nombre'],
+            ],
+            'aplicabilidad' => [
+                'aplica' => $regla !== null,
+                'matriz_aplicabilidad_id' => $matrizId > 0 ? $matrizId : null,
+                'activa' => $regla !== null ? (int)($regla['activa'] ?? 0) === 1 : null,
+                'obligatoria' => $regla !== null ? (int)($regla['obligatoria'] ?? 0) === 1 : null,
+                'proceso_nombre' => $regla['proceso_nombre'] ?? $item['proceso_nombre'],
+                'proyecto' => $regla['proyecto'] ?? $item['proyecto'],
+                'fuente' => $fuentes['aplicabilidad'],
+            ],
+            'obligacion' => [
+                'asignacion_id' => $item['asignacion_id'],
+                'origen' => $item['origen'],
+                'fecha_asignacion' => $item['fecha_asignacion'],
+                'fecha_limite_cumplimiento' => $item['fecha_limite_cumplimiento'],
+                'fuente' => $fuentes['obligacion'],
+            ],
+            'programacion' => [
+                'fecha_programada' => $fechaProgramada,
+                'fuente' => $fuentes['fecha_programada'],
+            ],
+            'ejecucion' => [
+                'sesion_id' => $sesionId,
+                'fecha_sesion' => $fechaSesion,
+                'fecha_realizacion' => $item['fecha_realizacion'],
+                'fuente' => $fuentes['ejecucion'],
+            ],
+            'asistencia' => [
+                'estado' => $asistenciaEstado,
+                'valida' => in_array((string)$asistenciaEstado, self::ASISTENCIAS_VALIDAS, true),
+                'fuente' => $fuentes['asistencia'],
+            ],
+            'evaluacion' => [
+                'requiere' => $item['requiere_evaluacion'],
+                'nota_obtenida' => $item['nota_evaluacion'],
+                'nota_minima' => $item['nota_minima'],
+                'aprobada' => $item['evaluacion_aprobada'],
+                'fuente' => $fuentes['evaluacion'],
+            ],
+            'soportes' => [
+                'requiere_certificado' => $item['requiere_certificado'],
+                'requiere_listado' => $item['requiere_listado_asistencia'],
+                'items' => $item['soportes'],
+                'fuente' => $fuentes['soportes'],
+            ],
+            'vigencia' => [
+                'nombre' => $item['vigencia_nombre'],
+                'fecha_vencimiento' => $item['fecha_vencimiento'],
+                'periodicidad_nombre' => $periodicidad['nombre'] ?? null,
+                'origen_periodicidad' => $periodicidad['origen'] ?? null,
+                'fuente' => $fuentes['vigencia'],
+            ],
+            'estado_actual' => $item['estado_calculado'],
+        ];
+    }
+
+    /**
+     * @return array{trabajador:array<string,mixed>,aplicables:list<array<string,mixed>>,items:list<array<string,mixed>>}
+     */
+    public function consultarTrabajador(int $personaId): array
+    {
+        if ($personaId < 1) {
+            throw new HttpException('El trabajador no es válido.', 422);
+        }
+
+        try {
+            $consulta = $this->consultar(1, 100, ['persona_id' => $personaId, 'estado_laboral' => null]);
+        } catch (HttpException $e) {
+            throw $e;
+        }
+
+        $trabajador = [
+            'persona_id_ext' => $personaId,
+            'nombre' => null,
+            'documento' => null,
+            'cargo' => null,
+            'proyecto' => null,
+            'estado_laboral' => null,
+        ];
+
+        try {
+            $ficha = (new PersonalRepository())->buscarPorId($personaId);
+            if (is_array($ficha)) {
+                $trabajador = [
+                    'persona_id_ext' => $personaId,
+                    'nombre' => $ficha['nombre_completo'] ?? null,
+                    'documento' => $ficha['numero_documento'] ?? null,
+                    'cargo' => $ficha['cargo'] ?? null,
+                    'proyecto' => $ficha['proyecto'] ?? null,
+                    'estado_laboral' => $ficha['estado'] ?? null,
+                    'cargo_id' => isset($ficha['cargo_id']) ? (int)$ficha['cargo_id'] : null,
+                ];
+            }
+        } catch (Throwable $e) {
+            $this->falloConsulta($e, self::MENSAJE_CORPORATIVA);
+        }
+
+        if ($trabajador['nombre'] === null && $consulta['items'] !== []) {
+            $primero = $consulta['items'][0];
+            $trabajador['nombre'] = $primero['persona_nombre'];
+            $trabajador['documento'] = $primero['numero_documento'];
+            $trabajador['cargo'] = $primero['cargo'];
+            $trabajador['proyecto'] = $primero['proyecto'];
+            $trabajador['estado_laboral'] = $primero['estado_laboral'];
+        }
+
+        if ($trabajador['nombre'] === null && $consulta['items'] === []) {
+            throw new HttpException('El trabajador no existe en la base corporativa.', 404);
+        }
+
+        $aplicables = [];
+        $cargoId = isset($trabajador['cargo_id']) ? (int)$trabajador['cargo_id'] : null;
+        $proyecto = is_string($trabajador['proyecto'] ?? null) ? (string)$trabajador['proyecto'] : null;
+        try {
+            foreach ((new MatrizRepository())->aplicables($cargoId, null, $proyecto) as $fila) {
+                $aplicables[] = [
+                    'matriz_aplicabilidad_id' => isset($fila['matriz_aplicabilidad_id'])
+                        ? (int)$fila['matriz_aplicabilidad_id']
+                        : null,
+                    'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
+                    'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? $fila['codigo'] ?? null,
+                    'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? $fila['nombre'] ?? null,
+                    'proceso_nombre' => $fila['proceso_nombre'] ?? null,
+                    'proyecto' => $fila['proyecto'] ?? null,
+                ];
+            }
+        } catch (Throwable $e) {
+            Logger::error('Error al consultar aplicables en cumplimientos: ' . $e->getMessage());
+        }
+
+        return [
+            'trabajador' => $trabajador,
+            'aplicables' => $aplicables,
+            'items' => $consulta['items'],
+        ];
+    }
+
+    /**
+     * @return array{procesos:list<array<string,mixed>>,proyectos:list<string>,cargos:list<array<string,mixed>>,tipos:list<array<string,mixed>>,capacitaciones:list<array<string,mixed>>}
+     */
+    public function opcionesConsulta(): array
+    {
+        try {
+            $alertas = new AlertaRepository();
+            $cargos = [];
+            foreach ($alertas->cargos() as $fila) {
+                $cargos[] = [
+                    'cargo_id' => (int)$fila['cargo_id'],
+                    'nombre_cargo' => (string)$fila['nombre_cargo'],
+                ];
+            }
+
+            $tipos = [];
+            foreach (
+                $this->repoDbTipos() as $fila
+            ) {
+                $tipos[] = [
+                    'tipo_capacitacion_id' => (int)$fila['tipo_capacitacion_id'],
+                    'nombre' => (string)$fila['nombre'],
+                ];
+            }
+
+            $caps = [];
+            foreach ((new \App\Repositories\CapacitacionRepository())->listarActivasResumen() as $cap) {
+                $caps[] = [
+                    'capacitacion_id' => $cap['capacitacion_id'],
+                    'codigo' => $cap['codigo'],
+                    'nombre' => $cap['nombre'],
+                ];
+            }
+
+            return [
+                'procesos' => $alertas->procesosActivos(),
+                'proyectos' => $alertas->proyectos(),
+                'cargos' => $cargos,
+                'tipos' => $tipos,
+                'capacitaciones' => $caps,
+            ];
+        } catch (Throwable $e) {
+            $this->falloConsulta($e, self::MENSAJE_CORPORATIVA);
+        }
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function repoDbTipos(): array
+    {
+        return Database::getInstance()->fetchAll(
+            'SELECT tipo_capacitacion_id, nombre FROM tipos_capacitacion ORDER BY nombre ASC'
+        );
+    }
+
+    /**
+     * @param list<array<string,mixed>> $filas
+     * @return list<array<string,mixed>>
+     */
+    private function normalizarConsultaConSoportes(array $filas): array
+    {
+        $ids = [];
+        foreach ($filas as $fila) {
+            if (!empty($fila['cumplimiento_id'])) {
+                $ids[] = (int)$fila['cumplimiento_id'];
+            }
+        }
+        $por = $this->soportes->porCumplimientos($ids);
+        $items = [];
+        foreach ($filas as $fila) {
+            $cid = (int)($fila['cumplimiento_id'] ?? 0);
+            $fila['soportes'] = $por[$cid] ?? [];
+            $items[] = $this->normalizarConsulta($fila);
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function normalizarConsulta(array $fila): array
+    {
+        $soportes = is_array($fila['soportes'] ?? null) ? $fila['soportes'] : [];
+        $requiereEval = (int)($fila['capacitacion_evaluacion'] ?? 0) === 1;
+        $notaMinima = round((float)($fila['capacitacion_nota_minima'] ?? 0), 2);
+        $nota = $fila['nota_evaluacion'] !== null ? (float)$fila['nota_evaluacion'] : null;
+
+        return [
+            'asignacion_id' => (int)$fila['asignacion_id'],
+            'persona_id_ext' => (int)$fila['persona_id_ext'],
+            'persona_nombre' => $fila['persona_nombre'] ?? null,
+            'numero_documento' => $fila['numero_documento'] ?? null,
+            'cargo' => $fila['cargo'] ?? null,
+            'proyecto' => $fila['proyecto'] ?? null,
+            'estado_laboral' => $fila['estado_laboral'] ?? null,
+            'proceso_id' => isset($fila['proceso_id']) && $fila['proceso_id'] !== null
+                ? (int)$fila['proceso_id']
+                : null,
+            'proceso_nombre' => $fila['proceso_nombre'] ?? null,
+            'capacitacion_id' => (int)$fila['capacitacion_id'],
+            'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? null,
+            'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? null,
+            'tipo_nombre' => $fila['tipo_nombre'] ?? null,
+            'es_tarea_critica' => (int)($fila['es_tarea_critica'] ?? 0) === 1,
+            'origen' => $fila['origen'] ?? null,
+            'fecha_asignacion' => $fila['fecha_asignacion'] ?? null,
+            'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'] ?? null,
+            'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
+                ? (int)$fila['cumplimiento_id']
+                : null,
+            'sesion_id' => isset($fila['sesion_id']) && $fila['sesion_id'] !== null
+                ? (int)$fila['sesion_id']
+                : null,
+            'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
+            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'resultado' => $fila['resultado'] ?? null,
+            'horas_efectivas' => $fila['horas_efectivas'] !== null ? (float)$fila['horas_efectivas'] : null,
+            'requiere_evaluacion' => $requiereEval,
+            'nota_minima' => $notaMinima,
+            'nota_evaluacion' => $nota,
+            'evaluacion_aprobada' => $this->evaluacionAprobada($nota, $requiereEval, $notaMinima),
+            'requiere_certificado' => (int)($fila['capacitacion_certificado'] ?? 0) === 1,
+            'requiere_listado_asistencia' => (int)($fila['requiere_listado_asistencia'] ?? 0) === 1,
+            'vigencia_nombre' => $fila['vigencia_nombre'] ?? null,
+            'estado_calculado' => strtoupper((string)($fila['estado_calculado'] ?? '')),
+            'soportes' => $soportes,
+            'soportes_count' => count($soportes),
+        ];
+    }
+
+    private function falloConsulta(Throwable $e, string $mensaje = self::MENSAJE_CONSULTA): void
+    {
+        if ($e instanceof HttpException) {
+            throw $e;
+        }
+
+        Logger::error($mensaje . ': ' . $e->getMessage());
+        throw new HttpException($mensaje, $e instanceof PDOException ? 503 : 500);
     }
 
     /**

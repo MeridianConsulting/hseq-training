@@ -1,66 +1,88 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import {
-  FormularioCumplimiento,
-  type DatosCumplimiento,
-} from "@/app/(app)/cumplimientos/formulario";
-import { ListaEvidencias, subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ListaEvidencias } from "@/app/(app)/cumplimientos/evidencias";
 import { RequierePermiso } from "@/components/requiere-permiso";
-import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
-import { BadgeCheck, Pencil } from "lucide-react";
-import { apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import type { Asignacion, Cumplimiento } from "@/lib/tipos";
+import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
+import { ChevronDown, Eye, UserRound } from "lucide-react";
+import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
+import type {
+  ConsultaCumplimiento,
+  DetalleConsultaCumplimiento,
+  OpcionesConsultaCumplimientos,
+  SituacionTrabajadorCumplimiento,
+} from "@/lib/tipos";
 
-function formatoFecha(valor: string | null): string {
+const FILTROS_DEFAULT = {
+  buscar: "",
+  capacitacion_id: "",
+  estado: "",
+  cargo_id: "",
+  proceso_id: "",
+  proyecto: "",
+  tipo_capacitacion_id: "",
+  es_tarea_critica: "",
+  estado_laboral: "Activo",
+  fecha_realizacion_desde: "",
+  fecha_realizacion_hasta: "",
+  fecha_vencimiento_desde: "",
+  fecha_vencimiento_hasta: "",
+};
+
+const ETIQUETAS_ESTADO: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  PENDIENTE_PROXIMA_A_VENCER: "Próxima a vencer",
+  PENDIENTE_VENCIDA: "Pendiente vencida",
+  COMPLETADA: "Cumple",
+  PROXIMA_A_VENCER: "Próxima a vencer",
+  VENCIDA: "Vencida",
+};
+
+function tonoEstado(estado: string): "alto" | "aviso" | "ok" | "neutral" {
+  if (estado === "VENCIDA" || estado === "PENDIENTE_VENCIDA") return "alto";
+  if (estado === "PROXIMA_A_VENCER" || estado === "PENDIENTE_PROXIMA_A_VENCER") return "aviso";
+  if (estado === "COMPLETADA") return "ok";
+  return "neutral";
+}
+
+function formatoFecha(valor: string | null | undefined): string {
   if (!valor) return "—";
   const [anio, mes, dia] = valor.slice(0, 10).split("-");
   if (!dia) return valor;
   return `${dia}/${mes}/${anio}`;
 }
 
-function etiquetaResultado(valor: string | null): string {
-  if (valor === "APROBADO") return "Aprobado";
-  if (valor === "ASISTIO") return "Asistió (borrador)";
-  if (valor === "TARDE") return "Tarde (borrador)";
+function contextoPersona(item: ConsultaCumplimiento): string {
+  const cargo = (item.cargo ?? "").trim();
+  const proyecto = (item.proyecto ?? "").trim();
+  if (cargo && proyecto) return `${cargo} · ${proyecto}`;
+  return cargo || proyecto || "—";
+}
+
+function etiquetaAsistencia(valor: string | null): string {
+  if (valor === "ASISTIO") return "Asistió";
+  if (valor === "TARDE") return "Tarde";
+  if (valor === "AUSENTE") return "Ausente";
+  if (valor === "CONVOCADO") return "Convocado";
   return valor || "—";
 }
 
-function etiquetaNota(item: Cumplimiento): string {
-  if (item.nota_evaluacion == null) return "—";
-  const n = item.nota_evaluacion.toFixed(2).replace(".", ",");
-  if (item.evaluacion_aprobada === true) return `${n} · Aprobado`;
-  if (item.evaluacion_aprobada === false) return `${n} · No aprobado`;
-  return n;
-}
-
-const ETIQUETAS_VIGENCIA: Record<string, string> = {
-  PENDIENTE: "Pendiente",
-  COMPLETADA: "Completado",
-  PROXIMA_A_VENCER: "Próximo a vencer",
-  VENCIDA: "Vencido",
-};
-
-function etiquetaVigencia(item: Cumplimiento): string {
-  const clave = item.estado_vigencia ?? (item.resultado === "APROBADO" ? "COMPLETADA" : "PENDIENTE");
-  return ETIQUETAS_VIGENCIA[clave] ?? clave;
-}
-
-function tonoVigencia(item: Cumplimiento): "alto" | "aviso" | "ok" | "neutral" {
-  const clave = item.estado_vigencia ?? "";
-  if (clave === "VENCIDA") return "alto";
-  if (clave === "PROXIMA_A_VENCER") return "aviso";
-  if (clave === "COMPLETADA") return "ok";
-  return "neutral";
+function siNo(valor: boolean | null | undefined): string {
+  if (valor === true) return "Sí";
+  if (valor === false) return "No";
+  return "—";
 }
 
 export default function Page() {
@@ -72,376 +94,555 @@ export default function Page() {
 }
 
 function Contenido() {
-  const { puede } = useAuth();
-  const [items, setItems] = useState<Cumplimiento[]>([]);
+  const { valores, setFiltro, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
+    keysDebounce: ["buscar"],
+  });
+  const [items, setItems] = useState<ConsultaCumplimiento[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [buscar, setBuscar] = useState("");
+  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-  const [abierto, setAbierto] = useState(false);
-  const [editando, setEditando] = useState<Cumplimiento | null>(null);
-  const [asignacionAlta, setAsignacionAlta] = useState<Asignacion | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  const [buscarAsig, setBuscarAsig] = useState("");
-  const [candidatas, setCandidatas] = useState<Asignacion[]>([]);
-  const [evidenciaFaltante, setEvidenciaFaltante] = useState(false);
+  const [capacitaciones, setCapacitaciones] = useState<
+    { capacitacion_id: number; codigo: string; nombre: string }[]
+  >([]);
+  const [opciones, setOpciones] = useState<OpcionesConsultaCumplimientos>({
+    procesos: [],
+    proyectos: [],
+    cargos: [],
+    tipos: [],
+    capacitaciones: [],
+  });
+  const [masFiltros, setMasFiltros] = useState(() =>
+    Boolean(
+      valores.cargo_id ||
+        valores.proceso_id ||
+        valores.proyecto ||
+        valores.tipo_capacitacion_id ||
+        valores.es_tarea_critica ||
+        valores.fecha_realizacion_desde ||
+        valores.fecha_realizacion_hasta ||
+        valores.fecha_vencimiento_desde ||
+        valores.fecha_vencimiento_hasta,
+    ),
+  );
+  const [detalle, setDetalle] = useState<DetalleConsultaCumplimiento | null>(null);
+  const [situacion, setSituacion] = useState<SituacionTrabajadorCumplimiento | null>(null);
 
-  async function cargar(paginaActual = 1) {
-    const respuesta = await apiGet<ListaPaginada<Cumplimiento>>(
-      withQuery("/api/cumplimientos", {
-        page: paginaActual,
-        per_page: 15,
-        buscar: buscar.trim() || undefined,
-        evidencia_faltante: evidenciaFaltante ? 1 : undefined,
-      }),
-    );
-    if (!respuesta.success || !respuesta.data) {
-      setError(respuesta.message || "No fue posible cargar los cumplimientos.");
-      return;
+  async function cargarListado(paginaActual = 1) {
+    setCargando(true);
+    try {
+      const respuesta = await apiGet<ListaPaginada<ConsultaCumplimiento>>(
+        withQuery("/api/cumplimientos/consulta", {
+          page: paginaActual,
+          per_page: 15,
+          buscar: valores.buscar.trim() || undefined,
+          capacitacion_id: valores.capacitacion_id || undefined,
+          estado: valores.estado || undefined,
+          cargo_id: valores.cargo_id || undefined,
+          proceso_id: valores.proceso_id || undefined,
+          proyecto: valores.proyecto || undefined,
+          tipo_capacitacion_id: valores.tipo_capacitacion_id || undefined,
+          es_tarea_critica: valores.es_tarea_critica || undefined,
+          estado_laboral: valores.estado_laboral || "todos",
+          fecha_realizacion_desde: valores.fecha_realizacion_desde || undefined,
+          fecha_realizacion_hasta: valores.fecha_realizacion_hasta || undefined,
+          fecha_vencimiento_desde: valores.fecha_vencimiento_desde || undefined,
+          fecha_vencimiento_hasta: valores.fecha_vencimiento_hasta || undefined,
+        }),
+      );
+      if (!respuesta.success || !respuesta.data) {
+        setError(respuesta.message || "No fue posible cargar los cumplimientos.");
+        return;
+      }
+      setItems(respuesta.data.items);
+      setPagina(respuesta.data.pagination.current_page);
+      setUltima(respuesta.data.pagination.last_page);
+      setError(null);
+    } finally {
+      setCargando(false);
     }
-    setItems(respuesta.data.items);
-    setPagina(respuesta.data.pagination.current_page);
-    setUltima(respuesta.data.pagination.last_page);
-    setError(null);
   }
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      void cargar(1);
-    }, 300);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscar, evidenciaFaltante]);
+  useDebouncedCallback(
+    () => {
+      void cargarListado(1);
+    },
+    [
+      valores.buscar,
+      valores.capacitacion_id,
+      valores.estado,
+      valores.cargo_id,
+      valores.proceso_id,
+      valores.proyecto,
+      valores.tipo_capacitacion_id,
+      valores.es_tarea_critica,
+      valores.estado_laboral,
+      valores.fecha_realizacion_desde,
+      valores.fecha_realizacion_hasta,
+      valores.fecha_vencimiento_desde,
+      valores.fecha_vencimiento_hasta,
+    ],
+  );
 
   useEffect(() => {
-    if (!abierto || editando) {
+    void (async () => {
+      const opts = await apiGet<OpcionesConsultaCumplimientos>("/api/cumplimientos/consulta/opciones");
+      if (opts.success && opts.data) {
+        setOpciones(opts.data);
+        setCapacitaciones(opts.data.capacitaciones ?? []);
+      }
+    })();
+  }, []);
+
+  const extrasActivos = [
+    valores.cargo_id,
+    valores.proceso_id,
+    valores.proyecto,
+    valores.tipo_capacitacion_id,
+    valores.es_tarea_critica,
+    valores.fecha_realizacion_desde,
+    valores.fecha_realizacion_hasta,
+    valores.fecha_vencimiento_desde,
+    valores.fecha_vencimiento_hasta,
+    valores.estado_laboral !== "Activo" ? valores.estado_laboral : "",
+  ].filter(Boolean).length;
+
+  const chipsActivos = useMemo(() => {
+    const chips: ChipFiltro[] = [];
+    if (valores.buscar.trim()) {
+      chips.push({ clave: "buscar", etiqueta: "Trabajador", valor: valores.buscar.trim() });
+    }
+    if (valores.capacitacion_id) {
+      const cap = capacitaciones.find((c) => String(c.capacitacion_id) === valores.capacitacion_id);
+      chips.push({
+        clave: "capacitacion_id",
+        etiqueta: "Capacitación",
+        valor: cap ? `${cap.codigo} — ${cap.nombre}` : valores.capacitacion_id,
+      });
+    }
+    if (valores.estado) {
+      chips.push({
+        clave: "estado",
+        etiqueta: "Estado",
+        valor: ETIQUETAS_ESTADO[valores.estado] ?? valores.estado,
+      });
+    }
+    if (valores.cargo_id) {
+      const cargo = opciones.cargos.find((c) => String(c.cargo_id) === valores.cargo_id);
+      chips.push({ clave: "cargo_id", etiqueta: "Cargo", valor: cargo?.nombre_cargo ?? valores.cargo_id });
+    }
+    if (valores.proceso_id) {
+      const proc = opciones.procesos.find((p) => String(p.proceso_id) === valores.proceso_id);
+      chips.push({ clave: "proceso_id", etiqueta: "Proceso", valor: proc?.nombre ?? valores.proceso_id });
+    }
+    if (valores.proyecto) {
+      chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
+    }
+    if (valores.tipo_capacitacion_id) {
+      const tipo = opciones.tipos.find((t) => String(t.tipo_capacitacion_id) === valores.tipo_capacitacion_id);
+      chips.push({ clave: "tipo_capacitacion_id", etiqueta: "Tipo", valor: tipo?.nombre ?? valores.tipo_capacitacion_id });
+    }
+    if (valores.es_tarea_critica) {
+      chips.push({ clave: "es_tarea_critica", etiqueta: "Tarea crítica", valor: "Sí" });
+    }
+    if (valores.estado_laboral && valores.estado_laboral !== "Activo") {
+      chips.push({
+        clave: "estado_laboral",
+        etiqueta: "Estado laboral",
+        valor: valores.estado_laboral === "todos" ? "Todos" : valores.estado_laboral,
+      });
+    }
+    return chips;
+  }, [valores, capacitaciones, opciones]);
+
+  async function verDetalle(item: ConsultaCumplimiento) {
+    const respuesta = await apiGet<DetalleConsultaCumplimiento>(
+      `/api/cumplimientos/consulta/${item.asignacion_id}`,
+    );
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No fue posible consultar el detalle.");
       return;
     }
-    const id = window.setTimeout(() => {
-      void (async () => {
-        const r = await apiGet<ListaPaginada<Asignacion>>(
-          withQuery("/api/asignaciones", {
-            page: 1,
-            per_page: 8,
-            buscar: buscarAsig.trim() || undefined,
-          }),
-        );
-        const lista = r.success && r.data ? r.data.items : [];
-        setCandidatas(
-          lista.filter(
-            (a) =>
-              a.cumplimiento_sesion_id &&
-              a.cumplimiento_resultado !== "APROBADO",
-          ),
-        );
-      })();
-    }, 300);
-    return () => window.clearTimeout(id);
-  }, [abierto, editando, buscarAsig]);
+    setDetalle(respuesta.data);
+  }
 
-  async function guardar(evento: FormEvent, datos: DatosCumplimiento) {
-    evento.preventDefault();
+  async function verSituacion(personaId: number) {
+    const respuesta = await apiGet<SituacionTrabajadorCumplimiento>(
+      `/api/cumplimientos/consulta/trabajador/${personaId}`,
+    );
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No fue posible consultar al trabajador.");
+      return;
+    }
+    setSituacion(respuesta.data);
     setError(null);
-    setEnviando(true);
-
-    if (editando) {
-      if (datos.archivos.length > 0) {
-        const err = await subirSoportes(editando.cumplimiento_id, datos.archivos);
-        if (err) {
-          setEnviando(false);
-          setError(err);
-          return;
-        }
-      }
-      const cuerpo: Record<string, unknown> = {
-        fecha_realizacion: datos.fecha_realizacion,
-        resultado: datos.resultado,
-        horas_efectivas: Number(datos.horas_efectivas),
-        observaciones: datos.observaciones.trim() || null,
-        nota_evaluacion:
-          datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
-      };
-      if (datos.fecha_vencimiento.trim() !== "") {
-        cuerpo.fecha_vencimiento = datos.fecha_vencimiento;
-      }
-      const respuesta = await apiPut<Cumplimiento>(`/api/cumplimientos/${editando.cumplimiento_id}`, cuerpo);
-      setEnviando(false);
-      if (!respuesta.success) {
-        setError(respuesta.message || "No fue posible actualizar el cumplimiento.");
-        return;
-      }
-      setMensaje(respuesta.message);
-      setAbierto(false);
-      setEditando(null);
-      await cargar(pagina);
-      return;
-    }
-
-    if (!asignacionAlta?.cumplimiento_sesion_id) {
-      setEnviando(false);
-      setError("Seleccione una asignación con asistencia registrada.");
-      return;
-    }
-
-    const cumpId = asignacionAlta.cumplimiento_id;
-    if (datos.archivos.length > 0) {
-      if (!cumpId) {
-        setEnviando(false);
-        setError("No hay un cumplimiento borrador para adjuntar el archivo.");
-        return;
-      }
-      const err = await subirSoportes(cumpId, datos.archivos);
-      if (err) {
-        setEnviando(false);
-        setError(err);
-        return;
-      }
-    }
-
-    const respuesta = await apiPost<Cumplimiento>("/api/cumplimientos", {
-      asignacion_id: asignacionAlta.asignacion_id,
-      sesion_id: asignacionAlta.cumplimiento_sesion_id,
-      fecha_realizacion: datos.fecha_realizacion,
-      resultado: datos.resultado,
-      horas_efectivas: Number(datos.horas_efectivas),
-      observaciones: datos.observaciones.trim() || null,
-      nota_evaluacion:
-        datos.nota_evaluacion.trim() === "" ? undefined : Number(datos.nota_evaluacion),
-    });
-    setEnviando(false);
-    if (!respuesta.success) {
-      setError(respuesta.message || "No fue posible registrar el cumplimiento.");
-      return;
-    }
-    setMensaje(respuesta.message);
-    setAbierto(false);
-    setAsignacionAlta(null);
-    await cargar(1);
   }
 
   return (
     <>
       <PageHeader
         titulo="Cumplimientos"
-        descripcion="Complete el resultado y las horas efectivas. El vencimiento se calcula con la periodicidad de la matriz."
-        acciones={
-          puede("cumplimientos.crear") ? (
-            <Button
-              type="button"
-              onClick={() => {
-                setEditando(null);
-                setAsignacionAlta(null);
-                setAbierto(true);
-              }}
-            >
-              <BadgeCheck className="h-4 w-4" aria-hidden />
-              Registrar cumplimiento
-            </Button>
-          ) : null
-        }
+        descripcion="Consulte el estado real de las capacitaciones que debe cumplir cada trabajador. El registro de asistencia, evaluación y evidencias se hace en el Tablero de Cronograma."
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
-      {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
+
+      {situacion ? (
+        <Card className="mb-6">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-hseq-900">
+                {situacion.trabajador.nombre ?? `Persona ${situacion.trabajador.persona_id_ext}`}
+              </h2>
+              <p className="text-sm text-slate-600">
+                Cargo: {situacion.trabajador.cargo ?? "—"}
+                {situacion.trabajador.proyecto ? ` · Proyecto: ${situacion.trabajador.proyecto}` : ""}
+                {` · Estado corporativo: ${situacion.trabajador.estado_laboral ?? "—"}`}
+                {situacion.trabajador.documento ? ` · ${situacion.trabajador.documento}` : ""}
+              </p>
+              <Link
+                href={`/personal/${situacion.trabajador.persona_id_ext}`}
+                className="text-sm text-hseq-800 underline"
+              >
+                Ver ficha en Personal
+              </Link>
+            </div>
+            <Button type="button" variante="secondary" onClick={() => setSituacion(null)}>
+              Cerrar
+            </Button>
+          </div>
+          <Table
+            columnas={[
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "real", etiqueta: "Realizada" },
+              { clave: "vence", etiqueta: "Vencimiento" },
+              { clave: "estado", etiqueta: "Estado" },
+            ]}
+            filas={situacion.items.map((item) => [
+              `${item.capacitacion_codigo ?? ""} — ${item.capacitacion_nombre ?? ""}`,
+              formatoFecha(item.fecha_realizacion),
+              formatoFecha(item.fecha_vencimiento),
+              <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
+                {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
+              </Badge>,
+            ])}
+            vacio="Este trabajador no tiene capacitaciones asignadas."
+          />
+        </Card>
+      ) : null}
 
       <Filters>
-        <Field etiqueta="Buscar">
+        <Field etiqueta="Trabajador">
           <input
             className={inputClass}
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
-            placeholder="Trabajador, documento o capacitación"
+            value={valores.buscar}
+            onChange={(e) => setFiltro("buscar", e.target.value)}
+            placeholder="Nombre, documento o capacitación"
           />
         </Field>
-        <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={evidenciaFaltante}
-            onChange={(e) => setEvidenciaFaltante(e.target.checked)}
-          />
-          Evidencia faltante
-        </label>
+        <Field etiqueta="Capacitación">
+          <select
+            className={inputClass}
+            value={valores.capacitacion_id}
+            onChange={(e) => setFiltro("capacitacion_id", e.target.value)}
+          >
+            <option value="">Todas</option>
+            {capacitaciones.map((cap) => (
+              <option key={cap.capacitacion_id} value={cap.capacitacion_id}>
+                {cap.codigo} — {cap.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field etiqueta="Estado">
+          <select
+            className={inputClass}
+            value={valores.estado}
+            onChange={(e) => setFiltro("estado", e.target.value)}
+          >
+            <option value="">Todos</option>
+            <option value="COMPLETADA">Cumple</option>
+            <option value="PENDIENTE">Pendiente</option>
+            <option value="PENDIENTE_PROXIMA_A_VENCER">Próxima a vencer (plazo)</option>
+            <option value="PENDIENTE_VENCIDA">Pendiente vencida</option>
+            <option value="PROXIMA_A_VENCER">Vigencia próxima a vencer</option>
+            <option value="VENCIDA">Vencida</option>
+          </select>
+        </Field>
+        <Field etiqueta="Estado laboral">
+          <select
+            className={inputClass}
+            value={valores.estado_laboral}
+            onChange={(e) => setFiltro("estado_laboral", e.target.value)}
+          >
+            <option value="Activo">Activo</option>
+            <option value="Inactivo">Inactivo</option>
+            <option value="todos">Todos</option>
+          </select>
+        </Field>
       </Filters>
 
-      <Table
-        columnas={[
-          { clave: "doc", etiqueta: "Documento" },
-          { clave: "persona", etiqueta: "Trabajador" },
-          { clave: "cap", etiqueta: "Capacitación" },
-          { clave: "fecha", etiqueta: "Realización" },
-          { clave: "resultado", etiqueta: "Resultado" },
-          { clave: "horas", etiqueta: "Horas" },
-          { clave: "nota", etiqueta: "Nota" },
-          { clave: "vence", etiqueta: "Vencimiento" },
-          { clave: "estado", etiqueta: "Estado" },
-          { clave: "evidencia", etiqueta: "Evidencia" },
-          { clave: "acciones", etiqueta: "" },
-        ]}
-        filas={items.map((item) => [
-          item.numero_documento ?? "—",
-          item.persona_nombre ?? `Persona ${item.persona_id_ext}`,
-          item.capacitacion_codigo
-            ? `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`
-            : (item.capacitacion_nombre ?? "—"),
-          formatoFecha(item.fecha_realizacion),
-          <Badge key="r" tono={item.resultado === "APROBADO" ? "ok" : "aviso"}>
-            {etiquetaResultado(item.resultado)}
-          </Badge>,
-          item.horas_efectivas ?? "—",
-          etiquetaNota(item),
-          item.fecha_vencimiento ? formatoFecha(item.fecha_vencimiento) : "Sin vencimiento",
-          <Badge key="v" tono={tonoVigencia(item)}>
-            {etiquetaVigencia(item)}
-          </Badge>,
-          <ListaEvidencias
-            key={`e-${item.cumplimiento_id}`}
-            soportes={item.soportes ?? []}
-            onError={setError}
-          />,
-          <span key="a" className="flex flex-wrap gap-2">
-            {puede("cumplimientos.crear") && item.resultado !== "APROBADO" && item.sesion_id ? (
-              <Button
-                type="button"
-                variante="ghost"
-                onClick={() => {
-                  setEditando(null);
-                  setAsignacionAlta({
-                    asignacion_id: item.asignacion_id,
-                    persona_id_ext: item.persona_id_ext ?? 0,
-                    persona_nombre: item.persona_nombre,
-                    numero_documento: item.numero_documento,
-                    contrato_id_ext: null,
-                    capacitacion_id: item.capacitacion_id ?? 0,
-                    capacitacion_codigo: item.capacitacion_codigo ?? "",
-                    capacitacion_nombre: item.capacitacion_nombre ?? "",
-                    fecha_asignacion: "",
-                    fecha_limite_cumplimiento: "",
-                    origen: "",
-                    periodicidad_nombre: null,
-                    obligatoria: null,
-                    cargo_id_ext: null,
-                    ambito: null,
-                    proyecto: null,
-                    estado_calculado: "",
-                    tiene_cumplimiento: true,
-                    cumplimiento_id: item.cumplimiento_id,
-                    cumplimiento_sesion_id: item.sesion_id,
-                    cumplimiento_resultado: item.resultado,
-                    fecha_realizacion: item.fecha_realizacion,
-                    horas_efectivas: item.horas_efectivas,
-                    fecha_vencimiento: item.fecha_vencimiento,
-                    dias_restantes: null,
-                    etiqueta_dias: null,
-                  });
-                  setAbierto(true);
-                }}
-              >
-                Completar
-              </Button>
-            ) : null}
-            {puede("cumplimientos.editar") && item.resultado === "APROBADO" ? (
-              <Button
-                type="button"
-                variante="ghost"
-                onClick={() => {
-                  setAsignacionAlta(null);
-                  setEditando(item);
-                  setAbierto(true);
-                }}
-              >
-                <Pencil className="h-4 w-4" aria-hidden />
-                Editar
-              </Button>
-            ) : null}
-          </span>,
-        ])}
-        vacio="No hay cumplimientos registrados."
-      />
-      <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
-
-      <Modal
-        abierto={abierto}
-        titulo={editando ? "Editar cumplimiento" : "Registrar cumplimiento"}
-        onCerrar={() => {
-          setAbierto(false);
-          setEditando(null);
-          setAsignacionAlta(null);
-        }}
-      >
-        {!editando && !asignacionAlta ? (
-          <div className="space-y-3">
-            <Field etiqueta="Trabajador o documento">
-              <input
+      <div className="mb-4">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-hseq-700 hover:text-hseq-800"
+          aria-expanded={masFiltros}
+          onClick={() => setMasFiltros((abierto) => !abierto)}
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${masFiltros ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+          {masFiltros ? "Menos filtros" : "Más filtros"}
+          {!masFiltros && extrasActivos > 0 ? (
+            <span className="rounded-full bg-hseq-100 px-1.5 text-xs font-medium text-hseq-800">
+              {extrasActivos}
+            </span>
+          ) : null}
+        </button>
+        {masFiltros ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field etiqueta="Cargo">
+              <select
                 className={inputClass}
-                value={buscarAsig}
-                onChange={(e) => setBuscarAsig(e.target.value)}
-                placeholder="Buscar asignación con asistencia"
+                value={valores.cargo_id}
+                onChange={(e) => setFiltro("cargo_id", e.target.value)}
+              >
+                <option value="">Todos</option>
+                {opciones.cargos.map((c) => (
+                  <option key={c.cargo_id} value={c.cargo_id}>
+                    {c.nombre_cargo}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field etiqueta="Proceso">
+              <select
+                className={inputClass}
+                value={valores.proceso_id}
+                onChange={(e) => setFiltro("proceso_id", e.target.value)}
+              >
+                <option value="">Todos</option>
+                {opciones.procesos.map((p) => (
+                  <option key={p.proceso_id} value={p.proceso_id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field etiqueta="Proyecto">
+              <select
+                className={inputClass}
+                value={valores.proyecto}
+                onChange={(e) => setFiltro("proyecto", e.target.value)}
+              >
+                <option value="">Todos</option>
+                {opciones.proyectos.map((nombre) => (
+                  <option key={nombre} value={nombre}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field etiqueta="Tipo">
+              <select
+                className={inputClass}
+                value={valores.tipo_capacitacion_id}
+                onChange={(e) => setFiltro("tipo_capacitacion_id", e.target.value)}
+              >
+                <option value="">Todos</option>
+                {opciones.tipos.map((t) => (
+                  <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={valores.es_tarea_critica === "1"}
+                onChange={(e) => setFiltro("es_tarea_critica", e.target.checked ? "1" : "")}
+              />
+              Solo tareas críticas
+            </label>
+            <Field etiqueta="Realización desde">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.fecha_realizacion_desde}
+                onChange={(e) => setFiltro("fecha_realizacion_desde", e.target.value)}
               />
             </Field>
-            <ul className="max-h-64 space-y-1 overflow-y-auto">
-              {candidatas.map((a) => (
-                <li key={a.asignacion_id}>
-                  <button
-                    type="button"
-                    className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-hseq-50"
-                    onClick={() => setAsignacionAlta(a)}
-                  >
-                    <span className="font-medium">{a.persona_nombre}</span>
-                    {a.numero_documento ? (
-                      <span className="ml-1 text-slate-500">{a.numero_documento}</span>
-                    ) : null}
-                    <span className="block text-xs text-slate-500">
-                      {a.capacitacion_codigo} — {a.capacitacion_nombre}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {candidatas.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Solo aparecen asignaciones con asistencia ASISTIÓ o TARDE pendientes de aprobar.
-              </p>
-            ) : null}
+            <Field etiqueta="Realización hasta">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.fecha_realizacion_hasta}
+                onChange={(e) => setFiltro("fecha_realizacion_hasta", e.target.value)}
+              />
+            </Field>
+            <Field etiqueta="Vencimiento desde">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.fecha_vencimiento_desde}
+                onChange={(e) => setFiltro("fecha_vencimiento_desde", e.target.value)}
+              />
+            </Field>
+            <Field etiqueta="Vencimiento hasta">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.fecha_vencimiento_hasta}
+                onChange={(e) => setFiltro("fecha_vencimiento_hasta", e.target.value)}
+              />
+            </Field>
           </div>
-        ) : (
-          <FormularioCumplimiento
-            key={editando ? `e-${editando.cumplimiento_id}` : `a-${asignacionAlta?.asignacion_id}`}
-            asignacionId={editando?.asignacion_id ?? asignacionAlta?.asignacion_id ?? 0}
-            sesionId={editando?.sesion_id ?? asignacionAlta?.cumplimiento_sesion_id ?? 0}
-            cumplimientoId={editando?.cumplimiento_id ?? asignacionAlta?.cumplimiento_id}
-            soportes={editando?.soportes ?? []}
-            fechaDefault={
-              (editando?.fecha_realizacion ?? asignacionAlta?.fecha_realizacion ?? "").slice(0, 10)
-            }
-            venceDefault={(editando?.fecha_vencimiento ?? "").slice(0, 10)}
-            horasDefault={
-              editando?.horas_efectivas != null ? String(editando.horas_efectivas) : ""
-            }
-            observacionesDefault={editando?.observaciones ?? ""}
-            notaDefault={editando?.nota_evaluacion != null ? String(editando.nota_evaluacion) : ""}
-            enviando={enviando}
-            modoEdicion={Boolean(editando)}
-            onError={setError}
-            onSoporteEliminado={(soporteId) => {
-              if (editando) {
-                setEditando({
-                  ...editando,
-                  soportes: (editando.soportes ?? []).filter((s) => s.soporte_id !== soporteId),
-                  soportes_count: Math.max(0, (editando.soportes_count ?? 1) - 1),
-                });
-              }
-              void cargar(pagina);
-            }}
-            onCancelar={() => {
-              setAbierto(false);
-              setEditando(null);
-              setAsignacionAlta(null);
-            }}
-            onSubmit={guardar}
+        ) : null}
+      </div>
+
+      <FiltrosActivos chips={chipsActivos} onQuitar={(clave) => setFiltro(clave, clave === "estado_laboral" ? "Activo" : "")} onLimpiar={limpiar} />
+
+      {cargando ? (
+        <ListaCargando mensaje="Cargando cumplimientos…" />
+      ) : (
+        <>
+          <Table
+            columnas={[
+              { clave: "persona", etiqueta: "Trabajador" },
+              { clave: "contexto", etiqueta: "Cargo / proyecto" },
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "real", etiqueta: "Realización" },
+              { clave: "vence", etiqueta: "Vencimiento" },
+              { clave: "estado", etiqueta: "Estado" },
+              { clave: "acciones", etiqueta: "", clase: "w-px whitespace-nowrap" },
+            ]}
+            filas={items.map((item) => [
+              <span key="p" className="flex flex-col">
+                <Link
+                  href={`/personal/${item.persona_id_ext}`}
+                  className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                >
+                  {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
+                </Link>
+                <span className="text-xs text-slate-500">{item.numero_documento ?? "—"}</span>
+              </span>,
+              contextoPersona(item),
+              <span key="c" className="flex flex-col">
+                <span>{item.capacitacion_nombre}</span>
+                <span className="text-xs text-slate-500">{item.capacitacion_codigo}</span>
+              </span>,
+              formatoFecha(item.fecha_realizacion),
+              formatoFecha(item.fecha_vencimiento),
+              <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
+                {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
+              </Badge>,
+              <span key="a" className="flex flex-nowrap gap-1">
+                <Button
+                  type="button"
+                  variante="ghost"
+                  className="px-2"
+                  title="Detalle"
+                  aria-label="Ver detalle"
+                  onClick={() => void verDetalle(item)}
+                >
+                  <Eye className="h-4 w-4" aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  variante="ghost"
+                  className="px-2"
+                  title="Situación del trabajador"
+                  aria-label="Ver situación del trabajador"
+                  onClick={() => void verSituacion(item.persona_id_ext)}
+                >
+                  <UserRound className="h-4 w-4" aria-hidden />
+                </Button>
+              </span>,
+            ])}
+            vacio="No hay obligaciones para los filtros seleccionados."
           />
-        )}
+          <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargarListado(p)} />
+        </>
+      )}
+
+      <Modal
+        abierto={detalle !== null}
+        titulo="Trazabilidad del cumplimiento"
+        onCerrar={() => setDetalle(null)}
+      >
+        {detalle ? (
+          <div className="space-y-4 text-sm">
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <Dato etiqueta="Trabajador" valor={detalle.trabajador.nombre ?? "—"} />
+              <Dato etiqueta="Documento" valor={detalle.trabajador.documento ?? "—"} />
+              <Dato etiqueta="Cargo" valor={detalle.trabajador.cargo ?? "—"} />
+              <Dato etiqueta="Proyecto" valor={detalle.trabajador.proyecto ?? "—"} />
+              <Dato etiqueta="Estado laboral" valor={detalle.trabajador.estado_laboral ?? "—"} />
+              <Dato
+                etiqueta="Capacitación"
+                valor={`${detalle.capacitacion.codigo ?? ""} — ${detalle.capacitacion.nombre ?? ""}`}
+              />
+              <Dato
+                etiqueta="Aplicabilidad"
+                valor={`${detalle.aplicabilidad.aplica ? "Sí (Matriz)" : "Sin regla de matriz"} · ${detalle.aplicabilidad.fuente}`}
+              />
+              <Dato
+                etiqueta="Obligación"
+                valor={`Asignación ${detalle.obligacion.asignacion_id} · ${detalle.obligacion.origen ?? "—"} · ${detalle.obligacion.fuente}`}
+              />
+              <Dato
+                etiqueta="Fecha programada"
+                valor={`${detalle.programacion.fecha_programada ?? "—"} · ${detalle.programacion.fuente}`}
+              />
+              <Dato
+                etiqueta="Fecha ejecutada"
+                valor={`${formatoFecha(detalle.ejecucion.fecha_sesion ?? detalle.ejecucion.fecha_realizacion)} · ${detalle.ejecucion.fuente}`}
+              />
+              <Dato
+                etiqueta="Asistencia"
+                valor={`${etiquetaAsistencia(detalle.asistencia.estado)} · ${detalle.asistencia.fuente}`}
+              />
+              <Dato
+                etiqueta="Evaluación"
+                valor={
+                  detalle.evaluacion.requiere
+                    ? `Nota ${detalle.evaluacion.nota_obtenida ?? "—"} / mínima ${detalle.evaluacion.nota_minima} · ${detalle.evaluacion.fuente}`
+                    : `No requiere · ${detalle.evaluacion.fuente}`
+                }
+              />
+              <Dato etiqueta="Certificado requerido" valor={siNo(detalle.soportes.requiere_certificado)} />
+              <Dato etiqueta="Lista de asistencia requerida" valor={siNo(detalle.soportes.requiere_listado)} />
+              <Dato
+                etiqueta="Vigencia"
+                valor={`${detalle.vigencia.nombre ?? "Sin vencimiento"} · vence ${formatoFecha(detalle.vigencia.fecha_vencimiento)} · ${detalle.vigencia.fuente}`}
+              />
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Estado actual</dt>
+                <dd className="mt-1">
+                  <Badge tono={tonoEstado(detalle.estado_actual)}>
+                    {ETIQUETAS_ESTADO[detalle.estado_actual] ?? detalle.estado_actual}
+                  </Badge>
+                </dd>
+              </div>
+            </dl>
+            <div>
+              <p className="mb-1 text-xs uppercase text-slate-500">Evidencias ({detalle.soportes.fuente})</p>
+              <ListaEvidencias soportes={detalle.soportes.items} />
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </>
+  );
+}
+
+function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase text-slate-500">{etiqueta}</dt>
+      <dd className="mt-1 text-slate-800">{valor}</dd>
+    </div>
   );
 }

@@ -45,6 +45,61 @@ class CumplimientoController extends Controller
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
     }
 
+    public function opcionesConsulta(Request $request): void
+    {
+        $this->success($this->service->opcionesConsulta(), 'Opciones de consulta de cumplimientos');
+    }
+
+    public function consulta(Request $request): void
+    {
+        $personaRaw = $request->query('persona_id');
+        $cargoRaw = $request->query('cargo_id');
+        $procesoRaw = $request->query('proceso_id');
+        $capRaw = $request->query('capacitacion_id');
+        $tipoRaw = $request->query('tipo_capacitacion_id');
+        $critica = $request->query('es_tarea_critica');
+        $estadoLaboral = nullable_trimmed_string($request->query('estado_laboral'));
+        if ($estadoLaboral === null) {
+            $estadoLaboral = 'Activo';
+        }
+        if ($estadoLaboral === 'todos' || $estadoLaboral === 'Todos') {
+            $estadoLaboral = '';
+        }
+
+        $resultado = $this->service->consultar(
+            (int)$request->query('page', 1),
+            (int)$request->query('per_page', 20),
+            [
+                'persona_id' => ($personaRaw !== null && $personaRaw !== '') ? (int)$personaRaw : null,
+                'buscar' => nullable_trimmed_string($request->query('buscar')),
+                'cargo_id' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
+                'proceso_id' => ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+                'proyecto' => nullable_trimmed_string($request->query('proyecto')),
+                'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
+                'tipo_capacitacion_id' => ($tipoRaw !== null && $tipoRaw !== '') ? (int)$tipoRaw : null,
+                'es_tarea_critica' => ($critica === '1' || $critica === 1 || $critica === true || $critica === 'true') ? 1 : null,
+                'estado' => nullable_trimmed_string($request->query('estado')),
+                'estado_laboral' => $estadoLaboral,
+                'fecha_realizacion_desde' => nullable_trimmed_string($request->query('fecha_realizacion_desde')),
+                'fecha_realizacion_hasta' => nullable_trimmed_string($request->query('fecha_realizacion_hasta')),
+                'fecha_vencimiento_desde' => nullable_trimmed_string($request->query('fecha_vencimiento_desde')),
+                'fecha_vencimiento_hasta' => nullable_trimmed_string($request->query('fecha_vencimiento_hasta')),
+            ]
+        );
+
+        $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+    }
+
+    public function consultaDetalle(Request $request, string $id): void
+    {
+        $this->success($this->service->consultarDetalle((int)$id), 'Detalle de cumplimiento');
+    }
+
+    public function consultaTrabajador(Request $request, string $id): void
+    {
+        $this->success($this->service->consultarTrabajador((int)$id), 'Situación de capacitación del trabajador');
+    }
+
     public function previsualizar(Request $request): void
     {
         $sesionId = (int)$request->query('sesion_id', 0);

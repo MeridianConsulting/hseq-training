@@ -16,6 +16,7 @@ use App\Core\Exceptions\HttpException;
 use App\Repositories\DashboardRepository;
 use App\Services\AsignacionService;
 use App\Services\DashboardService;
+use App\Services\MatrizService;
 use App\Services\PersonalService;
 use App\Services\PlanAnualService;
 use App\Services\SesionService;
@@ -102,6 +103,7 @@ $db = Database::getInstance();
 $personalDb = Database::personal();
 $personal = new PersonalService();
 $asignaciones = new AsignacionService();
+$matriz = new MatrizService();
 $planes = new PlanAnualService();
 $sesiones = new SesionService();
 $dashRepo = new DashboardRepository();
@@ -141,6 +143,21 @@ $capId = (int)$db->insert('capacitaciones', [
 ]);
 ok($capId > 0, 'Capacitación de prueba creada');
 
+$proceso = $db->fetch(
+    "SELECT proceso_id FROM procesos
+     WHERE activo = 1
+       AND (nombre LIKE '%Gestión de Proyectos%' OR nombre LIKE '%Gestion de Proyectos%')
+     LIMIT 1"
+);
+ok($proceso !== null, 'Hay proceso Gestión de Proyectos');
+$matriz->crear([
+    'capacitacion_id' => $capId,
+    'cargo_id_ext' => $cargoId,
+    'proceso_id' => (int)$proceso['proceso_id'],
+    'proyecto' => 'HSEQ-ASIS-2030',
+    'obligatoria' => 1,
+], 1);
+
 $asignacionIds = [];
 for ($i = 0; $i < 16; $i++) {
     $creada = $personal->crear([
@@ -150,7 +167,7 @@ for ($i = 0; $i < 16; $i++) {
         'cargo_id' => $cargoId,
         'proyecto' => 'HSEQ-ASIS-2030',
         'fecha_ingreso' => '2026-01-15',
-    ]);
+    ], false);
     $asig = $asignaciones->crear([
         'persona_id_ext' => (int)$creada['persona_id'],
         'capacitacion_id' => $capId,
@@ -278,8 +295,8 @@ ok($cumpAusente === null, 'Ausente no genera cumplimiento');
 
 $ejecutadoDespues = $dashRepo->ejecutado($periodo, 'general');
 ok(
-    $ejecutadoDespues === $ejecutadoAntes + 13,
-    "Dashboard ejecutado +13 sin tocar consultas ({$ejecutadoAntes} -> {$ejecutadoDespues})"
+    $ejecutadoDespues === $ejecutadoAntes,
+    "Asistencia no infla KPI ejecutado ({$ejecutadoAntes} -> {$ejecutadoDespues})"
 );
 
 echo "\n== 5. Idempotencia ==\n";
@@ -421,6 +438,7 @@ esperaRechazo(
 echo "\n== Limpieza ==\n";
 borrarPlanYSesiones($db, $anioPrueba);
 limpiarPersonas($db, $personalDb, $personasT, $contratosT, $docs);
+$db->query('DELETE FROM matriz_aplicabilidad WHERE capacitacion_id = ?', [$capId]);
 $refCap = $db->fetch('SELECT asignacion_id FROM asignaciones_capacitacion WHERE capacitacion_id = ? LIMIT 1', [$capId]);
 $refSes = $db->fetch('SELECT sesion_id FROM sesiones_capacitacion WHERE capacitacion_id = ? LIMIT 1', [$capId]);
 if ($refCap === null && $refSes === null) {
