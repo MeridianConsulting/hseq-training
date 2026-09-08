@@ -30,7 +30,8 @@ class AsignacionRepository
         ?int $procesoId = null,
         ?string $proyecto = null,
         ?string $fechaLimiteDesde = null,
-        ?string $fechaLimiteHasta = null
+        ?string $fechaLimiteHasta = null,
+        ?int $cargoId = null
     ): array {
         [$where, $params] = $this->filtros(
             $personaId,
@@ -42,7 +43,8 @@ class AsignacionRepository
             $procesoId,
             $proyecto,
             $fechaLimiteDesde,
-            $fechaLimiteHasta
+            $fechaLimiteHasta,
+            $cargoId
         );
 
         return $this->db->fetchAll(
@@ -63,7 +65,8 @@ class AsignacionRepository
         ?int $procesoId = null,
         ?string $proyecto = null,
         ?string $fechaLimiteDesde = null,
-        ?string $fechaLimiteHasta = null
+        ?string $fechaLimiteHasta = null,
+        ?int $cargoId = null
     ): int {
         [$where, $params] = $this->filtros(
             $personaId,
@@ -75,13 +78,15 @@ class AsignacionRepository
             $procesoId,
             $proyecto,
             $fechaLimiteDesde,
-            $fechaLimiteHasta
+            $fechaLimiteHasta,
+            $cargoId
         );
         $personas = Database::personalTable('personas');
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS total
              FROM asignaciones_capacitacion a
              INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
              LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
              {$where}",
             $params
@@ -144,6 +149,26 @@ class AsignacionRepository
     {
         $fila = $this->db->fetch(
             'SELECT cumplimiento_id FROM cumplimientos_capacitacion WHERE asignacion_id = ? LIMIT 1',
+            [$asignacionId]
+        );
+
+        return $fila !== null;
+    }
+
+    public function tieneParticipacionSesion(int $asignacionId): bool
+    {
+        $fila = $this->db->fetch(
+            'SELECT sesion_participante_id FROM sesion_participantes WHERE asignacion_id = ? LIMIT 1',
+            [$asignacionId]
+        );
+
+        return $fila !== null;
+    }
+
+    public function tienePlanDetalle(int $asignacionId): bool
+    {
+        $fila = $this->db->fetch(
+            'SELECT plan_detalle_asignacion_id FROM plan_detalle_asignaciones WHERE asignacion_id = ? LIMIT 1',
             [$asignacionId]
         );
 
@@ -293,6 +318,7 @@ class AsignacionRepository
     private function selectBase(): string
     {
         $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
 
         return "SELECT a.asignacion_id,
                        a.persona_id_ext,
@@ -320,7 +346,8 @@ class AsignacionRepository
                        COALESCE(per_mat.nombre, per_cap.nombre) AS periodicidad_nombre,
                        mat.obligatoria AS obligatoria,
                        per.numero_documento,
-                       per.nombre_completo_nombres_primero AS persona_nombre
+                       per.nombre_completo_nombres_primero AS persona_nombre,
+                       cg.nombre_cargo AS cargo
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 LEFT JOIN cumplimientos_capacitacion cc ON cc.cumplimiento_id = e.cumplimiento_id
@@ -328,7 +355,8 @@ class AsignacionRepository
                 LEFT JOIN matriz_aplicabilidad mat ON mat.matriz_aplicabilidad_id = a.matriz_aplicabilidad_id
                 LEFT JOIN periodicidades per_mat ON per_mat.periodicidad_id = mat.periodicidad_id
                 LEFT JOIN periodicidades per_cap ON per_cap.periodicidad_id = cap.periodicidad_default_id
-                LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext";
+                LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+                LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext";
     }
 
     /**
@@ -344,7 +372,8 @@ class AsignacionRepository
         ?int $procesoId = null,
         ?string $proyecto = null,
         ?string $fechaLimiteDesde = null,
-        ?string $fechaLimiteHasta = null
+        ?string $fechaLimiteHasta = null,
+        ?int $cargoId = null
     ): array {
         $condiciones = [];
         $params = [];
@@ -357,9 +386,16 @@ class AsignacionRepository
         if ($buscar !== null && $buscar !== '') {
             $condiciones[] = '(per.nombre_completo_nombres_primero LIKE ?
                 OR per.numero_documento LIKE ?
-                OR CAST(a.persona_id_ext AS CHAR) = ?)';
+                OR CAST(a.persona_id_ext AS CHAR) = ?
+                OR cap.codigo LIKE ?
+                OR cap.nombre LIKE ?)';
             $like = '%' . $buscar . '%';
-            array_push($params, $like, $like, $buscar);
+            array_push($params, $like, $like, $buscar, $like, $like);
+        }
+
+        if ($cargoId !== null && $cargoId > 0) {
+            $condiciones[] = 'a.cargo_id_ext = ?';
+            $params[] = $cargoId;
         }
 
         if ($capacitacionId !== null && $capacitacionId > 0) {

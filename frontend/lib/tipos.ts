@@ -364,6 +364,7 @@ export type Asignacion = {
   periodicidad_nombre: string | null;
   obligatoria: boolean | null;
   cargo_id_ext: number | null;
+  cargo?: string | null;
   ambito: "ADMINISTRACION" | "PROYECTO" | null;
   proyecto: string | null;
   estado_calculado: string;

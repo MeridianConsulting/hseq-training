@@ -272,7 +272,7 @@ class MotorAsignacionService
             $origenes = $esp['origenes'];
         }
 
-        $mat = $this->aplicarMatriz($persona, $reglas, $pendientes, $usuarioId);
+        $mat = $this->aplicarMatriz($persona, $reglas, $pendientes, $vencimientos, $usuarioId);
         $creadas += $mat['creadas'];
         $omitidas += $mat['omitidas'];
         foreach ($mat['asignacion_ids'] as $id) {
@@ -381,9 +381,10 @@ class MotorAsignacionService
      * @param array<string,mixed> $persona
      * @param list<array<string,mixed>> $reglas
      * @param array<string,true> $pendientes
+     * @param array<string,string|null> $vencimientos
      * @return array{creadas:int, omitidas:int, asignacion_ids:list<int>, origenes:array<string,int>}
      */
-    private function aplicarMatriz(array $persona, array $reglas, array &$pendientes, ?int $usuarioId): array
+    private function aplicarMatriz(array $persona, array $reglas, array &$pendientes, array $vencimientos, ?int $usuarioId): array
     {
         $personaId = (int)($persona['persona_id'] ?? 0);
         $cargoId = (int)($persona['cargo_id'] ?? 0);
@@ -407,6 +408,10 @@ class MotorAsignacionService
             $clave = $personaId . ':' . $capacitacionId;
 
             if (isset($pendientes[$clave])) {
+                $omitidas++;
+                continue;
+            }
+            if (array_key_exists($clave, $vencimientos) && $this->reinduccionSigueVigente($vencimientos[$clave] ?? null, $hoy)) {
                 $omitidas++;
                 continue;
             }

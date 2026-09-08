@@ -140,6 +140,11 @@ export function FormularioAsignacionMasiva({
                 <span>
                   {persona.nombre_completo}
                   <span className="ml-2 text-xs text-slate-500">{persona.numero_documento}</span>
+                  <span className="block text-xs text-slate-500">
+                    {persona.cargo ?? "Sin cargo"}
+                    {persona.proyecto ? ` · ${persona.proyecto}` : ""}
+                    {` · ${persona.estado}`}
+                  </span>
                 </span>
               </label>
             );

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   FormularioAsignacion,
   type DatosAsignacion,
@@ -14,7 +14,7 @@ import {
   FormularioCumplimiento,
   type DatosCumplimiento,
 } from "@/app/(app)/cumplimientos/formulario";
-import { ListaEvidencias, subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
+import { subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
@@ -29,15 +29,14 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { BadgeCheck, CalendarPlus, Pencil, Trash2, Users } from "lucide-react";
+import { BadgeCheck, CalendarPlus, ChevronDown, Eye, Pencil, RefreshCw, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import type {
   Asignacion,
   Capacitacion,
+  CargoCorporativo,
   Cumplimiento,
-  IntentoSesion,
   OpcionesAlertas,
-  ProximasAsignaciones,
 } from "@/lib/tipos";
 
 const FILTROS_DEFAULT = {
@@ -47,14 +46,9 @@ const FILTROS_DEFAULT = {
   origen: "",
   proceso_id: "",
   proyecto: "",
+  cargo_id: "",
   fecha_limite_desde: "",
   fecha_limite_hasta: "",
-  alerta: "",
-};
-
-const ETIQUETAS_ALERTA: Record<string, string> = {
-  proximas: "Próximas a vencer",
-  vencidas: "Vencidas",
 };
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -71,26 +65,6 @@ function tonoEstado(estado: string) {
   if (estado === "PENDIENTE_PROXIMA_A_VENCER" || estado === "PROXIMA_A_VENCER") return "aviso" as const;
   if (estado === "COMPLETADA") return "ok" as const;
   return "neutral" as const;
-}
-
-const ETIQUETAS_VIGENCIA: Record<string, string> = {
-  PENDIENTE: "Pendiente",
-  COMPLETADA: "Completado",
-  PROXIMA_A_VENCER: "Próximo a vencer",
-  VENCIDA: "Vencido",
-};
-
-function etiquetaVigencia(c: Cumplimiento): string {
-  const clave = c.estado_vigencia ?? (c.resultado === "APROBADO" ? "COMPLETADA" : "PENDIENTE");
-  return ETIQUETAS_VIGENCIA[clave] ?? clave;
-}
-
-function tonoVigencia(c: Cumplimiento): "alto" | "aviso" | "ok" | "neutral" {
-  const clave = c.estado_vigencia ?? "";
-  if (clave === "VENCIDA") return "alto";
-  if (clave === "PROXIMA_A_VENCER") return "aviso";
-  if (clave === "COMPLETADA") return "ok";
-  return "neutral";
 }
 
 function formatoFecha(valor: string | null): string {
@@ -112,55 +86,27 @@ function etiquetaCierreCumplimiento(resultado: string | null): string {
   return resultado === "APROBADO" ? "Completado" : "Pendiente";
 }
 
-function etiquetaNotaCumplimiento(c: Cumplimiento): string {
-  if (c.nota_evaluacion == null) return "—";
-  const n = c.nota_evaluacion.toFixed(2).replace(".", ",");
-  if (c.evaluacion_aprobada === true) return `${n} · Aprobado`;
-  if (c.evaluacion_aprobada === false) return `${n} · No aprobado`;
-  return n;
-}
-
-function etiquetaAsistencia(estado: string): string {
-  if (estado === "ASISTIO") return "Asistió";
-  if (estado === "TARDE") return "Llegó tarde";
-  if (estado === "AUSENTE") return "Ausente";
-  if (estado === "CONVOCADO") return "Pendiente";
-  return estado;
-}
-
-type PersonaHistorial = {
-  id: number;
-  nombre: string;
-  documento: string | null;
-};
-
-function leerHistorialUrl(): PersonaHistorial | null {
-  if (typeof window === "undefined") {
-    return null;
+function contextoPersona(item: Asignacion): string {
+  const cargo = (item.cargo ?? "").trim();
+  const proyecto = (item.proyecto ?? "").trim();
+  if (cargo && proyecto) {
+    return `${cargo} · ${proyecto}`;
   }
-
-  const params = new URLSearchParams(window.location.search);
-  const id = Number(params.get("persona_id") || 0);
-  if (!Number.isFinite(id) || id < 1) {
-    return null;
-  }
-
-  const nombre = (params.get("nombre") ?? "").trim();
-  const documento = (params.get("documento") ?? "").trim();
-
-  return {
-    id,
-    nombre: nombre || `Persona ${id}`,
-    documento: documento || null,
-  };
+  return cargo || proyecto || "—";
 }
 
-function rutaHistorial(persona: PersonaHistorial): string {
-  return withQuery("/asignaciones", {
-    persona_id: persona.id,
-    nombre: persona.nombre,
-    documento: persona.documento,
-  });
+function textoObligatoria(valor: boolean | null): string {
+  if (valor === null) {
+    return "—";
+  }
+  return valor ? "Sí" : "No";
+}
+
+function textoVencimiento(item: Asignacion): string {
+  if (item.fecha_vencimiento) {
+    return formatoFecha(item.fecha_vencimiento);
+  }
+  return item.tiene_cumplimiento ? "Sin vencimiento" : "—";
 }
 
 export default function AsignacionesPage() {
@@ -171,40 +117,63 @@ export default function AsignacionesPage() {
   );
 }
 
+type OmitidaMasiva = {
+  persona_id_ext?: number;
+  capacitacion_id?: number;
+  motivo: string;
+  mensaje?: string;
+};
+
 type ResultadoMasivo = {
   seleccionados: number;
   creadas: number;
   omitidas: number;
   errores: number;
+  omitidas_detalle?: OmitidaMasiva[];
+};
+
+type ResultadoVarias = {
+  seleccionados: number;
+  creadas: number;
+  omitidas: number;
+  items: Asignacion[];
+  omitidas_detalle?: OmitidaMasiva[];
 };
 
 function Contenido() {
   const { puede } = useAuth();
-  const router = useRouter();
   const { valores, setFiltro, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
     keysDebounce: ["buscar"],
   });
   const [items, setItems] = useState<Asignacion[]>([]);
-  const [proximas, setProximas] = useState<ProximasAsignaciones>({ total: 0, items: [] });
   const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
   const [procesos, setProcesos] = useState<{ proceso_id: number; nombre: string }[]>([]);
   const [proyectos, setProyectos] = useState<string[]>([]);
+  const [cargos, setCargos] = useState<CargoCorporativo[]>([]);
+  const [detalle, setDetalle] = useState<Asignacion | null>(null);
+  const [resultadoMasivo, setResultadoMasivo] = useState<ResultadoMasivo | null>(null);
+  const [generando, setGenerando] = useState(false);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
   const [cargandoListado, setCargandoListado] = useState(true);
-  const [personaHistorial, setPersonaHistorial] = useState<PersonaHistorial | null>(null);
-  const [historialListo, setHistorialListo] = useState(false);
-  const [intentosSesion, setIntentosSesion] = useState<IntentoSesion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [masivoAbierto, setMasivoAbierto] = useState(false);
   const [editando, setEditando] = useState<Asignacion | null>(null);
-  const [cumplimientosPersona, setCumplimientosPersona] = useState<Cumplimiento[]>([]);
   const [cumpAbierto, setCumpAbierto] = useState(false);
   const [cumpAsignacion, setCumpAsignacion] = useState<Asignacion | null>(null);
   const [enviandoCump, setEnviandoCump] = useState(false);
   const [evidenciaFaltante, setEvidenciaFaltante] = useState(false);
+  const [masFiltros, setMasFiltros] = useState(() =>
+    Boolean(
+      valores.proceso_id ||
+        valores.cargo_id ||
+        valores.proyecto ||
+        valores.fecha_limite_desde ||
+        valores.fecha_limite_hasta,
+    ),
+  );
   const [faltantes, setFaltantes] = useState<Cumplimiento[]>([]);
 
   async function cargarListado(paginaActual = 1) {
@@ -214,8 +183,7 @@ function Contenido() {
         withQuery("/api/asignaciones", {
           page: paginaActual,
           per_page: 15,
-          buscar: personaHistorial ? undefined : valores.buscar.trim() || undefined,
-          persona_id: personaHistorial?.id,
+          buscar: valores.buscar.trim() || undefined,
           capacitacion_id: valores.capacitacion_id || undefined,
           estado: valores.estado || undefined,
           origen: valores.origen || undefined,
@@ -223,7 +191,7 @@ function Contenido() {
           proyecto: valores.proyecto || undefined,
           fecha_limite_desde: valores.fecha_limite_desde || undefined,
           fecha_limite_hasta: valores.fecha_limite_hasta || undefined,
-          alerta: valores.alerta || undefined,
+          cargo_id: valores.cargo_id || undefined,
         }),
       );
 
@@ -241,27 +209,12 @@ function Contenido() {
     }
   }
 
-  async function cargarProximas() {
-    const respuesta = await apiGet<ProximasAsignaciones>("/api/asignaciones/proximas");
-    if (respuesta.success && respuesta.data) {
-      setProximas(respuesta.data);
-    }
-  }
-
   async function refrescar(paginaActual = pagina) {
-    await Promise.all([cargarListado(paginaActual), cargarProximas()]);
+    await cargarListado(paginaActual);
   }
-
-  useEffect(() => {
-    setPersonaHistorial(leerHistorialUrl());
-    setHistorialListo(true);
-  }, []);
 
   useDebouncedCallback(
     () => {
-      if (!historialListo) {
-        return;
-      }
       void cargarListado(1);
     },
     [
@@ -273,39 +226,9 @@ function Contenido() {
       valores.proyecto,
       valores.fecha_limite_desde,
       valores.fecha_limite_hasta,
-      valores.alerta,
-      personaHistorial,
-      historialListo,
+      valores.cargo_id,
     ],
   );
-
-  useEffect(() => {
-    if (!personaHistorial) {
-      setIntentosSesion([]);
-      setCumplimientosPersona([]);
-      return;
-    }
-    const abortado = { actual: false };
-    void (async () => {
-      const respuesta = await apiGet<{ items: IntentoSesion[] }>(
-        withQuery("/api/sesiones/historial", { persona_id: personaHistorial.id }),
-      );
-      if (abortado.actual) {
-        return;
-      }
-      setIntentosSesion(respuesta.success && respuesta.data ? respuesta.data.items : []);
-      const cump = await apiGet<ListaPaginada<Cumplimiento>>(
-        withQuery("/api/cumplimientos", { persona_id: personaHistorial.id, per_page: 50 }),
-      );
-      if (abortado.actual) {
-        return;
-      }
-      setCumplimientosPersona(cump.success && cump.data ? cump.data.items : []);
-    })();
-    return () => {
-      abortado.actual = true;
-    };
-  }, [personaHistorial]);
 
   useEffect(() => {
     if (!evidenciaFaltante) {
@@ -318,7 +241,6 @@ function Contenido() {
         withQuery("/api/cumplimientos", {
           evidencia_faltante: 1,
           per_page: 50,
-          persona_id: personaHistorial?.id,
         }),
       );
       if (abortado.actual) {
@@ -334,12 +256,11 @@ function Contenido() {
     return () => {
       abortado.actual = true;
     };
-  }, [evidenciaFaltante, personaHistorial]);
+  }, [evidenciaFaltante]);
 
   useEffect(() => {
-    void cargarProximas();
     void (async () => {
-      const [caps, procs, opts] = await Promise.all([
+      const [caps, procs, opts, rCargos] = await Promise.all([
         apiGet<ListaPaginada<Capacitacion>>(
           withQuery("/api/capacitaciones", { per_page: 100, estado: "ACTIVA" }),
         ),
@@ -347,6 +268,7 @@ function Contenido() {
           "/api/catalogs/procesos?activos=1",
         ),
         apiGet<OpcionesAlertas>("/api/alertas/opciones"),
+        apiGet<CargoCorporativo[]>("/api/personal/cargos"),
       ]);
       setCapacitaciones(caps.data?.items ?? []);
       setProcesos(
@@ -356,12 +278,15 @@ function Contenido() {
         })),
       );
       setProyectos(opts.data?.proyectos ?? []);
+      if (rCargos.success && rCargos.data) {
+        setCargos(rCargos.data);
+      }
     })();
   }, []);
 
   const chipsActivos = useMemo(() => {
     const chips: ChipFiltro[] = [];
-    if (valores.buscar.trim() && !personaHistorial) {
+    if (valores.buscar.trim()) {
       chips.push({ clave: "buscar", etiqueta: "Trabajador", valor: valores.buscar.trim() });
     }
     if (valores.capacitacion_id) {
@@ -397,6 +322,14 @@ function Contenido() {
     if (valores.proyecto) {
       chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
     }
+    if (valores.cargo_id) {
+      const cargo = cargos.find((c) => String(c.cargo_id) === valores.cargo_id);
+      chips.push({
+        clave: "cargo_id",
+        etiqueta: "Cargo",
+        valor: cargo?.nombre_cargo ?? valores.cargo_id,
+      });
+    }
     if (valores.fecha_limite_desde) {
       chips.push({
         clave: "fecha_limite_desde",
@@ -411,13 +344,6 @@ function Contenido() {
         valor: formatoFecha(valores.fecha_limite_hasta),
       });
     }
-    if (valores.alerta) {
-      chips.push({
-        clave: "alerta",
-        etiqueta: "Alerta",
-        valor: ETIQUETAS_ALERTA[valores.alerta] ?? valores.alerta,
-      });
-    }
     if (evidenciaFaltante) {
       chips.push({
         clave: "evidencia_faltante",
@@ -426,7 +352,16 @@ function Contenido() {
       });
     }
     return chips;
-  }, [valores, capacitaciones, procesos, personaHistorial, evidenciaFaltante]);
+  }, [valores, capacitaciones, procesos, cargos, evidenciaFaltante]);
+
+  const extrasActivos = [
+    valores.proceso_id,
+    valores.cargo_id,
+    valores.proyecto,
+    valores.fecha_limite_desde,
+    valores.fecha_limite_hasta,
+    evidenciaFaltante ? "1" : "",
+  ].filter(Boolean).length;
 
   function quitarChip(clave: string) {
     if (clave === "evidencia_faltante") {
@@ -454,21 +389,39 @@ function Contenido() {
       }
       setMensaje(respuesta.message);
     } else {
-      if (!datos.persona_id_ext || !datos.capacitacion_id) {
-        setError("Seleccione trabajador y capacitación.");
+      if (!datos.persona_id_ext || datos.capacitacion_ids.length < 1) {
+        setError("Seleccione trabajador y al menos una capacitación aplicable.");
         return;
       }
-      const respuesta = await apiPost<Asignacion>("/api/asignaciones", {
-        persona_id_ext: Number(datos.persona_id_ext),
-        capacitacion_id: Number(datos.capacitacion_id),
-        fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
-        fecha_asignacion: datos.fecha_asignacion || undefined,
-      });
+      const ids = datos.capacitacion_ids.map(Number);
+      const respuesta = ids.length === 1
+        ? await apiPost<Asignacion>("/api/asignaciones", {
+            persona_id_ext: Number(datos.persona_id_ext),
+            capacitacion_id: ids[0],
+            fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
+            fecha_asignacion: datos.fecha_asignacion || undefined,
+          })
+        : await apiPost<ResultadoVarias>("/api/asignaciones", {
+            persona_id_ext: Number(datos.persona_id_ext),
+            capacitacion_ids: ids,
+            fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
+            fecha_asignacion: datos.fecha_asignacion || undefined,
+          });
       if (!respuesta.success) {
-        setError(respuesta.message || "No se pudo asignar la capacitación.");
+        setError(respuesta.message || "No fue posible crear la asignación.");
         return;
       }
       setMensaje(respuesta.message);
+      const lote = respuesta.data as ResultadoVarias | Asignacion | undefined;
+      if (lote && "omitidas_detalle" in lote && (lote.omitidas_detalle?.length ?? 0) > 0) {
+        const extra = lote.omitidas_detalle
+          ?.map((o) => o.mensaje || o.motivo)
+          .filter(Boolean)
+          .join(" ");
+        if (extra) {
+          setError(extra);
+        }
+      }
     }
 
     setAbierto(false);
@@ -500,20 +453,53 @@ function Contenido() {
 
     setMensaje(respuesta.message);
     setError(null);
-    setMasivoAbierto(false);
+    setResultadoMasivo(respuesta.data ?? null);
     await refrescar(1);
   }
 
-  function sesionDeCumplimiento(item: Asignacion): number {
-    if (item.cumplimiento_sesion_id && item.cumplimiento_sesion_id > 0) {
-      return item.cumplimiento_sesion_id;
+  async function generarAutomaticas() {
+    if (
+      !confirm(
+        "¿Generar las asignaciones automáticas pendientes según la matriz para los trabajadores activos?",
+      )
+    ) {
+      return;
     }
-    const intento = intentosSesion.find(
-      (i) =>
-        i.asignacion_id === item.asignacion_id &&
-        (i.estado_asistencia === "ASISTIO" || i.estado_asistencia === "TARDE"),
+    setGenerando(true);
+    const respuesta = await apiPost<{ creadas: number; omitidas: number }>(
+      "/api/asignaciones/generar-automaticas",
+      {},
     );
-    return intento?.sesion_id ?? 0;
+    setGenerando(false);
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible generar las asignaciones automáticas.");
+      return;
+    }
+    setMensaje(respuesta.message);
+    setError(null);
+    await refrescar(1);
+  }
+
+  function etiquetaOmitida(item: OmitidaMasiva): string {
+    if (item.mensaje) {
+      return item.mensaje;
+    }
+    if (item.motivo === "no_aplicable") {
+      return "No aplicable según matriz";
+    }
+    if (item.motivo === "duplicado") {
+      return "Ya tiene esta capacitación asignada";
+    }
+    if (item.motivo === "inactivo") {
+      return "Trabajador inactivo";
+    }
+    return item.motivo;
+  }
+
+  function sesionDeCumplimiento(item: Asignacion): number {
+    return item.cumplimiento_sesion_id && item.cumplimiento_sesion_id > 0
+      ? item.cumplimiento_sesion_id
+      : 0;
   }
 
   async function guardarCumplimiento(evento: FormEvent, datos: DatosCumplimiento) {
@@ -560,12 +546,6 @@ function Contenido() {
     setCumpAbierto(false);
     setCumpAsignacion(null);
     await refrescar(pagina);
-    if (personaHistorial) {
-      const cump = await apiGet<ListaPaginada<Cumplimiento>>(
-        withQuery("/api/cumplimientos", { persona_id: personaHistorial.id, per_page: 50 }),
-      );
-      setCumplimientosPersona(cump.success && cump.data ? cump.data.items : []);
-    }
   }
 
   async function eliminar(item: Asignacion) {
@@ -581,43 +561,39 @@ function Contenido() {
     await refrescar();
   }
 
-  function verHistorial(item: Asignacion) {
-    const filtro: PersonaHistorial = {
-      id: item.persona_id_ext,
-      nombre: item.persona_nombre ?? `Persona ${item.persona_id_ext}`,
-      documento: item.numero_documento,
-    };
-    setPersonaHistorial(filtro);
-    setFiltro("buscar", "");
-    router.replace(rutaHistorial(filtro));
-  }
-
-  function quitarFiltroHistorial() {
-    setPersonaHistorial(null);
-    if (typeof window === "undefined") {
-      router.replace("/asignaciones");
+  async function verDetalle(item: Asignacion) {
+    const respuesta = await apiGet<Asignacion>(`/api/asignaciones/${item.asignacion_id}`);
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No fue posible consultar la asignación.");
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    params.delete("persona_id");
-    params.delete("nombre");
-    params.delete("documento");
-    const cadena = params.toString();
-    router.replace(cadena ? `/asignaciones?${cadena}` : "/asignaciones");
+    setDetalle(respuesta.data);
   }
 
   return (
     <>
       <PageHeader
         titulo="Asignaciones"
-        descripcion="Asigne capacitaciones a trabajadores y consulte el plazo de cumplimiento. La alerta de 10 días se calcula sola."
+        descripcion="Defina qué capacitaciones debe cumplir cada trabajador según la matriz de aplicabilidad."
         acciones={
           puede("asignaciones.crear") ? (
             <span className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variante="secondary"
-                onClick={() => setMasivoAbierto(true)}
+                disabled={generando}
+                onClick={() => void generarAutomaticas()}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                {generando ? "Generando…" : "Generar automáticas"}
+              </Button>
+              <Button
+                type="button"
+                variante="secondary"
+                onClick={() => {
+                  setResultadoMasivo(null);
+                  setMasivoAbierto(true);
+                }}
               >
                 <Users className="h-4 w-4" aria-hidden />
                 Asignación masiva
@@ -640,125 +616,13 @@ function Contenido() {
       {error ? <Alert tono="error">{error}</Alert> : null}
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
 
-      {personaHistorial ? (
-        <Alert tono="aviso">
-          Historial de {personaHistorial.nombre}
-          {personaHistorial.documento ? ` · ${personaHistorial.documento}` : ""}.{" "}
-          <button
-            type="button"
-            className="font-medium underline"
-            onClick={quitarFiltroHistorial}
-          >
-            Quitar filtro
-          </button>
-        </Alert>
-      ) : null}
-
-      {personaHistorial && cumplimientosPersona.length > 0 ? (
-        <Card className="mb-6">
-          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Cumplimientos</h2>
-          <Table
-            columnas={[
-              { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "real", etiqueta: "Realización" },
-              { clave: "res", etiqueta: "Resultado" },
-              { clave: "horas", etiqueta: "Horas" },
-              { clave: "nota", etiqueta: "Nota" },
-              { clave: "vence", etiqueta: "Vencimiento" },
-              { clave: "cert", etiqueta: "Requiere certificado" },
-              { clave: "estado", etiqueta: "Estado" },
-              { clave: "evid", etiqueta: "Evidencia" },
-            ]}
-            filas={cumplimientosPersona.map((c) => [
-              `${c.capacitacion_codigo ?? ""} — ${c.capacitacion_nombre ?? ""}`,
-              formatoFecha(c.fecha_realizacion),
-              c.resultado === "APROBADO" ? "Aprobado" : (c.resultado ?? "—"),
-              c.horas_efectivas ?? "—",
-              etiquetaNotaCumplimiento(c),
-              c.fecha_vencimiento ? formatoFecha(c.fecha_vencimiento) : "Sin vencimiento",
-              c.requiere_certificado ? "Sí" : "No",
-              <Badge key={`vig-${c.cumplimiento_id}`} tono={tonoVigencia(c)}>
-                {etiquetaVigencia(c)}
-              </Badge>,
-              <ListaEvidencias key={`ev-${c.cumplimiento_id}`} soportes={c.soportes ?? []} onError={setError} />,
-            ])}
-          />
-        </Card>
-      ) : null}
-
-      {personaHistorial && intentosSesion.length > 0 ? (
-        <Card className="mb-6">
-          <h2 className="mb-3 text-sm font-semibold text-hseq-900">Intentos de sesión</h2>
-          <Table
-            columnas={[
-              { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "fecha", etiqueta: "Sesión" },
-              { clave: "estado", etiqueta: "Asistencia" },
-              { clave: "motivo", etiqueta: "Razón" },
-            ]}
-            filas={intentosSesion.map((intento) => [
-              `${intento.capacitacion_codigo} — ${intento.capacitacion_nombre}`,
-              formatoFecha(intento.fecha),
-              etiquetaAsistencia(intento.estado_asistencia),
-              intento.motivo_ausencia ?? "—",
-            ])}
-          />
-        </Card>
-      ) : null}
-
-      <Card className="mb-6">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-hseq-900">Próximas a vencer</h2>
-          <p className="text-sm text-slate-600">
-            Capacitaciones próximas a vencer:{" "}
-            <span className="font-semibold text-hseq-900">{proximas.total}</span>
-          </p>
-        </div>
-        {proximas.total === 0 ? (
-          <p className="text-sm text-slate-500">
-            No hay capacitaciones próximas a vencer en los próximos 10 días.
-          </p>
-        ) : (
-          <Table
-            columnas={[
-              { clave: "persona", etiqueta: "Trabajador" },
-              { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "fecha", etiqueta: "Fecha límite" },
-              { clave: "dias", etiqueta: "Días restantes" },
-            ]}
-            filas={proximas.items.map((item) => [
-              <span key="p">
-                {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
-                {item.numero_documento ? (
-                  <span className="ml-1 text-xs text-slate-500">{item.numero_documento}</span>
-                ) : null}
-              </span>,
-              <span key="c">
-                {item.capacitacion_nombre}
-                <span className="ml-1 text-xs text-slate-500">{item.capacitacion_codigo}</span>
-              </span>,
-              formatoFecha(item.fecha_limite_cumplimiento),
-              <Badge key="d" tono="aviso">
-                {item.etiqueta_dias ?? "Próxima a vencer"}
-              </Badge>,
-            ])}
-          />
-        )}
-      </Card>
-
       <Filters>
         <Field etiqueta="Trabajador">
           <input
             className={inputClass}
-            value={personaHistorial ? "" : valores.buscar}
-            onChange={(e) => {
-              if (personaHistorial !== null) {
-                quitarFiltroHistorial();
-              }
-              setFiltro("buscar", e.target.value);
-            }}
-            placeholder="Nombre o documento"
-            disabled={personaHistorial !== null}
+            value={valores.buscar}
+            onChange={(e) => setFiltro("buscar", e.target.value)}
+            placeholder="Nombre, documento o capacitación"
           />
         </Field>
         <Field etiqueta="Capacitación">
@@ -773,19 +637,6 @@ function Contenido() {
                 {cap.codigo} — {cap.nombre}
               </option>
             ))}
-          </select>
-        </Field>
-        <Field etiqueta="Origen">
-          <select
-            className={inputClass}
-            value={valores.origen}
-            onChange={(e) => setFiltro("origen", e.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="AUTOMATICA">Automática</option>
-            <option value="MANUAL">Manual</option>
-            <option value="INDUCCION">Inducción</option>
-            <option value="REINDUCCION">Reinducción</option>
           </select>
         </Field>
         <Field etiqueta="Estado">
@@ -803,70 +654,110 @@ function Contenido() {
             <option value="VENCIDA">Vigencia vencida</option>
           </select>
         </Field>
-        <Field etiqueta="Proceso">
+        <Field etiqueta="Origen">
           <select
             className={inputClass}
-            value={valores.proceso_id}
-            onChange={(e) => setFiltro("proceso_id", e.target.value)}
+            value={valores.origen}
+            onChange={(e) => setFiltro("origen", e.target.value)}
           >
             <option value="">Todos</option>
-            {procesos.map((p) => (
-              <option key={p.proceso_id} value={p.proceso_id}>
-                {p.nombre}
-              </option>
-            ))}
+            <option value="AUTOMATICA">Automática</option>
+            <option value="MANUAL">Manual</option>
+            <option value="INDUCCION">Inducción</option>
+            <option value="REINDUCCION">Reinducción</option>
           </select>
         </Field>
-        <Field etiqueta="Proyecto">
-          <select
-            className={inputClass}
-            value={valores.proyecto}
-            onChange={(e) => setFiltro("proyecto", e.target.value)}
-          >
-            <option value="">Todos</option>
-            {proyectos.map((nombre) => (
-              <option key={nombre} value={nombre}>
-                {nombre}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field etiqueta="Fecha límite desde">
-          <input
-            type="date"
-            className={inputClass}
-            value={valores.fecha_limite_desde}
-            onChange={(e) => setFiltro("fecha_limite_desde", e.target.value)}
-          />
-        </Field>
-        <Field etiqueta="Fecha límite hasta">
-          <input
-            type="date"
-            className={inputClass}
-            value={valores.fecha_limite_hasta}
-            onChange={(e) => setFiltro("fecha_limite_hasta", e.target.value)}
-          />
-        </Field>
-        <Field etiqueta="Alerta">
-          <select
-            className={inputClass}
-            value={valores.alerta}
-            onChange={(e) => setFiltro("alerta", e.target.value)}
-          >
-            <option value="">Todas</option>
-            <option value="proximas">Próximas a vencer</option>
-            <option value="vencidas">Vencidas</option>
-          </select>
-        </Field>
-        <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={evidenciaFaltante}
-            onChange={(e) => setEvidenciaFaltante(e.target.checked)}
-          />
-          Ver cumplimientos sin soporte
-        </label>
       </Filters>
+
+      <div className="mb-4">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-hseq-700 hover:text-hseq-800"
+          aria-expanded={masFiltros}
+          onClick={() => setMasFiltros((abierto) => !abierto)}
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${masFiltros ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+          {masFiltros ? "Menos filtros" : "Más filtros"}
+          {!masFiltros && extrasActivos > 0 ? (
+            <span className="rounded-full bg-hseq-100 px-1.5 text-xs font-medium text-hseq-800">
+              {extrasActivos}
+            </span>
+          ) : null}
+        </button>
+        {masFiltros ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field etiqueta="Proceso">
+                <select
+                  className={inputClass}
+                  value={valores.proceso_id}
+                  onChange={(e) => setFiltro("proceso_id", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {procesos.map((p) => (
+                    <option key={p.proceso_id} value={p.proceso_id}>
+                      {p.nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field etiqueta="Cargo">
+                <select
+                  className={inputClass}
+                  value={valores.cargo_id}
+                  onChange={(e) => setFiltro("cargo_id", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {cargos.map((c) => (
+                    <option key={c.cargo_id} value={c.cargo_id}>
+                      {c.nombre_cargo}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field etiqueta="Proyecto">
+                <select
+                  className={inputClass}
+                  value={valores.proyecto}
+                  onChange={(e) => setFiltro("proyecto", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {proyectos.map((nombre) => (
+                    <option key={nombre} value={nombre}>
+                      {nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field etiqueta="Fecha límite desde">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={valores.fecha_limite_desde}
+                  onChange={(e) => setFiltro("fecha_limite_desde", e.target.value)}
+                />
+              </Field>
+              <Field etiqueta="Fecha límite hasta">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={valores.fecha_limite_hasta}
+                  onChange={(e) => setFiltro("fecha_limite_hasta", e.target.value)}
+                />
+              </Field>
+              <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={evidenciaFaltante}
+                  onChange={(e) => setEvidenciaFaltante(e.target.checked)}
+                />
+                Ver cumplimientos sin soporte
+              </label>
+          </div>
+        ) : null}
+      </div>
 
       <FiltrosActivos chips={chipsActivos} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
 
@@ -905,86 +796,85 @@ function Contenido() {
         <>
           <Table
             columnas={[
-              { clave: "documento", etiqueta: "Documento" },
               { clave: "persona", etiqueta: "Trabajador" },
               { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "origen", etiqueta: "Origen" },
-              { clave: "periodicidad", etiqueta: "Periodicidad" },
-              { clave: "obligatoria", etiqueta: "Obligatoria" },
+              { clave: "contexto", etiqueta: "Cargo / proyecto" },
               { clave: "limite", etiqueta: "Fecha límite" },
-              { clave: "realizacion", etiqueta: "Realización" },
-              { clave: "resultado", etiqueta: "Resultado" },
-              { clave: "horas", etiqueta: "Horas" },
-              { clave: "vence", etiqueta: "Vencimiento" },
               { clave: "estado", etiqueta: "Estado" },
-              { clave: "dias", etiqueta: "Días" },
-              { clave: "acciones", etiqueta: "" },
+              { clave: "acciones", etiqueta: "", clase: "w-px whitespace-nowrap" },
             ]}
             filas={items.map((item) => [
-              item.numero_documento ?? "—",
-              <button
-                key="p"
-                type="button"
-                className="text-left font-medium text-hseq-800 underline-offset-2 hover:underline"
-                onClick={() => verHistorial(item)}
-              >
-                {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
-              </button>,
-              `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`,
-              etiquetaOrigen(item.origen),
-              item.periodicidad_nombre ?? "—",
-              item.obligatoria === null ? "—" : item.obligatoria ? "Sí" : "No",
+              <span key="p" className="flex flex-col">
+                <Link
+                  href={`/personal/${item.persona_id_ext}`}
+                  className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                >
+                  {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
+                </Link>
+                <span className="text-xs text-slate-500">{item.numero_documento ?? "—"}</span>
+              </span>,
+              <span key="c" className="flex flex-col">
+                <span>{item.capacitacion_nombre}</span>
+                <span className="text-xs text-slate-500">{item.capacitacion_codigo}</span>
+              </span>,
+              contextoPersona(item),
               formatoFecha(item.fecha_limite_cumplimiento),
-              formatoFecha(item.fecha_realizacion),
-              item.cumplimiento_resultado === "APROBADO"
-                ? "Aprobado"
-                : item.cumplimiento_resultado ?? "—",
-              item.horas_efectivas ?? "—",
-              item.fecha_vencimiento
-                ? formatoFecha(item.fecha_vencimiento)
-                : item.tiene_cumplimiento
-                  ? "Sin vencimiento"
-                  : "—",
               <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
                 {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
               </Badge>,
-              item.estado_calculado === "PENDIENTE_PROXIMA_A_VENCER" ||
-              item.estado_calculado === "PENDIENTE"
-                ? item.etiqueta_dias ?? "—"
-                : "—",
-              <span key="a" className="flex flex-wrap gap-2">
+              <span key="a" className="flex flex-nowrap gap-1">
+                <Button
+                  type="button"
+                  variante="ghost"
+                  className="px-2"
+                  title="Detalle"
+                  aria-label="Ver detalle"
+                  onClick={() => void verDetalle(item)}
+                >
+                  <Eye className="h-4 w-4" aria-hidden />
+                </Button>
                 {puede("cumplimientos.crear") &&
                 item.cumplimiento_resultado !== "APROBADO" &&
                 sesionDeCumplimiento(item) > 0 ? (
                   <Button
                     type="button"
                     variante="ghost"
+                    className="px-2"
+                    title="Registrar cumplimiento"
+                    aria-label="Registrar cumplimiento"
                     onClick={() => {
                       setCumpAsignacion(item);
                       setCumpAbierto(true);
                     }}
                   >
                     <BadgeCheck className="h-4 w-4" aria-hidden />
-                    Cumplimiento
                   </Button>
                 ) : null}
                 {puede("asignaciones.editar") ? (
                   <Button
                     type="button"
                     variante="ghost"
+                    className="px-2"
+                    title="Actualizar fecha"
+                    aria-label="Actualizar fecha límite"
                     onClick={() => {
                       setEditando(item);
                       setAbierto(true);
                     }}
                   >
                     <Pencil className="h-4 w-4" aria-hidden />
-                    Fecha
                   </Button>
                 ) : null}
                 {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
-                  <Button type="button" variante="danger" onClick={() => void eliminar(item)}>
+                  <Button
+                    type="button"
+                    variante="danger"
+                    className="px-2"
+                    title="Eliminar"
+                    aria-label="Eliminar asignación"
+                    onClick={() => void eliminar(item)}
+                  >
                     <Trash2 className="h-4 w-4" aria-hidden />
-                    Eliminar
                   </Button>
                 ) : null}
               </span>,
@@ -1027,6 +917,107 @@ function Contenido() {
           onCancelar={() => setMasivoAbierto(false)}
           onGuardar={guardarMasivo}
         />
+        {resultadoMasivo ? (
+          <div className="mt-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <p>
+              Personas seleccionadas: {resultadoMasivo.seleccionados}. Creadas:{" "}
+              {resultadoMasivo.creadas}. Omitidas: {resultadoMasivo.omitidas}.
+            </p>
+            {(resultadoMasivo.omitidas_detalle ?? []).length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                {(resultadoMasivo.omitidas_detalle ?? []).map((fila, i) => (
+                  <li key={`${fila.persona_id_ext ?? "x"}-${i}`}>
+                    Trabajador {fila.persona_id_ext ?? "—"}: {etiquetaOmitida(fila)}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        abierto={detalle !== null}
+        titulo="Detalle de la asignación"
+        onCerrar={() => setDetalle(null)}
+      >
+        {detalle ? (
+          <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Trabajador</dt>
+              <dd>
+                <Link className="text-hseq-800 underline" href={`/personal/${detalle.persona_id_ext}`}>
+                  {detalle.persona_nombre ?? detalle.persona_id_ext}
+                </Link>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Documento</dt>
+              <dd>{detalle.numero_documento ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Cargo</dt>
+              <dd>{detalle.cargo ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Proyecto</dt>
+              <dd>{detalle.proyecto ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Capacitación</dt>
+              <dd>
+                {detalle.capacitacion_codigo} — {detalle.capacitacion_nombre}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Origen</dt>
+              <dd>{etiquetaOrigen(detalle.origen)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Vigencia / periodicidad</dt>
+              <dd>{detalle.periodicidad_nombre ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Obligatoria</dt>
+              <dd>{textoObligatoria(detalle.obligatoria)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Estado</dt>
+              <dd>
+                <Badge tono={tonoEstado(detalle.estado_calculado)}>
+                  {ETIQUETAS_ESTADO[detalle.estado_calculado] ?? detalle.estado_calculado}
+                </Badge>
+                {detalle.etiqueta_dias ? (
+                  <span className="ml-2 text-slate-600">{detalle.etiqueta_dias}</span>
+                ) : null}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Fecha de asignación</dt>
+              <dd>{formatoFecha(detalle.fecha_asignacion)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Fecha límite</dt>
+              <dd>{formatoFecha(detalle.fecha_limite_cumplimiento)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Cumplimiento</dt>
+              <dd>
+                {detalle.tiene_cumplimiento
+                  ? `${detalle.cumplimiento_resultado === "APROBADO" ? "Aprobado" : (detalle.cumplimiento_resultado ?? "Registrado")} · ${formatoFecha(detalle.fecha_realizacion)}`
+                  : "Sin ejecución"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Horas</dt>
+              <dd>{detalle.horas_efectivas ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase text-slate-500">Vencimiento</dt>
+              <dd>{textoVencimiento(detalle)}</dd>
+            </div>
+          </dl>
+        ) : null}
       </Modal>
 
       <Modal

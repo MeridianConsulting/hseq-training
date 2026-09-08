@@ -7,13 +7,22 @@ namespace App\Services;
 use App\Core\Exceptions\HttpException;
 use App\Repositories\AsignacionRepository;
 use App\Repositories\CapacitacionRepository;
+use App\Repositories\MatrizRepository;
+use Throwable;
 
 class AsignacionService
 {
+    public const MENSAJE_NO_APLICABLE = 'La capacitación seleccionada no está definida como aplicable para el cargo/proyecto del trabajador. Verifique la Matriz de Aplicabilidad antes de continuar.';
+    public const MENSAJE_DUPLICADO = 'El trabajador ya tiene esta capacitación asignada para el contexto correspondiente.';
+    public const MENSAJE_ERROR = 'No fue posible crear la asignación.';
+    public const MENSAJE_UNA = 'Capacitación asignada correctamente.';
+    public const MENSAJE_VARIAS = 'Capacitaciones asignadas correctamente.';
+
     private AsignacionRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
     private AuditoriaService $auditoria;
+    private MatrizRepository $matriz;
 
     public function __construct()
     {
@@ -21,6 +30,7 @@ class AsignacionService
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
         $this->auditoria = new AuditoriaService();
+        $this->matriz = new MatrizRepository();
     }
 
     public function reglas(bool $esActualizacion = false): array
@@ -33,7 +43,8 @@ class AsignacionService
 
         return [
             'persona_id_ext' => 'required|integer|min:1',
-            'capacitacion_id' => 'required|integer|min:1',
+            'capacitacion_id' => 'nullable|integer|min:1',
+            'capacitacion_ids' => 'nullable|array',
             'fecha_limite_cumplimiento' => 'required|date',
             'fecha_asignacion' => 'nullable|date',
         ];
@@ -60,7 +71,8 @@ class AsignacionService
         ?int $procesoId = null,
         ?string $proyecto = null,
         ?string $fechaLimiteDesde = null,
-        ?string $fechaLimiteHasta = null
+        ?string $fechaLimiteHasta = null,
+        ?int $cargoId = null
     ): array {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
@@ -108,7 +120,8 @@ class AsignacionService
             $procesoId,
             $proyecto,
             $fechaLimiteDesde,
-            $fechaLimiteHasta
+            $fechaLimiteHasta,
+            $cargoId
         );
 
         return [
@@ -123,7 +136,8 @@ class AsignacionService
                 $procesoId,
                 $proyecto,
                 $fechaLimiteDesde,
-                $fechaLimiteHasta
+                $fechaLimiteHasta,
+                $cargoId
             ),
             'page' => $pagina,
             'per_page' => $porPagina,
@@ -157,33 +171,147 @@ class AsignacionService
      */
     public function crear(array $datos, int $usuarioId, ?array $actor = null): array
     {
+        try {
+            $personaId = (int)$datos['persona_id_ext'];
+            $capacitacionId = (int)($datos['capacitacion_id'] ?? 0);
+            if ($capacitacionId < 1) {
+                $ids = $this->normalizarCapacitacionIds($datos['capacitacion_ids'] ?? null);
+                if (count($ids) !== 1) {
+                    throw new HttpException('Debe indicar la capacitación.', 422);
+                }
+                $capacitacionId = $ids[0];
+            }
+
+            $persona = $this->personal->ver($personaId);
+            $this->exigirPersonaActiva($persona);
+            $this->exigirCapacitacionActiva($capacitacionId);
+            $this->exigirAplicable($persona, $capacitacionId);
+
+            if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {
+                throw new HttpException(self::MENSAJE_DUPLICADO, 409);
+            }
+
+            $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null) ?? date('Y-m-d');
+            $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
+
+            if ($fechaLimite === null) {
+                throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
+            }
+
+            return $this->persistirManual(
+                $persona,
+                $capacitacionId,
+                $fechaAsignacion,
+                $fechaLimite,
+                $usuarioId,
+                $actor
+            );
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new HttpException(self::MENSAJE_ERROR, 500);
+        }
+    }
+
+    /**
+     * Varias capacitaciones a un trabajador. Las no aplicables o duplicadas se omiten.
+     *
+     * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     * @return array{seleccionados:int, creadas:int, omitidas:int, items:list<array<string,mixed>>, omitidas_detalle:list<array<string,mixed>>}
+     */
+    public function crearVarias(array $datos, int $usuarioId, ?array $actor = null): array
+    {
         $personaId = (int)$datos['persona_id_ext'];
-        $capacitacionId = (int)$datos['capacitacion_id'];
+        $capIds = $this->normalizarCapacitacionIds($datos['capacitacion_ids'] ?? $datos['capacitacion_id'] ?? null);
         $persona = $this->personal->ver($personaId);
         $this->exigirPersonaActiva($persona);
 
-        $cap = $this->capacitaciones->buscarPorId($capacitacionId);
-        if ($cap === null) {
-            throw new HttpException('La capacitación no existe', 422);
-        }
-
-        if (($cap['estado'] ?? '') !== 'ACTIVA') {
-            throw new HttpException('Solo se puede asignar una capacitación activa.', 422);
-        }
-
-        if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {
-            throw new HttpException(
-                'Esta persona ya tiene una asignación pendiente de esa capacitación',
-                409
-            );
-        }
-
         $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null) ?? date('Y-m-d');
         $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
-
         if ($fechaLimite === null) {
             throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
         }
+
+        $items = [];
+        $omitidasDetalle = [];
+
+        foreach ($capIds as $capacitacionId) {
+            try {
+                $this->exigirCapacitacionActiva($capacitacionId);
+                $this->exigirAplicable($persona, $capacitacionId);
+                if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {
+                    $omitidasDetalle[] = [
+                        'capacitacion_id' => $capacitacionId,
+                        'motivo' => 'duplicado',
+                        'mensaje' => self::MENSAJE_DUPLICADO,
+                    ];
+                    continue;
+                }
+                $items[] = $this->persistirManual(
+                    $persona,
+                    $capacitacionId,
+                    $fechaAsignacion,
+                    $fechaLimite,
+                    $usuarioId,
+                    $actor
+                );
+            } catch (HttpException $e) {
+                if ($e->getMessage() === self::MENSAJE_NO_APLICABLE) {
+                    $omitidasDetalle[] = [
+                        'capacitacion_id' => $capacitacionId,
+                        'motivo' => 'no_aplicable',
+                        'mensaje' => self::MENSAJE_NO_APLICABLE,
+                    ];
+                    continue;
+                }
+                throw $e;
+            }
+        }
+
+        if ($items === [] && $omitidasDetalle !== []) {
+            $soloNoAplicable = count($omitidasDetalle) === 1
+                && ($omitidasDetalle[0]['motivo'] ?? '') === 'no_aplicable';
+            if ($soloNoAplicable) {
+                throw new HttpException(self::MENSAJE_NO_APLICABLE, 422);
+            }
+        }
+
+        return [
+            'seleccionados' => count($capIds),
+            'creadas' => count($items),
+            'omitidas' => count($omitidasDetalle),
+            'items' => $items,
+            'omitidas_detalle' => $omitidasDetalle,
+        ];
+    }
+
+    public function mensajeVarias(array $resultado): string
+    {
+        $creadas = (int)$resultado['creadas'];
+        if ($creadas > 1) {
+            return self::MENSAJE_VARIAS;
+        }
+        if ($creadas === 1) {
+            return self::MENSAJE_UNA;
+        }
+
+        return 'No se crearon asignaciones.';
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    private function persistirManual(
+        array $persona,
+        int $capacitacionId,
+        string $fechaAsignacion,
+        string $fechaLimite,
+        int $usuarioId,
+        ?array $actor
+    ): array {
+        $personaId = (int)$persona['persona_id'];
 
         return $this->repo->transaccion(function () use (
             $personaId,
@@ -266,7 +394,8 @@ class AsignacionService
                 $errores++;
                 $omitidasDetalle[] = [
                     'persona_id_ext' => $personaId,
-                    'motivo' => 'El trabajador no existe.',
+                    'motivo' => 'inexistente',
+                    'mensaje' => 'El trabajador no existe.',
                 ];
             }
         }
@@ -296,7 +425,17 @@ class AsignacionService
                     $omitidas++;
                     $omitidasDetalle[] = [
                         'persona_id_ext' => $personaId,
-                        'motivo' => 'No es posible asignar a un trabajador inactivo.',
+                        'motivo' => 'inactivo',
+                        'mensaje' => 'No es posible asignar a un trabajador inactivo.',
+                    ];
+                    continue;
+                }
+                if (!$this->esAplicable($persona, $capacitacionId)) {
+                    $omitidas++;
+                    $omitidasDetalle[] = [
+                        'persona_id_ext' => $personaId,
+                        'motivo' => 'no_aplicable',
+                        'mensaje' => self::MENSAJE_NO_APLICABLE,
                     ];
                     continue;
                 }
@@ -304,7 +443,8 @@ class AsignacionService
                     $omitidas++;
                     $omitidasDetalle[] = [
                         'persona_id_ext' => $personaId,
-                        'motivo' => 'Ya tiene esta capacitación pendiente.',
+                        'motivo' => 'duplicado',
+                        'mensaje' => self::MENSAJE_DUPLICADO,
                     ];
                     continue;
                 }
@@ -364,19 +504,42 @@ class AsignacionService
     {
         $creadas = (int)$resultado['creadas'];
         $omitidas = (int)$resultado['omitidas'];
-
-        if ($creadas > 0 && $omitidas > 0) {
-            return "{$creadas} trabajadores fueron asignados correctamente. {$omitidas} ya tenían esta capacitación y fueron omitidos.";
+        $porMotivo = ['duplicado' => 0, 'no_aplicable' => 0, 'inactivo' => 0];
+        foreach ($resultado['omitidas_detalle'] ?? [] as $fila) {
+            $motivo = (string)($fila['motivo'] ?? '');
+            if (isset($porMotivo[$motivo])) {
+                $porMotivo[$motivo]++;
+            }
         }
 
+        $partes = [];
         if ($creadas > 0) {
-            return $creadas === 1
+            $partes[] = $creadas === 1
                 ? '1 trabajador fue asignado correctamente.'
                 : "{$creadas} trabajadores fueron asignados correctamente.";
         }
+        if ($porMotivo['duplicado'] > 0) {
+            $partes[] = $porMotivo['duplicado'] === 1
+                ? '1 omitido por duplicidad.'
+                : "{$porMotivo['duplicado']} omitidos por duplicidad.";
+        }
+        if ($porMotivo['no_aplicable'] > 0) {
+            $partes[] = $porMotivo['no_aplicable'] === 1
+                ? '1 no aplicable según matriz.'
+                : "{$porMotivo['no_aplicable']} no aplicables según matriz.";
+        }
+        if ($porMotivo['inactivo'] > 0) {
+            $partes[] = $porMotivo['inactivo'] === 1
+                ? '1 trabajador inactivo omitido.'
+                : "{$porMotivo['inactivo']} trabajadores inactivos omitidos.";
+        }
+
+        if ($partes !== []) {
+            return implode(' ', $partes);
+        }
 
         if ($omitidas > 0) {
-            return "Ningún trabajador nuevo fue asignado. {$omitidas} ya tenían esta capacitación y fueron omitidos.";
+            return "Ningún trabajador nuevo fue asignado. {$omitidas} fueron omitidos.";
         }
 
         return 'No se crearon asignaciones.';
@@ -452,6 +615,18 @@ class AsignacionService
                 409
             );
         }
+        if ($this->repo->tieneParticipacionSesion($id)) {
+            throw new HttpException(
+                'No se puede eliminar porque la asignación está vinculada a una sesión.',
+                409
+            );
+        }
+        if ($this->repo->tienePlanDetalle($id)) {
+            throw new HttpException(
+                'No se puede eliminar porque la asignación está vinculada al plan anual.',
+                409
+            );
+        }
 
         return $this->repo->transaccion(function () use ($id, $antes, $actor): string {
             $this->repo->eliminar($id);
@@ -498,6 +673,7 @@ class AsignacionService
                 ? ((int)$fila['obligatoria'] === 1)
                 : null,
             'cargo_id_ext' => $fila['cargo_id_ext'] !== null ? (int)$fila['cargo_id_ext'] : null,
+            'cargo' => isset($fila['cargo']) && $fila['cargo'] !== '' ? (string)$fila['cargo'] : null,
             'ambito' => $fila['ambito'],
             'proyecto' => $fila['proyecto'],
             'estado_calculado' => (string)$fila['estado_calculado'],
@@ -522,6 +698,68 @@ class AsignacionService
         if (($persona['estado'] ?? '') !== 'Activo') {
             throw new HttpException('No es posible asignar a un trabajador inactivo.', 422);
         }
+    }
+
+    private function exigirCapacitacionActiva(int $capacitacionId): void
+    {
+        $cap = $this->capacitaciones->buscarPorId($capacitacionId);
+        if ($cap === null) {
+            throw new HttpException('La capacitación no existe', 422);
+        }
+        if (($cap['estado'] ?? '') !== 'ACTIVA') {
+            throw new HttpException('Solo se puede asignar una capacitación activa.', 422);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     */
+    private function exigirAplicable(array $persona, int $capacitacionId): void
+    {
+        if (!$this->esAplicable($persona, $capacitacionId)) {
+            throw new HttpException(self::MENSAJE_NO_APLICABLE, 422);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     */
+    private function esAplicable(array $persona, int $capacitacionId): bool
+    {
+        $cargoId = isset($persona['cargo_id']) ? (int)$persona['cargo_id'] : 0;
+        $proyecto = is_string($persona['proyecto'] ?? null) ? (string)$persona['proyecto'] : null;
+        $filas = $this->matriz->aplicables($cargoId > 0 ? $cargoId : null, null, $proyecto);
+        foreach ($filas as $fila) {
+            if ((int)($fila['capacitacion_id'] ?? 0) === $capacitacionId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function normalizarCapacitacionIds(mixed $bruto): array
+    {
+        if ($bruto === null || $bruto === '') {
+            return [];
+        }
+        if (!is_array($bruto)) {
+            $id = (int)$bruto;
+            return $id > 0 ? [$id] : [];
+        }
+
+        $ids = [];
+        foreach ($bruto as $valor) {
+            $id = (int)$valor;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
     }
 
     private function fechaONulo(mixed $valor): ?string

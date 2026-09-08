@@ -3,13 +3,20 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
-import type { Asignacion, Capacitacion, PersonaCorporativa } from "@/lib/tipos";
+import type {
+  Asignacion,
+  Capacitacion,
+  CapacitacionAplicable,
+  PerfilTrabajador,
+  PersonaCorporativa,
+} from "@/lib/tipos";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 
 export type DatosAsignacion = {
   persona_id_ext: string;
   persona_etiqueta: string;
   capacitacion_id: string;
+  capacitacion_ids: string[];
   fecha_limite_cumplimiento: string;
   fecha_asignacion: string;
 };
@@ -25,6 +32,7 @@ export function vacioAsignacion(): DatosAsignacion {
     persona_id_ext: "",
     persona_etiqueta: "",
     capacitacion_id: "",
+    capacitacion_ids: [],
     fecha_limite_cumplimiento: "",
     fecha_asignacion: iso,
   };
@@ -37,9 +45,22 @@ export function desdeAsignacion(item: Asignacion): DatosAsignacion {
       ? `${item.persona_nombre}${item.numero_documento ? ` · ${item.numero_documento}` : ""}`
       : String(item.persona_id_ext),
     capacitacion_id: String(item.capacitacion_id),
+    capacitacion_ids: [String(item.capacitacion_id)],
     fecha_limite_cumplimiento: item.fecha_limite_cumplimiento.slice(0, 10),
     fecha_asignacion: item.fecha_asignacion.slice(0, 10),
   };
+}
+
+function etiquetaProcesos(persona: PersonaCorporativa): string {
+  const nombres = (persona.procesos ?? []).map((p) => p.nombre).filter(Boolean);
+  return nombres.length > 0 ? nombres.join(", ") : "—";
+}
+
+function etiquetaCap(item: CapacitacionAplicable): string {
+  if (item.capacitacion_codigo && item.capacitacion_nombre) {
+    return `${item.capacitacion_codigo} — ${item.capacitacion_nombre}`;
+  }
+  return item.capacitacion_nombre ?? item.capacitacion_codigo ?? "—";
 }
 
 export function FormularioAsignacion({
@@ -60,6 +81,9 @@ export function FormularioAsignacion({
   );
   const [buscarPersona, setBuscarPersona] = useState("");
   const [personas, setPersonas] = useState<PersonaCorporativa[]>([]);
+  const [ficha, setFicha] = useState<PersonaCorporativa | null>(null);
+  const [aplicables, setAplicables] = useState<CapacitacionAplicable[]>([]);
+  const [cargandoContexto, setCargandoContexto] = useState(false);
 
   useEffect(() => {
     if (soloFecha) {
@@ -85,15 +109,53 @@ export function FormularioAsignacion({
     return () => window.clearTimeout(id);
   }, [buscarPersona, soloFecha]);
 
+  useEffect(() => {
+    if (soloFecha || !datos.persona_id_ext) {
+      return;
+    }
+    const personaId = Number(datos.persona_id_ext);
+    if (!Number.isFinite(personaId) || personaId < 1) {
+      return;
+    }
+    setCargandoContexto(true);
+    void (async () => {
+      const r = await apiGet<PerfilTrabajador>(`/api/personal/${personaId}/perfil`);
+      setCargandoContexto(false);
+      if (!r.success || !r.data) {
+        setFicha(null);
+        setAplicables([]);
+        return;
+      }
+      setFicha(r.data.ficha);
+      setAplicables(r.data.aplicables);
+    })();
+  }, [datos.persona_id_ext, soloFecha]);
+
   function set(campo: keyof DatosAsignacion, valor: string) {
     setDatos((actual) => ({ ...actual, [campo]: valor }));
+  }
+
+  function toggleCap(id: string) {
+    setDatos((actual) => {
+      const tiene = actual.capacitacion_ids.includes(id);
+      return {
+        ...actual,
+        capacitacion_ids: tiene
+          ? actual.capacitacion_ids.filter((c) => c !== id)
+          : [...actual.capacitacion_ids, id],
+        capacitacion_id: tiene
+          ? actual.capacitacion_ids.filter((c) => c !== id)[0] ?? ""
+          : actual.capacitacion_id || id,
+      };
+    });
   }
 
   return (
     <form className="space-y-4" onSubmit={(evento) => onSubmit(evento, datos)}>
       {soloFecha ? (
         <p className="text-sm text-slate-600">
-          {datos.persona_etiqueta} · {capacitaciones.find((c) => String(c.capacitacion_id) === datos.capacitacion_id)?.nombre
+          {datos.persona_etiqueta} ·{" "}
+          {capacitaciones.find((c) => String(c.capacitacion_id) === datos.capacitacion_id)?.nombre
             ?? inicial?.capacitacion_nombre}
         </p>
       ) : (
@@ -115,8 +177,15 @@ export function FormularioAsignacion({
                   datos.persona_id_ext === String(persona.persona_id) ? "bg-hseq-50 font-medium" : ""
                 }`}
                 onClick={() => {
-                  set("persona_id_ext", String(persona.persona_id));
-                  set("persona_etiqueta", `${persona.nombre_completo} · ${persona.numero_documento}`);
+                  setDatos((actual) => ({
+                    ...actual,
+                    persona_id_ext: String(persona.persona_id),
+                    persona_etiqueta: `${persona.nombre_completo} · ${persona.numero_documento}`,
+                    capacitacion_ids: [],
+                    capacitacion_id: "",
+                  }));
+                  setFicha(persona);
+                  setAplicables([]);
                 }}
               >
                 {persona.nombre_completo}
@@ -124,26 +193,56 @@ export function FormularioAsignacion({
               </button>
             ))}
           </div>
-          {datos.persona_etiqueta ? (
-            <p className="text-sm text-hseq-800">Seleccionado: {datos.persona_etiqueta}</p>
+
+          {ficha ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <p className="font-medium text-hseq-900">{ficha.nombre_completo}</p>
+              <p>Documento: {ficha.numero_documento}</p>
+              <p>Cargo: {ficha.cargo ?? "—"}</p>
+              <p>Proyecto: {ficha.proyecto ?? "—"}</p>
+              <p>Estado corporativo: {ficha.estado}</p>
+              <p>Proceso: {etiquetaProcesos(ficha)}</p>
+            </div>
           ) : (
             <p className="text-xs text-slate-500">Seleccione un trabajador de la lista.</p>
           )}
 
-          <Field etiqueta="Capacitación">
-            <select
-              className={inputClass}
-              required
-              value={datos.capacitacion_id}
-              onChange={(e) => set("capacitacion_id", e.target.value)}
-            >
-              <option value="">Seleccione</option>
-              {capacitaciones.map((cap) => (
-                <option key={cap.capacitacion_id} value={cap.capacitacion_id}>
-                  {cap.codigo} — {cap.nombre}
-                </option>
-              ))}
-            </select>
+          <Field etiqueta="Capacitaciones aplicables">
+            {cargandoContexto ? (
+              <p className="text-sm text-slate-500">Consultando la matriz…</p>
+            ) : !ficha ? (
+              <p className="text-sm text-slate-500">Seleccione un trabajador para ver las aplicables.</p>
+            ) : aplicables.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No hay capacitaciones aplicables según la matriz para este cargo o proyecto.
+              </p>
+            ) : (
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                {aplicables.map((item) => {
+                  const id = String(item.capacitacion_id ?? "");
+                  if (!id) {
+                    return null;
+                  }
+                  return (
+                    <label key={id} className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-hseq-50">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={datos.capacitacion_ids.includes(id)}
+                        onChange={() => toggleCap(id)}
+                      />
+                      <span>
+                        {etiquetaCap(item)}
+                        <span className="block text-xs text-slate-500">
+                          Aplicable: Sí · Origen: Matriz de Aplicabilidad
+                          {item.proceso_nombre ? ` · ${item.proceso_nombre}` : ""}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </Field>
 
           <Field etiqueta="Fecha de asignación">
@@ -167,8 +266,7 @@ export function FormularioAsignacion({
           onChange={(e) => set("fecha_limite_cumplimiento", e.target.value)}
         />
         <span className="mt-1 block text-xs text-slate-500">
-          Plazo para realizar el curso. La alerta de “próxima a vencer” aparece sola 10 días
-          calendario antes de esta fecha.
+          Plazo para realizar el curso.
         </span>
       </Field>
 

@@ -26,6 +26,7 @@ class AsignacionController extends Controller
         $personaRaw = $request->query('persona_id');
         $capRaw = $request->query('capacitacion_id');
         $procesoRaw = $request->query('proceso_id');
+        $cargoRaw = $request->query('cargo_id');
 
         $resultado = $this->service->listar(
             (int)$request->query('page', 1),
@@ -39,7 +40,8 @@ class AsignacionController extends Controller
             ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
             nullable_trimmed_string($request->query('proyecto')),
             nullable_trimmed_string($request->query('fecha_limite_desde')),
-            nullable_trimmed_string($request->query('fecha_limite_hasta'))
+            nullable_trimmed_string($request->query('fecha_limite_hasta')),
+            ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
@@ -75,9 +77,18 @@ class AsignacionController extends Controller
     public function store(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglas());
+        $ids = $datos['capacitacion_ids'] ?? null;
+        $varias = is_array($ids) && count($ids) > 1;
+
+        if ($varias) {
+            $resultado = $this->service->crearVarias($datos, $request->userId(), AuditoriaService::actorDe($request));
+            $this->success($resultado, $this->service->mensajeVarias($resultado));
+            return;
+        }
+
         $creado = $this->service->crear($datos, $request->userId(), AuditoriaService::actorDe($request));
 
-        $this->created($creado, 'Capacitación asignada');
+        $this->created($creado, AsignacionService::MENSAJE_UNA);
     }
 
     public function storeMasivo(Request $request): void
