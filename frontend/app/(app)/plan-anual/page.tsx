@@ -15,6 +15,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   CapacitacionPlanOpcion,
   CargoCorporativo,
@@ -39,16 +40,6 @@ function tonoEstado(estado: string) {
   if (estado === "APROBADO") return "ok" as const;
   if (estado === "EN_REVISION") return "aviso" as const;
   return "neutral" as const;
-}
-
-function procesoPermiteProyecto(procesoId: string, procesos: OpcionesPlanAnual["procesos"]): boolean {
-  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
-  if (!seleccionado) return false;
-  const n = seleccionado.nombre
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return n.includes("gestion de proyectos");
 }
 
 function formatearFecha(iso: string | null): string {
@@ -113,8 +104,8 @@ function Contenido() {
   const [guardando, setGuardando] = useState(false);
   const [buscarCap, setBuscarCap] = useState("");
 
-  const muestraProyectoForm = procesoPermiteProyecto(form.proceso_id, opciones.procesos);
-  const muestraProyectoFiltro = procesoPermiteProyecto(filtroProceso, opciones.procesos);
+  const muestraProyectoForm = procesoRequiereProyecto(form.proceso_id, opciones.procesos);
+  const muestraProyectoFiltro = procesoRequiereProyecto(filtroProceso, opciones.procesos);
 
   const capsSugeridas = useMemo(() => {
     const q = buscarCap.trim().toLowerCase();
@@ -434,7 +425,7 @@ function Contenido() {
               value={filtroProceso}
               onChange={(e) => {
                 setFiltroProceso(e.target.value);
-                if (!procesoPermiteProyecto(e.target.value, opciones.procesos)) {
+                if (!procesoRequiereProyecto(e.target.value, opciones.procesos)) {
                   setFiltroProyecto("");
                 }
               }}
@@ -619,7 +610,7 @@ function Contenido() {
                   setForm((f) => ({
                     ...f,
                     proceso_id: valor,
-                    proyecto: procesoPermiteProyecto(valor, opciones.procesos) ? f.proyecto : "",
+                    proyecto: procesoRequiereProyecto(valor, opciones.procesos) ? f.proyecto : "",
                   }));
                 }}
               >

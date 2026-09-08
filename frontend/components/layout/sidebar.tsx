@@ -33,6 +33,7 @@ const ICONOS: Record<string, LucideIcon> = {
   "/personal": Users,
   "/asignaciones": UserPlus,
   "/cumplimientos": BadgeCheck,
+  "/catalogos": Settings,
   "/configuracion": Settings,
   "/auditoria": History,
   "/migracion": Upload,

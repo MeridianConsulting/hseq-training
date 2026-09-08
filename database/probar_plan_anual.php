@@ -95,7 +95,7 @@ if ($prev !== null) {
 
 $opciones = $planes->opciones();
 ok($opciones['procesos'] !== [], 'Opciones incluyen procesos');
-ok($opciones['proyectos'] === ['FRONTERA'], 'Catálogo de proyecto es FRONTERA');
+ok(in_array('FRONTERA', $opciones['proyectos'], true), 'Catálogo de proyectos incluye FRONTERA');
 
 $procesoGp = null;
 $procesoOtro = null;

@@ -15,9 +15,6 @@ class PlanAnualService
 {
     public const ESTADOS = ['BORRADOR', 'EN_REVISION', 'APROBADO'];
 
-    /** @var list<string> */
-    private const PROYECTOS_OBRA = ['FRONTERA'];
-
     private PlanAnualRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private MatrizRepository $matriz;
@@ -77,7 +74,7 @@ class PlanAnualService
     {
         return [
             'procesos' => $this->alertas->procesosActivos(),
-            'proyectos' => self::PROYECTOS_OBRA,
+            'proyectos' => $this->alertas->proyectos(),
             'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
         ];
     }
@@ -637,14 +634,12 @@ class PlanAnualService
             return null;
         }
 
-        $clave = mb_strtoupper($normalizado, 'UTF-8');
-        foreach (self::PROYECTOS_OBRA as $canonico) {
-            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
-                return $canonico;
-            }
+        $canonico = $this->alertas->resolverProyecto($normalizado, true);
+        if ($canonico === null) {
+            throw new HttpException('El proyecto no es válido.', 422);
         }
 
-        throw new HttpException('El proyecto no es válido.', 422);
+        return $canonico;
     }
 
     private function fechaEnAnio(string $fecha, int $anio): string

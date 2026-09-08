@@ -1,5 +1,28 @@
 import type { ItemCatalogo } from "@/lib/tipos";
 
+export function nombreProcesoRequiereProyecto(nombre: string | null | undefined): boolean {
+  const n = (nombre ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  if (n === "proyectos") {
+    return true;
+  }
+  return n.includes("gestion de proyectos");
+}
+
+export function procesoRequiereProyecto(
+  procesoId: string | number | null | undefined,
+  procesos: { proceso_id: number; nombre: string }[],
+): boolean {
+  if (procesoId === null || procesoId === undefined || procesoId === "") {
+    return false;
+  }
+  const seleccionado = procesos.find((item) => String(item.proceso_id) === String(procesoId));
+  return nombreProcesoRequiereProyecto(seleccionado?.nombre);
+}
+
 /** Incluye el valor histórico inactivo para no perderlo al editar. */
 export function conValorHistorico(
   items: ItemCatalogo[],

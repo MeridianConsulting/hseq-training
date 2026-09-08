@@ -56,8 +56,12 @@ $defRoles = $svc->definicion('roles');
 
 echo "\n== Tipos del panel ==\n";
 $tipos = array_column($svc->tiposDisponibles(), 'tipo');
-foreach (['categorias', 'areas', 'procesos', 'roles', 'vigencias', 'fuentes-normativas'] as $tipo) {
-    ok(in_array($tipo, $tipos, true), "Catalogo {$tipo} disponible");
+foreach (['procesos', 'proyectos', 'modalidades', 'tipos-capacitacion', 'vigencias', 'periodicidades', 'ubicaciones', 'proveedores'] as $tipo) {
+    ok(in_array($tipo, $tipos, true), "Catalogo {$tipo} visible en UI");
+}
+foreach (['categorias', 'areas', 'roles', 'fuentes-normativas'] as $tipo) {
+    ok(!in_array($tipo, $tipos, true), "Catalogo {$tipo} oculto de la UI");
+    ok(is_array($svc->definicion($tipo)), "Catalogo {$tipo} sigue en API");
 }
 
 echo "\n== Duplicado con espacios ==\n";

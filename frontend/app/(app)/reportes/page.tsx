@@ -15,6 +15,7 @@ import { Table } from "@/components/ui/table";
 import { Download } from "lucide-react";
 import { FichaTrabajador, GruposCapacitacion, ListaPeriodos } from "./historial";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   FichaTrabajadorReporte,
   GrupoHistorial,
@@ -80,19 +81,6 @@ function etiquetaEstado(estado: unknown): string {
   };
   const clave = typeof estado === "string" ? estado : "";
   return mapa[clave] ?? (clave || "—");
-}
-
-function procesoPermiteProyecto(
-  procesoId: string,
-  procesos: OpcionesAlertas["procesos"],
-): boolean {
-  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
-  if (!seleccionado) return false;
-  const n = seleccionado.nombre
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return n.includes("gestion de proyectos");
 }
 
 function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
@@ -274,7 +262,7 @@ function Contenido() {
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   const esHistorial = tipo === "historial_trabajador";
-  const muestraProyecto = procesoPermiteProyecto(procesoId, opciones.procesos);
+  const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
   const permiteDetalle = TIPOS_DETALLE.includes(tipo);
 
   const params = useMemo(

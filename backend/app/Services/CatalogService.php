@@ -34,6 +34,10 @@ class CatalogService
         $tipos = [];
 
         foreach (config('catalogs', []) as $tipo => $def) {
+            if (array_key_exists('mostrar_en_ui', $def) && $def['mostrar_en_ui'] === false) {
+                continue;
+            }
+
             $tipos[] = [
                 'tipo' => $tipo,
                 'etiqueta' => $def['etiqueta'],

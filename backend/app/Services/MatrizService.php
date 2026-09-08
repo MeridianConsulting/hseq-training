@@ -14,9 +14,6 @@ class MatrizService
 {
     private const MENSAJE_DUPLICADO = 'La capacitación ya está asociada a este cargo, proceso y proyecto.';
 
-    /** Obra de Gestión de Proyectos en esta versión. */
-    private const PROYECTOS_OBRA = ['FRONTERA'];
-
     private MatrizRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
@@ -131,7 +128,7 @@ class MatrizService
     {
         return [
             'procesos' => $this->alertas->procesosActivos(),
-            'proyectos' => self::PROYECTOS_OBRA,
+            'proyectos' => $this->alertas->proyectos(),
             'cargos' => $this->personal->cargos(),
             'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
         ];
@@ -677,14 +674,12 @@ class MatrizService
             return $normalizado;
         }
 
-        $clave = mb_strtoupper($normalizado, 'UTF-8');
-        foreach (self::PROYECTOS_OBRA as $canonico) {
-            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
-                return $canonico;
-            }
+        $canonico = $this->alertas->resolverProyecto($normalizado, true);
+        if ($canonico === null) {
+            throw new HttpException('El proyecto no es válido.', 422);
         }
 
-        throw new HttpException('El proyecto no es válido.', 422);
+        return $canonico;
     }
 
     private function ambitoDeProceso(int $procesoId): string

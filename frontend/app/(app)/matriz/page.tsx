@@ -11,18 +11,9 @@ import { Filters } from "@/components/ui/filters";
 import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet, apiPost, withQuery } from "@/lib/api";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type { OpcionesMatriz, ResultadoSincronizarMatriz, VistaMatriz } from "@/lib/tipos";
 import { Save } from "lucide-react";
-
-function procesoPermiteProyecto(procesoId: string, procesos: OpcionesMatriz["procesos"]): boolean {
-  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
-  if (!seleccionado) return false;
-  const n = seleccionado.nombre
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return n.includes("gestion de proyectos");
-}
 
 function claveCelda(cargoId: number, capId: number): string {
   return `${cargoId}:${capId}`;
@@ -68,7 +59,7 @@ function Contenido() {
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  const muestraProyecto = procesoPermiteProyecto(procesoId, opciones.procesos);
+  const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
   const contextoListo = procesoId !== "" && (!muestraProyecto || proyecto !== "");
 
   useEffect(() => {
@@ -247,7 +238,7 @@ function Contenido() {
             onChange={(e) => {
               const valor = e.target.value;
               setProcesoId(valor);
-              if (!procesoPermiteProyecto(valor, opciones.procesos)) {
+              if (!procesoRequiereProyecto(valor, opciones.procesos)) {
                 setProyecto("");
               }
             }}

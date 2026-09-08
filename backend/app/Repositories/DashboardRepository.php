@@ -224,99 +224,43 @@ class DashboardRepository
     }
 
     /**
-     * Procesos del filtro Panel según hoja MATRIZ POR CARGO del Excel HSEQ-PRG-10.
-     * Se resuelven contra la tabla `procesos` (ids reales); no se listan otros del catálogo.
+     * Procesos vigentes del catálogo HSEQ (filtro Panel y demás módulos).
      *
      * @return list<array{proceso_id:int,nombre:string}>
      */
     public function procesos(): array
     {
-        $permitidos = [
-            'GESTION ESTRATEGICA',
-            'GESTION ADMINISTRATIVA Y FINANCIERA',
-            'GESTION HSEQ',
-            'GESTION DE PROYECTOS',
-        ];
-
         $filas = $this->db->fetchAll(
             'SELECT proceso_id, nombre FROM procesos WHERE activo = 1 ORDER BY nombre ASC'
         );
 
-        $porNombre = [];
-        foreach ($filas as $fila) {
-            $clave = $this->normalizarNombreProceso((string)$fila['nombre']);
-            if (in_array($clave, $permitidos, true)) {
-                $porNombre[$clave] = [
-                    'proceso_id' => (int)$fila['proceso_id'],
-                    'nombre' => (string)$fila['nombre'],
-                ];
-            }
-        }
-
         $salida = [];
-        foreach ($permitidos as $clave) {
-            if (isset($porNombre[$clave])) {
-                $salida[] = $porNombre[$clave];
-            }
+        foreach ($filas as $fila) {
+            $salida[] = [
+                'proceso_id' => (int)$fila['proceso_id'],
+                'nombre' => (string)$fila['nombre'],
+            ];
         }
 
         return $salida;
     }
 
-    private function normalizarNombreProceso(string $nombre): string
-    {
-        $nombre = mb_strtoupper(trim($nombre), 'UTF-8');
-        $nombre = strtr($nombre, [
-            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
-            'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
-            'Ñ' => 'N',
-        ]);
-        $nombre = preg_replace('/\s+/', ' ', $nombre) ?? $nombre;
-
-        return $nombre;
-    }
-
-    /** @return list<string> */
     /**
-     * Proyectos del filtro Panel según el Excel HSEQ-PRG-10 (este archivo = Frontera).
-     * La columna «PROYECTO» de la matriz es ámbito (ADMINISTRACIÓN/PROYECTO), no el nombre del proyecto.
-     * Se resuelve el nombre real contra los valores existentes en BD.
+     * Proyectos vigentes del catálogo HSEQ.
      *
      * @return list<string>
      */
     public function proyectos(): array
     {
-        $permitidos = [
-            'FRONTERA',
-        ];
-
-        $candidatos = [];
-        foreach (
-            [
-                "SELECT DISTINCT proyecto FROM matriz_aplicabilidad
-                 WHERE proyecto IS NOT NULL AND TRIM(proyecto) <> ''",
-                "SELECT DISTINCT proyecto FROM asignaciones_capacitacion
-                 WHERE proyecto IS NOT NULL AND TRIM(proyecto) <> ''",
-                "SELECT DISTINCT proyecto FROM plan_anual_detalle
-                 WHERE proyecto IS NOT NULL AND TRIM(proyecto) <> ''",
-            ] as $sql
-        ) {
-            foreach ($this->db->fetchAll($sql) as $fila) {
-                $nombre = trim((string)($fila['proyecto'] ?? ''));
-                if ($nombre === '') {
-                    continue;
-                }
-                $clave = $this->normalizarNombreProceso($nombre);
-                if (in_array($clave, $permitidos, true)) {
-                    $candidatos[$clave] = $nombre;
-                }
-            }
-        }
+        $filas = $this->db->fetchAll(
+            'SELECT nombre FROM proyectos WHERE activo = 1 ORDER BY nombre ASC'
+        );
 
         $salida = [];
-        foreach ($permitidos as $clave) {
-            if (isset($candidatos[$clave])) {
-                $salida[] = $candidatos[$clave];
+        foreach ($filas as $fila) {
+            $nombre = trim((string)($fila['nombre'] ?? ''));
+            if ($nombre !== '') {
+                $salida[] = $nombre;
             }
         }
 

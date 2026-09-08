@@ -14,9 +14,6 @@ use PDOException;
 
 class CronogramaService
 {
-    /** @var list<string> */
-    private const PROYECTOS_OBRA = ['FRONTERA'];
-
     private CronogramaRepository $repo;
     private DashboardService $periodos;
     private SesionRepository $sesiones;
@@ -99,7 +96,7 @@ class CronogramaService
             'total' => count($items),
             'estado_plan' => 'APROBADO',
             'procesos' => $procesos,
-            'proyectos' => self::PROYECTOS_OBRA,
+            'proyectos' => $this->alertas->proyectos(),
             'items' => $items,
             'meses' => $meses,
         ];
@@ -354,14 +351,12 @@ class CronogramaService
             return null;
         }
 
-        $clave = mb_strtoupper($normalizado, 'UTF-8');
-        foreach (self::PROYECTOS_OBRA as $canonico) {
-            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
-                return $canonico;
-            }
+        $canonico = $this->alertas->resolverProyecto($normalizado, false);
+        if ($canonico === null) {
+            throw new HttpException('El proyecto no es válido.', 422);
         }
 
-        throw new HttpException('El proyecto no es válido.', 422);
+        return $canonico;
     }
 
     private function fechaEnAnio(string $fecha, int $anio): string

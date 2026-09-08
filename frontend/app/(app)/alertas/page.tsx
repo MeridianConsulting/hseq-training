@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   AlertaProximaVencer,
   ListaAlertas,
@@ -48,19 +49,6 @@ function badgeEstadoAlerta(estado: string): { tono: "alto" | "aviso" | "neutral"
     return { tono: "aviso", etiqueta: "Próxima a vencer" };
   }
   return { tono: "aviso", etiqueta: estado || "Alerta" };
-}
-
-function procesoPermiteProyecto(
-  procesoId: string,
-  procesos: OpcionesAlertas["procesos"]
-): boolean {
-  const seleccionado = procesos.find((p) => String(p.proceso_id) === procesoId);
-  if (!seleccionado) return false;
-  const n = seleccionado.nombre
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return n.includes("gestion de proyectos");
 }
 
 function rutaHistorial(item: AlertaProximaVencer): string {
@@ -112,7 +100,7 @@ function Contenido() {
   const [soportesDetalle, setSoportesDetalle] = useState<SoporteCumplimiento[]>([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
-  const muestraProyecto = procesoPermiteProyecto(procesoId, opciones.procesos);
+  const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
 
   async function cargar(paginaActual = 1) {
     setCargando(true);
@@ -264,7 +252,7 @@ function Contenido() {
             onChange={(e) => {
               const valor = e.target.value;
               setProcesoId(valor);
-              if (!procesoPermiteProyecto(valor, opciones.procesos)) {
+              if (!procesoRequiereProyecto(valor, opciones.procesos)) {
                 setProyecto("");
               }
             }}

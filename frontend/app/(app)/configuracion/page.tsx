@@ -194,7 +194,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Catálogos"
-        descripcion="Parámetros del módulo HSEQ. Los inactivos se conservan en históricos y no aparecen en altas nuevas. Cargos y personal viven en meridian_personal."
+        descripcion="Parámetros oficiales del Sistema HSEQ. Los inactivos se conservan en históricos y no aparecen en altas nuevas. Cargos y personal corporativo no se administran aquí."
         acciones={
           puede("catalogos.gestionar") && tipo ? (
             <Button

@@ -49,7 +49,7 @@ $capIds = [];
 echo "== Opciones de matriz ==\n";
 $opciones = $matriz->opciones();
 ok($opciones['procesos'] !== [], 'Hay procesos Excel para la matriz');
-ok($opciones['proyectos'] === ['FRONTERA'], 'Catálogo de proyecto es FRONTERA');
+ok(in_array('FRONTERA', $opciones['proyectos'], true), 'Catálogo de proyectos incluye FRONTERA');
 ok(($opciones['cargos'] ?? []) !== [], 'Opciones incluyen el catálogo de cargos');
 ok(isset($opciones['capacitaciones']) && is_array($opciones['capacitaciones']), 'Opciones incluyen capacitaciones');
 

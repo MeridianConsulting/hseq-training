@@ -2,6 +2,7 @@
 
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type { ProcesoCronograma, TipoPeriodoDashboard } from "@/lib/tipos";
 
 export type FiltroDashboardValor = {
@@ -17,20 +18,12 @@ export type FiltroDashboardValor = {
 /** @deprecated Usar FiltroDashboardValor */
 export type FiltroPeriodoValor = FiltroDashboardValor;
 
-/** True cuando el proceso del catálogo es «Gestión de Proyectos». */
+/** True cuando el proceso del catálogo exige proyecto de obra. */
 export function procesoPermiteFiltroProyecto(
   proceso: string,
   procesos: ProcesoCronograma[] = []
 ): boolean {
-  const seleccionado = procesos.find((item) => String(item.proceso_id) === proceso);
-  if (!seleccionado) {
-    return false;
-  }
-  const normalizado = seleccionado.nombre
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  return normalizado.includes("gestion de proyectos");
+  return procesoRequiereProyecto(proceso, procesos);
 }
 
 const MESES = [

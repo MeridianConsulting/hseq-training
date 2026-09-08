@@ -22,9 +22,6 @@ class PersonalService
     public const MENSAJE_LISTAR = 'Error al obtener la información del sistema corporativo.';
     public const MENSAJE_VER = 'No fue posible consultar la información del trabajador.';
 
-    /** @var list<string> */
-    private const PROYECTOS_OBRA = ['FRONTERA'];
-
     private PersonalRepository $repo;
     private HistorialContextoRepository $historial;
     private AuditoriaService $auditoria;
@@ -130,7 +127,7 @@ class PersonalService
         try {
             return [
                 'procesos' => $this->alertasRepo()->procesosActivos(),
-                'proyectos' => self::PROYECTOS_OBRA,
+                'proyectos' => $this->alertasRepo()->proyectos(),
                 'cargos' => $this->cargos(),
             ];
         } catch (Throwable $e) {
@@ -879,14 +876,12 @@ class PersonalService
             return null;
         }
 
-        $clave = mb_strtoupper($normalizado, 'UTF-8');
-        foreach (self::PROYECTOS_OBRA as $canonico) {
-            if (mb_strtoupper($canonico, 'UTF-8') === $clave) {
-                return $canonico;
-            }
+        $canonico = $this->alertasRepo()->resolverProyecto($normalizado, false);
+        if ($canonico === null) {
+            throw new HttpException('El proyecto no es válido.', 422);
         }
 
-        throw new HttpException('El proyecto no es válido.', 422);
+        return $canonico;
     }
 
     /**

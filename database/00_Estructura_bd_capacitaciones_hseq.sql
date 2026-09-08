@@ -6,11 +6,12 @@
 --
 -- Criterio de integracion:
 -- - Los usuarios de acceso al modulo HSEQ viven en meridian_capacitaciones.usuarios.
--- - NO se crean tablas locales de trabajadores, cargos ni proyectos.
+-- - NO se crean tablas locales de trabajadores ni cargos.
 -- - persona_id_ext, contrato_id_ext y cargo_id_ext son referencias LOGICAS a meridian_personal.
 --   No se declaran FOREIGN KEY entre bases. La integridad se valida en aplicacion.
 -- - Las columnas *_usuario_id_ext referencian meridian_capacitaciones.usuarios.usuario_id.
--- - El proyecto se conserva como VARCHAR porque meridian_personal.contratos.proyecto no tiene un proyecto_id normalizado.
+-- - El catálogo HSEQ `proyectos` es la fuente maestra de nombres vigentes. En matriz,
+--   plan y asignaciones el proyecto se conserva como VARCHAR (sin FK) para no reescribir historial.
 -- - La auditoria de este modulo vive en meridian_capacitaciones.auditoria. No se reutiliza meridian_personal.auditoria.
 -- - Alertas, indicadores, resumenes y reportes deben calcularse desde los datos operativos; no requieren tablas propias.
 --
@@ -71,6 +72,17 @@ CREATE TABLE procesos (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_procesos_nombre (nombre)
+) ENGINE=InnoDB;
+
+-- Nombres de obra vigentes para el proceso Gestión de Proyectos. El valor se copia
+-- como VARCHAR en matriz/plan/asignaciones; no hay FK para no romper históricos.
+CREATE TABLE proyectos (
+  proyecto_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_proyectos_nombre (nombre)
 ) ENGINE=InnoDB;
 
 CREATE TABLE proveedores_capacitadores (

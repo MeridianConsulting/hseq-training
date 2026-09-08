@@ -153,10 +153,23 @@ class CatalogRepository
             try {
                 $t = $this->identificador($tabla);
                 $c = $this->identificador($columna);
-                $fila = $this->db->fetch(
-                    "SELECT COUNT(*) AS total FROM {$t} WHERE {$c} = ?",
-                    [$id]
-                );
+                $match = (string)($dep['match'] ?? 'id');
+                if ($match === 'nombre') {
+                    $actual = $this->buscarPorId($def, $id);
+                    $nombre = is_array($actual) ? trim((string)($actual['nombre'] ?? '')) : '';
+                    if ($nombre === '') {
+                        continue;
+                    }
+                    $fila = $this->db->fetch(
+                        "SELECT COUNT(*) AS total FROM {$t} WHERE LOWER(TRIM({$c})) = LOWER(TRIM(?))",
+                        [$nombre]
+                    );
+                } else {
+                    $fila = $this->db->fetch(
+                        "SELECT COUNT(*) AS total FROM {$t} WHERE {$c} = ?",
+                        [$id]
+                    );
+                }
             } catch (PDOException $e) {
                 continue;
             }

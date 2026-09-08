@@ -14,19 +14,6 @@ class AlertaRepository
 {
     private Database $db;
 
-    /** @var list<string> */
-    private const PROCESOS_PANEL = [
-        'GESTION ESTRATEGICA',
-        'GESTION ADMINISTRATIVA Y FINANCIERA',
-        'GESTION HSEQ',
-        'GESTION DE PROYECTOS',
-    ];
-
-    /** @var list<string> */
-    private const PROYECTOS_PANEL = [
-        'FRONTERA',
-    ];
-
     public function __construct()
     {
         $this->db = Database::getInstance();
@@ -147,22 +134,12 @@ class AlertaRepository
             'SELECT proceso_id, nombre FROM procesos WHERE activo = 1 ORDER BY nombre ASC'
         );
 
-        $porNombre = [];
-        foreach ($filas as $fila) {
-            $clave = $this->normalizarNombre((string)$fila['nombre']);
-            if (in_array($clave, self::PROCESOS_PANEL, true)) {
-                $porNombre[$clave] = [
-                    'proceso_id' => (int)$fila['proceso_id'],
-                    'nombre' => (string)$fila['nombre'],
-                ];
-            }
-        }
-
         $salida = [];
-        foreach (self::PROCESOS_PANEL as $clave) {
-            if (isset($porNombre[$clave])) {
-                $salida[] = $porNombre[$clave];
-            }
+        foreach ($filas as $fila) {
+            $salida[] = [
+                'proceso_id' => (int)$fila['proceso_id'],
+                'nombre' => (string)$fila['nombre'],
+            ];
         }
 
         return $salida;
@@ -174,15 +151,25 @@ class AlertaRepository
             return false;
         }
 
-        foreach ($this->procesosActivos() as $proceso) {
-            if ($proceso['proceso_id'] !== $procesoId) {
-                continue;
-            }
-
-            return str_contains($this->normalizarNombre($proceso['nombre']), 'GESTION DE PROYECTOS');
+        $fila = $this->db->fetch(
+            'SELECT nombre FROM procesos WHERE proceso_id = ? LIMIT 1',
+            [$procesoId]
+        );
+        if ($fila === null) {
+            return false;
         }
 
-        return false;
+        return $this->nombreEsProcesoDeProyectos((string)$fila['nombre']);
+    }
+
+    public function nombreEsProcesoDeProyectos(string $nombre): bool
+    {
+        $clave = $this->normalizarNombre($nombre);
+        if ($clave === 'PROYECTOS') {
+            return true;
+        }
+
+        return str_contains($clave, 'GESTION DE PROYECTOS');
     }
 
     /**
@@ -202,35 +189,45 @@ class AlertaRepository
     /** @return list<string> */
     public function proyectos(): array
     {
-        $candidatos = [];
-        foreach (
-            [
-                "SELECT DISTINCT proyecto FROM matriz_aplicabilidad
-                 WHERE proyecto IS NOT NULL AND TRIM(proyecto) <> ''",
-                "SELECT DISTINCT proyecto FROM asignaciones_capacitacion
-                 WHERE proyecto IS NOT NULL AND TRIM(proyecto) <> ''",
-            ] as $sql
-        ) {
-            foreach ($this->db->fetchAll($sql) as $fila) {
-                $nombre = trim((string)($fila['proyecto'] ?? ''));
-                if ($nombre === '') {
-                    continue;
-                }
-                $clave = $this->normalizarNombre($nombre);
-                if (in_array($clave, self::PROYECTOS_PANEL, true)) {
-                    $candidatos[$clave] = $nombre;
-                }
-            }
-        }
+        $filas = $this->db->fetchAll(
+            'SELECT nombre FROM proyectos WHERE activo = 1 ORDER BY nombre ASC'
+        );
 
         $salida = [];
-        foreach (self::PROYECTOS_PANEL as $clave) {
-            if (isset($candidatos[$clave])) {
-                $salida[] = $candidatos[$clave];
+        foreach ($filas as $fila) {
+            $nombre = trim((string)($fila['nombre'] ?? ''));
+            if ($nombre !== '') {
+                $salida[] = $nombre;
             }
         }
 
         return $salida;
+    }
+
+    /**
+     * Devuelve el nombre canónico del catálogo, o null si no existe / no está vigente.
+     */
+    public function resolverProyecto(?string $nombre, bool $soloActivos = true): ?string
+    {
+        $bruto = trim((string)$nombre);
+        if ($bruto === '') {
+            return null;
+        }
+
+        $sql = 'SELECT nombre, activo FROM proyectos';
+        $clave = $this->normalizarNombre($bruto);
+        foreach ($this->db->fetchAll($sql) as $fila) {
+            if ($this->normalizarNombre((string)$fila['nombre']) !== $clave) {
+                continue;
+            }
+            if ($soloActivos && (int)($fila['activo'] ?? 0) !== 1) {
+                return null;
+            }
+
+            return (string)$fila['nombre'];
+        }
+
+        return null;
     }
 
     /**

@@ -201,18 +201,13 @@ $planes->aprobar($planId, 1);
 echo "\n== Tablero del plan aprobado ==\n";
 $tablero = $cronograma->tablero(['tipo' => 'anual', 'anio' => $anioPrueba]);
 ok((int)$tablero['total'] === 2, 'Aparece automáticamente tras aprobar');
-ok(($tablero['proyectos'][0] ?? '') === 'FRONTERA', 'Catálogo de proyecto FRONTERA');
+ok(in_array('FRONTERA', $tablero['proyectos'] ?? [], true), 'Catálogo de proyectos incluye FRONTERA');
 $nombresProceso = array_map(static fn (array $p): string => mb_strtoupper((string)$p['nombre'], 'UTF-8'), $tablero['procesos']);
-foreach ($nombresProceso as $nombre) {
-    ok(
-        str_contains($nombre, 'GESTION ESTRATEGICA')
-        || str_contains($nombre, 'GESTION ADMINISTRATIVA')
-        || str_contains($nombre, 'GESTION HSEQ')
-        || str_contains($nombre, 'GESTION DE PROYECTOS'),
-        'Proceso del combo es de HSEQ: ' . $nombre
-    );
-}
-ok(count($tablero['procesos']) === 4, 'Solo los 4 procesos del programa');
+ok(
+    (bool)array_filter($nombresProceso, static fn (string $n): bool => str_contains($n, 'GESTION DE PROYECTOS')),
+    'El combo incluye Gestión de Proyectos'
+);
+ok(count($tablero['procesos']) >= 4, 'Los procesos activos del catálogo alimentan el combo');
 $marzo = $tablero['items'][0];
 ok($marzo['fecha_programada'] === '2028-03-15', 'Orden cronológico: marzo primero');
 ok($marzo['proyecto'] === 'FRONTERA', 'Proyecto en el ítem');
