@@ -295,8 +295,9 @@ class PersonalService
 
     /**
      * @param array<string, mixed> $entrada
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
-    public function editar(int $personaId, array $entrada): array
+    public function editar(int $personaId, array $entrada, ?array $actor = null): array
     {
         $actual = $this->ver($personaId);
 
@@ -356,6 +357,29 @@ class PersonalService
         if ($cargoCambio || strcasecmp($proyectoAntes, $proyectoAhora) !== 0) {
             $this->historial->registrarCambio($personaId, $cargoId, $proyecto);
             $actualizado['sincronizacion'] = $this->sincronizarAsignaciones($actualizado);
+        }
+
+        if ($actor !== null) {
+            $campos = [
+                'correo_corporativo' => 'Correo',
+                'cargo' => 'Cargo',
+                'proyecto' => 'Proyecto',
+            ];
+            $antes = $this->auditoria->recortePersonal($actual);
+            $despues = $this->auditoria->recortePersonal($actualizado);
+            $cambios = $this->auditoria->diff($antes, $despues, $campos);
+            if ($cambios !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'actualizar',
+                    'personal',
+                    $personaId,
+                    $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO, [
+                        'numero_documento' => $actualizado['numero_documento'] ?? null,
+                    ]),
+                    $antes
+                );
+            }
         }
 
         return $actualizado;

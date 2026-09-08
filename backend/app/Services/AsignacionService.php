@@ -415,6 +415,9 @@ class AsignacionService
             $hoy,
             $usuarioId,
             $actor,
+            $ids,
+            $errores,
+            $cap,
             &$creadasIds,
             &$omitidas,
             &$omitidasDetalle
@@ -476,8 +479,15 @@ class AsignacionService
                         'tipo' => 'MASIVA',
                         'origen' => 'MANUAL',
                         'capacitacion_id' => $capacitacionId,
+                        'capacitacion_codigo' => $cap['codigo'] ?? null,
+                        'capacitacion_nombre' => $cap['nombre'] ?? null,
+                        'seleccionados' => count($ids),
+                        'creadas' => count($creadasIds),
+                        'omitidas' => $omitidas,
+                        'errores' => $errores,
                         'trabajadores' => count($creadasIds),
                         'asignacion_ids' => $creadasIds,
+                        'omitidas_detalle' => $omitidasDetalle,
                     ]
                 );
             }

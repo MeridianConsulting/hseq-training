@@ -83,15 +83,7 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
         $datos = $this->validate($request, $this->service->reglas($def));
 
-        $creado = $this->service->crear($def, $datos);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'crear',
-            $def['tabla'],
-            (int)$creado[$def['pk']],
-            $creado
-        );
+        $creado = $this->service->crear($def, $datos, AuditoriaService::actorDe($request));
 
         $this->created($creado);
     }
@@ -101,7 +93,7 @@ class CatalogController extends Controller
         $def = $this->service->definicion($tipo);
         $datos = $this->validate($request, $this->service->reglas($def, true));
         $anterior = $this->service->ver($def, (int)$id);
-        $actualizado = $this->service->actualizar($def, (int)$id, $datos);
+        $actualizado = $this->service->actualizar($def, (int)$id, $datos, AuditoriaService::actorDe($request));
 
         $accion = 'actualizar';
         if (array_key_exists('activo', $datos)) {
@@ -114,30 +106,13 @@ class CatalogController extends Controller
             }
         }
 
-        $this->auditoria->dePeticion(
-            $request,
-            $accion,
-            $def['tabla'],
-            (int)$id,
-            $actualizado,
-            $anterior
-        );
-
         $this->success($actualizado, $accion === 'reactivar' ? 'Registro reactivado' : ($accion === 'inactivar' ? 'El registro fue inactivado correctamente.' : 'Registro actualizado'));
     }
 
     public function destroy(Request $request, string $tipo, string $id): void
     {
         $def = $this->service->definicion($tipo);
-        $mensaje = $this->service->eliminar($def, (int)$id);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'inactivar',
-            $def['tabla'],
-            (int)$id,
-            ['mensaje' => $mensaje]
-        );
+        $mensaje = $this->service->eliminar($def, (int)$id, AuditoriaService::actorDe($request));
 
         $this->success(null, $mensaje);
     }

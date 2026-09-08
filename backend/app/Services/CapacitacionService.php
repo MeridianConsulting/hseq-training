@@ -29,6 +29,9 @@ class CapacitacionService
         'evaluacion' => 'Evaluación',
         'nota_minima' => 'Nota mínima',
         'certificado' => 'Certificado',
+        'requiere_listado_asistencia' => 'Requiere asistencia',
+        'vigencia_nombre' => 'Vigencia',
+        'periodicidad_nombre' => 'Periodicidad',
         'estado' => 'Estado',
     ];
 
@@ -158,7 +161,16 @@ class CapacitacionService
             $id = $this->repo->crear($datos);
             $creado = $this->ver($id);
             if ($actor !== null) {
-                $this->auditoria->deActor($actor, 'crear', 'capacitaciones', $id, $creado);
+                $this->auditoria->deActor(
+                    $actor,
+                    'crear',
+                    'capacitaciones',
+                    $id,
+                    $this->recorte($creado, self::CAMPOS_AUDITABLES) + [
+                        'codigo' => $creado['codigo'] ?? null,
+                        'nombre' => $creado['nombre'] ?? null,
+                    ]
+                );
             }
 
             return $creado;

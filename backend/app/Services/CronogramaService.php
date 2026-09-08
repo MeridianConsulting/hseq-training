@@ -22,6 +22,7 @@ class CronogramaService
     private PersonalService $personal;
     private AlertaRepository $alertas;
     private PlanAnualRepository $planes;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
@@ -33,6 +34,7 @@ class CronogramaService
         $this->personal = new PersonalService();
         $this->alertas = new AlertaRepository();
         $this->planes = new PlanAnualRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     /**
@@ -152,7 +154,10 @@ class CronogramaService
      * @param array<string,mixed> $datos
      * @return array<string,mixed>
      */
-    public function reprogramar(int $detalleId, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function reprogramar(int $detalleId, array $datos, ?array $actor = null): array
     {
         $fila = $this->exigirAprobado($detalleId);
         if (strtoupper((string)($fila['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
@@ -164,6 +169,7 @@ class CronogramaService
         $mes = (int)substr($fecha, 5, 2);
         $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null;
         $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
+        $fechaAnterior = substr((string)($fila['fecha_programada'] ?? ''), 0, 10);
 
         $duplicado = $this->planes->buscarDetalleActividad(
             (int)$fila['plan_anual_id'],
@@ -189,7 +195,25 @@ class CronogramaService
             throw new HttpException('No fue posible guardar la programación.', 500);
         }
 
-        return $this->ver($detalleId);
+        $despues = $this->ver($detalleId);
+        if ($actor !== null && $fechaAnterior !== $fecha) {
+            $cambios = [[
+                'campo' => 'fecha_programada',
+                'etiqueta' => 'Fecha programada',
+                'anterior' => $fechaAnterior !== '' ? $fechaAnterior : null,
+                'nuevo' => $fecha,
+            ]];
+            $this->auditoria->deActor(
+                $actor,
+                'reprogramar',
+                'plan_anual_detalle',
+                $detalleId,
+                $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                ['fecha_programada' => $fechaAnterior !== '' ? $fechaAnterior : null]
+            );
+        }
+
+        return $despues;
     }
 
     /**

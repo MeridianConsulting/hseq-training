@@ -953,6 +953,7 @@ export type CambioAuditoria = {
   etiqueta: string;
   anterior: unknown;
   nuevo: unknown;
+  persona_nombre?: string;
 };
 
 export type RegistroAuditoria = {
@@ -960,8 +961,13 @@ export type RegistroAuditoria = {
   usuario_id_ext: number | null;
   nombre_usuario: string | null;
   accion: string;
+  accion_etiqueta?: string;
   entidad: string | null;
   entidad_id: number | null;
+  modulo?: string;
+  modulo_etiqueta?: string;
+  ruta_relacionada?: string | null;
+  resumen?: string;
   detalle: unknown;
   valor_anterior: unknown;
   valor_nuevo: unknown;

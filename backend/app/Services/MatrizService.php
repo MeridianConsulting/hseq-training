@@ -14,10 +14,20 @@ class MatrizService
 {
     private const MENSAJE_DUPLICADO = 'La capacitación ya está asociada a este cargo, proceso y proyecto.';
 
+    /** @var array<string,string> */
+    public const CAMPOS_AUDITABLES = [
+        'capacitacion_nombre' => 'Capacitación',
+        'cargo_nombre' => 'Cargo',
+        'proceso_nombre' => 'Proceso',
+        'proyecto' => 'Proyecto',
+        'aplica' => 'Aplica',
+    ];
+
     private MatrizRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
     private AlertaRepository $alertas;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
@@ -25,6 +35,7 @@ class MatrizService
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
         $this->alertas = new AlertaRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function reglas(bool $esActualizacion = false): array
@@ -172,9 +183,10 @@ class MatrizService
     }
 
     /**
-     * @return array{creadas:int, reactivadas:int, inactivadas:int, vista:array<string,mixed>}
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     * @return array{creadas:int, reactivadas:int, inactivadas:int, sin_cambio:int, agregadas:list<array<string,mixed>>, reactivadas_detalle:list<array<string,mixed>>, retiradas:list<array<string,mixed>>, vista:array<string,mixed>}
      */
-    public function sincronizar(array $entrada, int $usuarioId): array
+    public function sincronizar(array $entrada, int $usuarioId, ?array $actor = null): array
     {
         $procesoId = (int)($entrada['proceso_id'] ?? 0);
         if ($procesoId < 1) {
@@ -196,6 +208,10 @@ class MatrizService
         $creadas = 0;
         $reactivadas = 0;
         $inactivadas = 0;
+        $sinCambio = 0;
+        $agregadas = [];
+        $reactivadasDetalle = [];
+        $retiradas = [];
 
         $this->repo->transaccion(function () use (
             $aplica,
@@ -206,7 +222,11 @@ class MatrizService
             $usuarioId,
             &$creadas,
             &$reactivadas,
-            &$inactivadas
+            &$inactivadas,
+            &$sinCambio,
+            &$agregadas,
+            &$reactivadasDetalle,
+            &$retiradas
         ): void {
             foreach ($aplica as $clave => $par) {
                 $filas = $porCelda[$clave] ?? [];
@@ -224,6 +244,10 @@ class MatrizService
                         'creado_por_usuario_id_ext' => $usuarioId,
                     ]);
                     $creadas++;
+                    $agregadas[] = $this->celdaMatriz([
+                        'cargo_id_ext' => $par['cargo_id_ext'],
+                        'capacitacion_id' => $par['capacitacion_id'],
+                    ]);
                     continue;
                 }
 
@@ -231,12 +255,16 @@ class MatrizService
                 if ((int)$primera['activa'] !== 1) {
                     $this->repo->activar((int)$primera['matriz_aplicabilidad_id']);
                     $reactivadas++;
+                    $reactivadasDetalle[] = $this->celdaMatriz($primera);
+                } else {
+                    $sinCambio++;
                 }
 
                 foreach ($filas as $extra) {
                     if ((int)$extra['activa'] === 1) {
                         $this->repo->inactivar((int)$extra['matriz_aplicabilidad_id']);
                         $inactivadas++;
+                        $retiradas[] = $this->celdaMatriz($extra);
                     }
                 }
             }
@@ -249,20 +277,48 @@ class MatrizService
                     if ((int)$fila['activa'] === 1) {
                         $this->repo->inactivar((int)$fila['matriz_aplicabilidad_id']);
                         $inactivadas++;
+                        $retiradas[] = $this->celdaMatriz($fila);
                     }
                 }
             }
         });
 
+        if ($actor !== null) {
+            $this->auditoria->deActor(
+                $actor,
+                'sincronizar',
+                'matriz_aplicabilidad',
+                $procesoId,
+                [
+                    'proceso_id' => $procesoId,
+                    'proyecto' => $proyecto,
+                    'creadas' => $creadas,
+                    'reactivadas' => $reactivadas,
+                    'inactivadas' => $inactivadas,
+                    'sin_cambio' => $sinCambio,
+                    'agregadas' => $agregadas,
+                    'reactivadas_detalle' => $reactivadasDetalle,
+                    'retiradas' => $retiradas,
+                ]
+            );
+        }
+
         return [
             'creadas' => $creadas,
             'reactivadas' => $reactivadas,
             'inactivadas' => $inactivadas,
+            'sin_cambio' => $sinCambio,
+            'agregadas' => $agregadas,
+            'reactivadas_detalle' => $reactivadasDetalle,
+            'retiradas' => $retiradas,
             'vista' => $this->vista($procesoId, $proyecto),
         ];
     }
 
-    public function crear(array $datos, int $usuarioId): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function crear(array $datos, int $usuarioId, ?array $actor = null): array
     {
         $datos = $this->preparar($datos);
         $this->aplicarContextoObligatorio($datos, false);
@@ -274,14 +330,25 @@ class MatrizService
 
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
         $id = $this->repo->crear($datos);
+        $creado = $this->ver($id);
+        if ($actor !== null) {
+            $this->auditoria->deActor(
+                $actor,
+                'crear',
+                'matriz_aplicabilidad',
+                $id,
+                $this->vistaAuditoria($creado)
+            );
+        }
 
-        return $this->ver($id);
+        return $creado;
     }
 
     /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      * @return array{creadas:int, omitidas:int, items:list<array<string,mixed>>, omitidas_detalle:list<array<string,mixed>>}
      */
-    public function asociarMasivo(array $entrada, int $usuarioId): array
+    public function asociarMasivo(array $entrada, int $usuarioId, ?array $actor = null): array
     {
         $base = $this->preparar([
             'capacitacion_id' => $entrada['capacitacion_id'] ?? null,
@@ -327,6 +394,24 @@ class MatrizService
             $items[] = $this->ver($id);
         }
 
+        if ($actor !== null) {
+            $this->auditoria->deActor(
+                $actor,
+                'asociar_masivo',
+                'matriz_aplicabilidad',
+                isset($base['capacitacion_id']) ? (int)$base['capacitacion_id'] : null,
+                [
+                    'capacitacion_id' => $base['capacitacion_id'] ?? null,
+                    'proceso_id' => $base['proceso_id'] ?? null,
+                    'proyecto' => $base['proyecto'] ?? null,
+                    'creadas' => count($items),
+                    'omitidas' => count($omitidas),
+                    'matriz_ids' => $creadasIds,
+                    'omitidas_detalle' => $omitidas,
+                ]
+            );
+        }
+
         return [
             'creadas' => count($items),
             'omitidas' => count($omitidas),
@@ -335,7 +420,10 @@ class MatrizService
         ];
     }
 
-    public function actualizar(int $id, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function actualizar(int $id, array $datos, ?array $actor = null): array
     {
         $actual = $this->ver($id);
         $datos = $this->preparar($datos, true);
@@ -363,10 +451,36 @@ class MatrizService
             $this->repo->actualizar($id, $datos);
         }
 
-        return $this->ver($id);
+        $despues = $this->ver($id);
+        if ($actor !== null) {
+            $antesVista = $this->vistaAuditoria($actual);
+            $despuesVista = $this->vistaAuditoria($despues);
+            $cambios = $this->auditoria->diff($antesVista, $despuesVista, self::CAMPOS_AUDITABLES);
+            $accion = 'actualizar';
+            if (($antesVista['aplica'] ?? null) === 'Aplica' && ($despuesVista['aplica'] ?? null) === 'No aplica') {
+                $accion = 'inactivar';
+            } elseif (($antesVista['aplica'] ?? null) === 'No aplica' && ($despuesVista['aplica'] ?? null) === 'Aplica') {
+                $accion = 'reactivar';
+            }
+            if ($cambios !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    $accion,
+                    'matriz_aplicabilidad',
+                    $id,
+                    $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                    $antesVista
+                );
+            }
+        }
+
+        return $despues;
     }
 
-    public function eliminar(int $id): string
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function eliminar(int $id, ?array $actor = null): string
     {
         $actual = $this->ver($id);
 
@@ -375,6 +489,22 @@ class MatrizService
         }
 
         $this->repo->inactivar($id);
+        if ($actor !== null) {
+            $despues = $this->ver($id);
+            $cambios = $this->auditoria->diff(
+                $this->vistaAuditoria($actual),
+                $this->vistaAuditoria($despues),
+                self::CAMPOS_AUDITABLES
+            );
+            $this->auditoria->deActor(
+                $actor,
+                'inactivar',
+                'matriz_aplicabilidad',
+                $id,
+                $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                $this->vistaAuditoria($actual)
+            );
+        }
 
         return 'El registro fue inactivado correctamente.';
     }
@@ -766,6 +896,37 @@ class MatrizService
                 throw new HttpException('La periodicidad seleccionada está inactiva.', 422);
             }
         }
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array{cargo_id_ext:?int,capacitacion_id:?int,cargo_nombre:?string,capacitacion_nombre:?string}
+     */
+    private function celdaMatriz(array $fila): array
+    {
+        return [
+            'cargo_id_ext' => isset($fila['cargo_id_ext']) ? (int)$fila['cargo_id_ext'] : null,
+            'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
+            'cargo_nombre' => isset($fila['cargo_nombre']) ? (string)$fila['cargo_nombre'] : null,
+            'capacitacion_nombre' => isset($fila['capacitacion_nombre']) ? (string)$fila['capacitacion_nombre'] : null,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function vistaAuditoria(array $fila): array
+    {
+        $activa = !empty($fila['activa']);
+
+        return [
+            'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? $fila['capacitacion_id'] ?? null,
+            'cargo_nombre' => $fila['cargo_nombre'] ?? $fila['cargo_id_ext'] ?? null,
+            'proceso_nombre' => $fila['proceso_nombre'] ?? $fila['proceso_id'] ?? null,
+            'proyecto' => $fila['proyecto'] ?? null,
+            'aplica' => $activa ? 'Aplica' : 'No aplica',
+        ];
     }
 
     private function normalizar(array $fila, array $nombresCargo): array

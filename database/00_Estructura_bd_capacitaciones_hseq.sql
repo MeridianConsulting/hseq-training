@@ -397,15 +397,18 @@ CREATE TABLE soportes_cumplimiento (
 CREATE TABLE auditoria (
   auditoria_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   usuario_id_ext INT UNSIGNED NULL COMMENT 'usuarios.usuario_id',
+  usuario_nombre VARCHAR(120) NULL,
   accion VARCHAR(60) NOT NULL,
   entidad VARCHAR(60) NULL,
   entidad_id INT UNSIGNED NULL,
-  detalle_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL CHECK (json_valid(`detalle_json`)),
+  valor_anterior LONGTEXT NULL,
+  valor_nuevo LONGTEXT NULL,
   ip_origen VARCHAR(45) NULL,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY ix_auditoria_usuario_fecha (usuario_id_ext, created_at),
-  KEY ix_auditoria_entidad (entidad, entidad_id)
+  KEY ix_auditoria_entidad (entidad, entidad_id),
+  KEY ix_auditoria_accion_fecha (accion, created_at)
 ) ENGINE=InnoDB;
 
 -- =========================================================

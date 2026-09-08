@@ -24,12 +24,14 @@ class AuditoriaController extends Controller
             (int)$request->query('per_page', 20),
             [
                 'entidad' => nullable_trimmed_string($request->query('entidad')),
+                'modulo' => nullable_trimmed_string($request->query('modulo')),
                 'accion' => nullable_trimmed_string($request->query('accion')),
                 'usuario' => nullable_trimmed_string($request->query('usuario')),
                 'usuario_id' => $request->query('usuario_id'),
                 'entidad_id' => $request->query('entidad_id'),
                 'desde' => nullable_trimmed_string($request->query('desde')),
                 'hasta' => nullable_trimmed_string($request->query('hasta')),
+                'q' => nullable_trimmed_string($request->query('q')),
             ]
         );
 

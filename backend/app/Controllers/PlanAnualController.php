@@ -88,7 +88,13 @@ class PlanAnualController extends Controller
             'crear_actividad',
             'plan_anual_detalle',
             (int)$id,
-            $datos
+            [
+                'plan_anual_id' => (int)$id,
+                'capacitacion_id' => (int)($datos['capacitacion_id'] ?? 0),
+                'proceso_id' => (int)($datos['proceso_id'] ?? 0),
+                'proyecto' => $datos['proyecto'] ?? null,
+                'fecha_programada' => $datos['fecha_programada'] ?? null,
+            ]
         );
 
         $this->success($plan, 'Actividad agregada correctamente al Plan Anual.');
@@ -102,14 +108,30 @@ class PlanAnualController extends Controller
     public function actualizarActividad(Request $request, string $id, string $detalleId): void
     {
         $datos = $this->validate($request, $this->service->reglasActividad());
+        $anterior = $this->service->verActividad((int)$id, (int)$detalleId);
         $plan = $this->service->actualizarActividad((int)$id, (int)$detalleId, $datos);
-
+        $despues = $this->service->verActividad((int)$id, (int)$detalleId);
+        $campos = [
+            'capacitacion_nombre' => 'Capacitación',
+            'proceso_nombre' => 'Proceso',
+            'proyecto' => 'Proyecto',
+            'fecha_programada' => 'Fecha programada',
+        ];
+        $cambios = $this->auditoria->diff($anterior, $despues, $campos);
         $this->auditoria->dePeticion(
             $request,
             'editar_actividad',
             'plan_anual_detalle',
             (int)$detalleId,
-            $datos
+            $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO, [
+                'plan_anual_id' => (int)$id,
+            ]),
+            [
+                'capacitacion_nombre' => $anterior['capacitacion_nombre'] ?? null,
+                'proceso_nombre' => $anterior['proceso_nombre'] ?? null,
+                'proyecto' => $anterior['proyecto'] ?? null,
+                'fecha_programada' => $anterior['fecha_programada'] ?? null,
+            ]
         );
 
         $this->success($plan, 'Plan Anual guardado correctamente.');
@@ -117,6 +139,7 @@ class PlanAnualController extends Controller
 
     public function eliminarActividad(Request $request, string $id, string $detalleId): void
     {
+        $anterior = $this->service->verActividad((int)$id, (int)$detalleId);
         $plan = $this->service->eliminarActividad((int)$id, (int)$detalleId);
 
         $this->auditoria->dePeticion(
@@ -124,7 +147,13 @@ class PlanAnualController extends Controller
             'eliminar_actividad',
             'plan_anual_detalle',
             (int)$detalleId,
-            ['plan_anual_id' => (int)$id]
+            ['plan_anual_id' => (int)$id],
+            [
+                'capacitacion_nombre' => $anterior['capacitacion_nombre'] ?? null,
+                'proceso_nombre' => $anterior['proceso_nombre'] ?? null,
+                'proyecto' => $anterior['proyecto'] ?? null,
+                'fecha_programada' => $anterior['fecha_programada'] ?? null,
+            ]
         );
 
         $this->success($plan, 'Actividad retirada del Plan Anual.');

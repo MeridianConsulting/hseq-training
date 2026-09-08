@@ -87,7 +87,7 @@ class PersonalController extends Controller
             'crear',
             'personal',
             (int)$creado['persona_id'],
-            $creado
+            $this->auditoria->recortePersonal($creado)
         );
 
         $this->created($creado, $this->mensajeSincronizacion('Trabajador registrado', $creado));
@@ -96,15 +96,7 @@ class PersonalController extends Controller
     public function update(Request $request, string $id): void
     {
         $datos = $this->validate($request, $this->reglas(true), $this->mensajes());
-        $actualizado = $this->service->editar((int)$id, $datos);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'actualizar',
-            'personal',
-            (int)$id,
-            $actualizado
-        );
+        $actualizado = $this->service->editar((int)$id, $datos, AuditoriaService::actorDe($request));
 
         $this->success($actualizado, $this->mensajeSincronizacion('Trabajador actualizado', $actualizado));
     }

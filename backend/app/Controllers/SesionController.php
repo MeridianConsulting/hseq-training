@@ -162,19 +162,11 @@ class SesionController extends Controller
             'items.required' => 'Debe enviar los resultados de asistencia.',
             'items.array' => 'Debe enviar los resultados de asistencia.',
         ]);
-        $anterior = $this->service->ver((int)$id);
-        $actualizada = $this->service->guardarAsistencia((int)$id, $datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'asistencia',
-            'sesiones_capacitacion',
+        $actualizada = $this->service->guardarAsistencia(
             (int)$id,
-            [
-                'resumen' => $actualizada['resumen'] ?? null,
-                'items' => $datos['items'],
-            ],
-            ['participantes' => $anterior['participantes'] ?? []]
+            $datos,
+            $request->userId(),
+            AuditoriaService::actorDe($request)
         );
 
         $this->success($actualizada, 'Control de asistencia registrado correctamente.');

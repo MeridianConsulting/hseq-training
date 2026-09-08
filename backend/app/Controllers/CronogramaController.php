@@ -62,15 +62,7 @@ class CronogramaController extends Controller
             'fecha_programada' => 'required|string|max:10',
         ]);
         $id = (int)$detalleId;
-        $item = $this->servicio->reprogramar($id, $datos);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'reprogramar',
-            'plan_anual_detalle',
-            $id,
-            $datos
-        );
+        $item = $this->servicio->reprogramar($id, $datos, AuditoriaService::actorDe($request));
 
         $this->success($item, 'Programación actualizada correctamente.');
     }

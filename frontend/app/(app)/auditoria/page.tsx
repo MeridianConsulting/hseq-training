@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
@@ -15,24 +16,56 @@ import type { CambioAuditoria, RegistroAuditoria } from "@/lib/tipos";
 const MODULOS = [
   { valor: "", etiqueta: "Todos" },
   { valor: "capacitaciones", etiqueta: "Capacitaciones" },
-  { valor: "asignaciones_capacitacion", etiqueta: "Asignaciones" },
-  { valor: "cumplimientos_capacitacion", etiqueta: "Cumplimientos" },
-  { valor: "soportes_cumplimiento", etiqueta: "Evidencias" },
-  { valor: "migraciones", etiqueta: "Migración Excel" },
+  { valor: "matriz", etiqueta: "Matriz de aplicabilidad" },
+  { valor: "plan-anual", etiqueta: "Plan anual" },
+  { valor: "cronograma", etiqueta: "Tablero de Cronograma" },
+  { valor: "asignaciones", etiqueta: "Asignaciones" },
+  { valor: "cumplimientos", etiqueta: "Cumplimientos" },
+  { valor: "catalogos", etiqueta: "Catálogos" },
   { valor: "personal", etiqueta: "Personal" },
+  { valor: "migracion", etiqueta: "Carga inicial Excel" },
+  { valor: "reportes", etiqueta: "Reportes" },
 ];
 
 const ACCIONES = [
   { valor: "", etiqueta: "Todas" },
   { valor: "crear", etiqueta: "Crear" },
-  { valor: "actualizar", etiqueta: "Actualizar" },
-  { valor: "eliminar", etiqueta: "Eliminar" },
-  { valor: "cargar", etiqueta: "Cargar" },
-  { valor: "asignar_masivo", etiqueta: "Asignar masivo" },
-  { valor: "generar_automaticas", etiqueta: "Motor automático" },
-  { valor: "migracion_inicial", etiqueta: "Carga inicial Excel" },
+  { valor: "actualizar", etiqueta: "Editar" },
   { valor: "inactivar", etiqueta: "Inactivar" },
+  { valor: "reactivar", etiqueta: "Reactivar" },
+  { valor: "eliminar", etiqueta: "Eliminar" },
+  { valor: "cargar", etiqueta: "Cargar soporte" },
+  { valor: "descargar", etiqueta: "Descargar soporte" },
+  { valor: "asignar_masivo", etiqueta: "Asignación masiva" },
+  { valor: "generar_automaticas", etiqueta: "Asignación automática" },
+  { valor: "sincronizar", etiqueta: "Guardado masivo de matriz" },
+  { valor: "asociar_masivo", etiqueta: "Asociación masiva de matriz" },
+  { valor: "aprobar", etiqueta: "Aprobar" },
+  { valor: "devolver", etiqueta: "Devolver" },
+  { valor: "enviar_revision", etiqueta: "Enviar a revisión" },
+  { valor: "reprogramar", etiqueta: "Reprogramar" },
+  { valor: "cancelar", etiqueta: "Cancelar" },
+  { valor: "iniciar", etiqueta: "Iniciar ejecución" },
+  { valor: "asistencia", etiqueta: "Registrar asistencia" },
+  { valor: "finalizar", etiqueta: "Finalizar" },
+  { valor: "convocar", etiqueta: "Convocar" },
+  { valor: "retirar_convocado", etiqueta: "Retirar convocado" },
+  { valor: "registrar_evaluaciones", etiqueta: "Registrar evaluación" },
+  { valor: "registrar_masivo", etiqueta: "Registro masivo de cumplimientos" },
+  { valor: "crear_actividad", etiqueta: "Agregar actividad" },
+  { valor: "editar_actividad", etiqueta: "Editar actividad" },
+  { valor: "eliminar_actividad", etiqueta: "Retirar actividad" },
+  { valor: "incluir_asignaciones", etiqueta: "Incluir asignaciones" },
+  { valor: "quitar_asignacion", etiqueta: "Quitar asignación del plan" },
+  { valor: "mover_asignacion", etiqueta: "Mover asignación" },
+  { valor: "migracion_inicial", etiqueta: "Carga inicial Excel" },
+  { valor: "exportar", etiqueta: "Exportar reporte" },
+  { valor: "importar", etiqueta: "Importar personal" },
 ];
+
+const ACCIONES_UNICAS = ACCIONES.filter(
+  (op, idx, arr) => arr.findIndex((o) => o.valor === op.valor) === idx,
+);
 
 function formatoFechaHora(valor: string | null): string {
   if (!valor) return "—";
@@ -45,7 +78,10 @@ function textoValor(valor: unknown): string {
   if (valor === null || valor === undefined || valor === "") {
     return "—";
   }
-  if (typeof valor === "string" || typeof valor === "number" || typeof valor === "boolean") {
+  if (typeof valor === "boolean") {
+    return valor ? "Sí" : "No";
+  }
+  if (typeof valor === "string" || typeof valor === "number") {
     return String(valor);
   }
   return JSON.stringify(valor);
@@ -61,8 +97,8 @@ export default function AuditoriaPage() {
 
 function Contenido() {
   const { valores, setFiltro, limpiar } = useFiltrosUrl(
-    { entidad: "", accion: "", usuario: "", desde: "", hasta: "" },
-    { keysDebounce: ["usuario"] },
+    { modulo: "", accion: "", usuario: "", desde: "", hasta: "", entidad_id: "", q: "" },
+    { keysDebounce: ["usuario", "q", "entidad_id"] },
   );
   const [items, setItems] = useState<RegistroAuditoria[]>([]);
   const [pagina, setPagina] = useState(1);
@@ -77,16 +113,18 @@ function Contenido() {
       withQuery("/api/auditoria", {
         page: paginaActual,
         per_page: 20,
-        entidad: valores.entidad,
+        modulo: valores.modulo,
         accion: valores.accion,
         usuario: valores.usuario,
         desde: valores.desde,
         hasta: valores.hasta,
+        entidad_id: valores.entidad_id,
+        q: valores.q,
       }),
     );
     setCargando(false);
     if (!r.success || !r.data) {
-      setError(r.message || "No fue posible cargar la auditoría.");
+      setError(r.message || "No fue posible consultar la auditoría.");
       return;
     }
     setItems(r.data.items);
@@ -98,25 +136,31 @@ function Contenido() {
 
   useDebouncedCallback(() => {
     void cargar(1);
-  }, [valores.entidad, valores.accion, valores.usuario, valores.desde, valores.hasta]);
+  }, [valores.modulo, valores.accion, valores.usuario, valores.desde, valores.hasta, valores.entidad_id, valores.q]);
 
   const chips: ChipFiltro[] = [];
-  if (valores.entidad) {
+  if (valores.modulo) {
     chips.push({
-      clave: "entidad",
+      clave: "modulo",
       etiqueta: "Módulo",
-      valor: MODULOS.find((m) => m.valor === valores.entidad)?.etiqueta ?? valores.entidad,
+      valor: MODULOS.find((m) => m.valor === valores.modulo)?.etiqueta ?? valores.modulo,
     });
   }
   if (valores.accion) {
     chips.push({
       clave: "accion",
       etiqueta: "Acción",
-      valor: ACCIONES.find((a) => a.valor === valores.accion)?.etiqueta ?? valores.accion,
+      valor: ACCIONES_UNICAS.find((a) => a.valor === valores.accion)?.etiqueta ?? valores.accion,
     });
   }
   if (valores.usuario) {
     chips.push({ clave: "usuario", etiqueta: "Usuario", valor: valores.usuario });
+  }
+  if (valores.entidad_id) {
+    chips.push({ clave: "entidad_id", etiqueta: "Registro", valor: valores.entidad_id });
+  }
+  if (valores.q) {
+    chips.push({ clave: "q", etiqueta: "Búsqueda", valor: valores.q });
   }
   if (valores.desde) {
     chips.push({ clave: "desde", etiqueta: "Desde", valor: valores.desde });
@@ -125,19 +169,24 @@ function Contenido() {
     chips.push({ clave: "hasta", etiqueta: "Hasta", valor: valores.hasta });
   }
 
+  const hayFiltros = chips.length > 0;
+  const vacio = hayFiltros
+    ? "No se encontraron eventos para los filtros seleccionados."
+    : "No se encontraron eventos para los filtros seleccionados.";
+
   return (
     <>
       <PageHeader
         titulo="Auditoría"
-        descripcion="Registro de altas, cambios y bajas del módulo HSEQ."
+        descripcion="Consulta de trazabilidad: quién hizo qué, cuándo y qué cambió. Los eventos no se pueden editar ni eliminar."
       />
       {error ? <Alert tono="error">{error}</Alert> : null}
       <Filters>
         <Field etiqueta="Módulo">
           <select
             className={inputClass}
-            value={valores.entidad}
-            onChange={(e) => setFiltro("entidad", e.target.value)}
+            value={valores.modulo}
+            onChange={(e) => setFiltro("modulo", e.target.value)}
           >
             {MODULOS.map((op) => (
               <option key={op.valor || "todos"} value={op.valor}>
@@ -152,7 +201,7 @@ function Contenido() {
             value={valores.accion}
             onChange={(e) => setFiltro("accion", e.target.value)}
           >
-            {ACCIONES.map((op) => (
+            {ACCIONES_UNICAS.map((op) => (
               <option key={op.valor || "todas"} value={op.valor}>
                 {op.etiqueta}
               </option>
@@ -165,6 +214,23 @@ function Contenido() {
             value={valores.usuario}
             onChange={(e) => setFiltro("usuario", e.target.value)}
             placeholder="Nombre o usuario"
+          />
+        </Field>
+        <Field etiqueta="Identificador">
+          <input
+            className={inputClass}
+            value={valores.entidad_id}
+            onChange={(e) => setFiltro("entidad_id", e.target.value.replace(/[^\d]/g, ""))}
+            placeholder="Id del registro"
+            inputMode="numeric"
+          />
+        </Field>
+        <Field etiqueta="Buscar">
+          <input
+            className={inputClass}
+            value={valores.q}
+            onChange={(e) => setFiltro("q", e.target.value)}
+            placeholder="Usuario, acción, módulo o id"
           />
         </Field>
         <Field etiqueta="Desde">
@@ -200,16 +266,17 @@ function Contenido() {
               <tr>
                 <th className="px-4 py-3 font-medium">Fecha y hora</th>
                 <th className="px-4 py-3 font-medium">Usuario</th>
+                <th className="px-4 py-3 font-medium">Módulo</th>
                 <th className="px-4 py-3 font-medium">Acción</th>
-                <th className="px-4 py-3 font-medium">Entidad</th>
-                <th className="px-4 py-3 font-medium">Id</th>
+                <th className="px-4 py-3 font-medium">Registro</th>
+                <th className="px-4 py-3 font-medium">Resumen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {items.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
-                    No hay registros para mostrar.
+                  <td className="px-4 py-8 text-center text-slate-500" colSpan={6}>
+                    {vacio}
                   </td>
                 </tr>
               ) : (
@@ -246,6 +313,9 @@ function FilaAuditoria({
   onToggle: () => void;
 }) {
   const cambios: CambioAuditoria[] = Array.isArray(item.cambios) ? item.cambios : [];
+  const modulo = item.modulo_etiqueta ?? item.entidad ?? "—";
+  const accion = item.accion_etiqueta ?? item.accion;
+  const ruta = item.ruta_relacionada;
 
   return (
     <>
@@ -255,16 +325,28 @@ function FilaAuditoria({
       >
         <td className="px-4 py-3 align-top text-slate-700">{formatoFechaHora(item.created_at)}</td>
         <td className="px-4 py-3 align-top text-slate-700">{item.nombre_usuario ?? "—"}</td>
-        <td className="px-4 py-3 align-top text-slate-700">{item.accion}</td>
-        <td className="px-4 py-3 align-top text-slate-700">{item.entidad ?? "—"}</td>
+        <td className="px-4 py-3 align-top text-slate-700">{modulo}</td>
+        <td className="px-4 py-3 align-top text-slate-700">{accion}</td>
         <td className="px-4 py-3 align-top text-slate-700">{item.entidad_id ?? "—"}</td>
+        <td className="px-4 py-3 align-top text-slate-700">{item.resumen ?? "—"}</td>
       </tr>
       {abierta ? (
         <tr className="bg-slate-50">
-          <td className="px-4 py-3" colSpan={5}>
-            {item.origen ? (
-              <p className="mb-2 text-xs text-slate-500">Origen: {item.origen}</p>
-            ) : null}
+          <td className="px-4 py-3" colSpan={6}>
+            <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+              {item.origen ? (
+                <p className="text-xs text-slate-500">Origen: {item.origen}</p>
+              ) : null}
+              {ruta ? (
+                <Link
+                  href={ruta}
+                  className="text-sm font-medium text-hseq-700 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Ver módulo relacionado
+                </Link>
+              ) : null}
+            </div>
             {cambios.length > 0 ? (
               <table className="min-w-full text-sm">
                 <thead>
@@ -275,10 +357,13 @@ function FilaAuditoria({
                   </tr>
                 </thead>
                 <tbody>
-                  {cambios.map((cambio) => (
-                    <tr key={cambio.campo} className="border-t border-slate-200">
+                  {cambios.map((cambio, idx) => (
+                    <tr key={`${cambio.campo}-${idx}`} className="border-t border-slate-200">
                       <td className="py-1 pr-4 font-medium text-slate-700">
                         {cambio.etiqueta || cambio.campo}
+                        {"persona_nombre" in cambio && cambio.persona_nombre
+                          ? ` (${String(cambio.persona_nombre)})`
+                          : null}
                       </td>
                       <td className="py-1 pr-4 text-slate-600">{textoValor(cambio.anterior)}</td>
                       <td className="py-1 text-slate-600">{textoValor(cambio.nuevo)}</td>

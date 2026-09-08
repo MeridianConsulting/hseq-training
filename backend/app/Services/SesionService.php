@@ -15,12 +15,14 @@ class SesionService
     private SesionRepository $repo;
     private VencimientoService $vencimiento;
     private SoporteService $soportes;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->repo = new SesionRepository();
         $this->vencimiento = new VencimientoService();
         $this->soportes = new SoporteService();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function reglasCrear(): array
@@ -258,13 +260,16 @@ class SesionService
 
     /**
      * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
-    public function guardarAsistencia(int $sesionId, array $datos, int $usuarioId): array
+    public function guardarAsistencia(int $sesionId, array $datos, int $usuarioId, ?array $actor = null): array
     {
         $items = $datos['items'] ?? null;
         if (!is_array($items) || $items === []) {
             throw new HttpException('Debe enviar los resultados de asistencia.', 422);
         }
+
+        $antes = $this->ver($sesionId);
 
         try {
             $this->repo->transaccion(function () use ($sesionId, $items, $usuarioId): void {
@@ -316,7 +321,26 @@ class SesionService
             throw $this->errorPersistencia($e, 'No fue posible registrar la asistencia.');
         }
 
-        return $this->ver($sesionId);
+        $despues = $this->ver($sesionId);
+        if ($actor !== null) {
+            $cambios = $this->auditoria->diffAsistencia(
+                is_array($antes['participantes'] ?? null) ? $antes['participantes'] : [],
+                is_array($despues['participantes'] ?? null) ? $despues['participantes'] : []
+            );
+            if ($cambios !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'asistencia',
+                    'sesiones_capacitacion',
+                    $sesionId,
+                    $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO, [
+                        'resumen' => $despues['resumen'] ?? null,
+                    ])
+                );
+            }
+        }
+
+        return $despues;
     }
 
     /**

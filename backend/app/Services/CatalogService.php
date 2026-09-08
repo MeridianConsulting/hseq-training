@@ -10,10 +10,12 @@ use App\Repositories\CatalogRepository;
 class CatalogService
 {
     private CatalogRepository $repo;
+    private AuditoriaService $auditoria;
 
     public function __construct()
     {
         $this->repo = new CatalogRepository();
+        $this->auditoria = new AuditoriaService();
     }
 
     public function definicion(string $tipo): array
@@ -109,7 +111,10 @@ class CatalogService
         return $registro;
     }
 
-    public function crear(array $def, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function crear(array $def, array $datos, ?array $actor = null): array
     {
         $datos = $this->limpiar($datos);
 
@@ -118,11 +123,24 @@ class CatalogService
         }
 
         $id = $this->repo->crear($def, $datos);
+        $creado = $this->ver($def, $id);
+        if ($actor !== null) {
+            $this->auditoria->deActor(
+                $actor,
+                'crear',
+                (string)$def['tabla'],
+                $id,
+                $this->vistaAuditoria($def, $creado)
+            );
+        }
 
-        return $this->ver($def, $id);
+        return $creado;
     }
 
-    public function actualizar(array $def, int $id, array $datos): array
+    /**
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function actualizar(array $def, int $id, array $datos, ?array $actor = null): array
     {
         $actual = $this->ver($def, $id);
         $datos = $this->limpiar($datos);
@@ -136,14 +154,38 @@ class CatalogService
         }
 
         $this->repo->actualizar($def, $id, $datos);
+        $despues = $this->ver($def, $id);
+        if ($actor !== null) {
+            $antesVista = $this->vistaAuditoria($def, $actual);
+            $despuesVista = $this->vistaAuditoria($def, $despues);
+            $cambios = $this->auditoria->diff($antesVista, $despuesVista, $this->etiquetasCampos($def));
+            $accion = 'actualizar';
+            if (($antesVista['activo'] ?? null) === 'Activo' && ($despuesVista['activo'] ?? null) === 'Inactivo') {
+                $accion = 'inactivar';
+            } elseif (($antesVista['activo'] ?? null) === 'Inactivo' && ($despuesVista['activo'] ?? null) === 'Activo') {
+                $accion = 'reactivar';
+            }
+            if ($cambios !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    $accion,
+                    (string)$def['tabla'],
+                    $id,
+                    $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                    $antesVista
+                );
+            }
+        }
 
-        return $this->ver($def, $id);
+        return $despues;
     }
 
     /**
      * Inactiva el registro. Nunca elimina fisicamente.
+     *
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
-    public function eliminar(array $def, int $id): string
+    public function eliminar(array $def, int $id, ?array $actor = null): string
     {
         $actual = $this->ver($def, $id);
 
@@ -153,6 +195,20 @@ class CatalogService
 
         $this->asegurarPuedeInactivar($def, $id, $actual);
         $this->repo->inactivar($def, $id);
+        if ($actor !== null) {
+            $despues = $this->ver($def, $id);
+            $antesVista = $this->vistaAuditoria($def, $actual);
+            $despuesVista = $this->vistaAuditoria($def, $despues);
+            $cambios = $this->auditoria->diff($antesVista, $despuesVista, $this->etiquetasCampos($def));
+            $this->auditoria->deActor(
+                $actor,
+                'inactivar',
+                (string)$def['tabla'],
+                $id,
+                $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
+                $antesVista
+            );
+        }
 
         return 'El registro fue inactivado correctamente.';
     }
@@ -226,5 +282,53 @@ class CatalogService
         }
 
         return $datos;
+    }
+
+    /**
+     * @param array<string,mixed> $def
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function vistaAuditoria(array $def, array $fila): array
+    {
+        $out = [];
+        foreach (array_keys($def['campos'] ?? []) as $campo) {
+            if (!is_string($campo)) {
+                continue;
+            }
+            $out[$campo] = $fila[$campo] ?? null;
+        }
+        if (!empty($def['soft_delete'])) {
+            $out['activo'] = ((int)($fila['activo'] ?? 1) === 1) ? 'Activo' : 'Inactivo';
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $def
+     * @return array<string,string>
+     */
+    private function etiquetasCampos(array $def): array
+    {
+        $map = [
+            'nombre' => 'Nombre',
+            'descripcion' => 'Descripción',
+            'cantidad' => 'Cantidad',
+            'unidad' => 'Unidad',
+            'activo' => 'Estado',
+        ];
+        $campos = [];
+        foreach (array_keys($def['campos'] ?? []) as $campo) {
+            if (!is_string($campo)) {
+                continue;
+            }
+            $campos[$campo] = $map[$campo] ?? $campo;
+        }
+        if (!empty($def['soft_delete'])) {
+            $campos['activo'] = 'Estado';
+        }
+
+        return $campos;
     }
 }

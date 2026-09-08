@@ -899,6 +899,9 @@ class CumplimientoService
                 'cumplimiento_id' => (int)$existente['cumplimiento_id'],
                 'asignacion_id' => $asignacionId,
                 'nota' => $nota,
+                'nota_anterior' => $existente['nota_evaluacion'] ?? null,
+                'persona_id_ext' => $existente['persona_id_ext'] ?? null,
+                'numero_documento' => $existente['numero_documento'] ?? null,
             ];
         }
 
@@ -920,20 +923,41 @@ class CumplimientoService
                     }
                 }
                 if ($actor !== null && $preparados !== []) {
+                    $cambios = [];
+                    foreach ($preparados as $item) {
+                        $a = $item['nota_anterior'] ?? null;
+                        $b = $item['nota'];
+                        if ($this->auditoria->diff(
+                            ['nota_evaluacion' => $a],
+                            ['nota_evaluacion' => $b],
+                            ['nota_evaluacion' => 'Nota de evaluación']
+                        ) === []) {
+                            continue;
+                        }
+                        $cambios[] = [
+                            'campo' => 'nota_evaluacion',
+                            'etiqueta' => 'Nota de evaluación',
+                            'anterior' => $a,
+                            'nuevo' => $b,
+                            'cumplimiento_id' => (int)$item['cumplimiento_id'],
+                            'asignacion_id' => (int)$item['asignacion_id'],
+                            'persona_id_ext' => isset($item['persona_id_ext']) ? (int)$item['persona_id_ext'] : null,
+                            'numero_documento' => $item['numero_documento'] ?? null,
+                        ];
+                    }
                     $this->auditoria->deActor(
                         $actor,
                         'registrar_evaluaciones',
                         'cumplimientos_capacitacion',
                         $sesionId,
-                        [
-                            'origen' => AuditoriaService::ORIGEN_USUARIO,
+                        $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO, [
                             'sesion_id' => $sesionId,
                             'procesados' => count($preparados),
                             'cumplimiento_ids' => array_map(
                                 static fn (array $item): int => (int)$item['cumplimiento_id'],
                                 $preparados
                             ),
-                        ]
+                        ])
                     );
                 }
             });

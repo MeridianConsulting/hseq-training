@@ -67,15 +67,7 @@ class MatrizController extends Controller
     {
         $this->exigirEscritura($request);
         $datos = $this->validate($request, $this->service->reglasSincronizar());
-        $resultado = $this->service->sincronizar($datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'sincronizar',
-            'matriz_aplicabilidad',
-            null,
-            $resultado
-        );
+        $resultado = $this->service->sincronizar($datos, $request->userId(), AuditoriaService::actorDe($request));
 
         $this->success($resultado, 'Matriz de aplicabilidad guardada');
     }
@@ -88,15 +80,7 @@ class MatrizController extends Controller
     public function store(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglas());
-        $creado = $this->service->crear($datos, $request->userId());
-
-        $this->auditoria->dePeticion(
-            $request,
-            'crear',
-            'matriz_aplicabilidad',
-            (int)$creado['matriz_aplicabilidad_id'],
-            $creado
-        );
+        $creado = $this->service->crear($datos, $request->userId(), AuditoriaService::actorDe($request));
 
         $this->created($creado, 'Fila de matriz creada');
     }
@@ -104,16 +88,8 @@ class MatrizController extends Controller
     public function asociarMasivo(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasMasiva());
-        $resultado = $this->service->asociarMasivo($datos, $request->userId());
+        $resultado = $this->service->asociarMasivo($datos, $request->userId(), AuditoriaService::actorDe($request));
         $mensaje = $this->service->mensajeMasivo($resultado);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'asociar_masivo',
-            'matriz_aplicabilidad',
-            null,
-            $resultado
-        );
 
         $this->success($resultado, $mensaje, $resultado['creadas'] > 0 ? 201 : 200);
     }
@@ -122,7 +98,7 @@ class MatrizController extends Controller
     {
         $datos = $this->validate($request, $this->service->reglas(true));
         $anterior = $this->service->ver((int)$id);
-        $actualizado = $this->service->actualizar((int)$id, $datos);
+        $actualizado = $this->service->actualizar((int)$id, $datos, AuditoriaService::actorDe($request));
 
         $accion = 'actualizar';
         if (array_key_exists('activa', $datos)) {
@@ -135,15 +111,6 @@ class MatrizController extends Controller
             }
         }
 
-        $this->auditoria->dePeticion(
-            $request,
-            $accion,
-            'matriz_aplicabilidad',
-            (int)$id,
-            $actualizado,
-            $anterior
-        );
-
         $this->success(
             $actualizado,
             $accion === 'reactivar'
@@ -154,15 +121,7 @@ class MatrizController extends Controller
 
     public function destroy(Request $request, string $id): void
     {
-        $mensaje = $this->service->eliminar((int)$id);
-
-        $this->auditoria->dePeticion(
-            $request,
-            'inactivar',
-            'matriz_aplicabilidad',
-            (int)$id,
-            ['mensaje' => $mensaje]
-        );
+        $mensaje = $this->service->eliminar((int)$id, AuditoriaService::actorDe($request));
 
         $this->success(null, $mensaje);
     }

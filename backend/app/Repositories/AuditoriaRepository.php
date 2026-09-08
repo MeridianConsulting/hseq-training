@@ -88,6 +88,46 @@ class AuditoriaRepository
             $params[] = $entidad;
         }
 
+        $grupos = $filtros['modulo_grupos'] ?? [];
+        if (is_array($grupos) && $grupos !== [] && $entidad === '') {
+            $orModulo = [];
+            foreach ($grupos as $grupo) {
+                if (!is_array($grupo)) {
+                    continue;
+                }
+                $ents = [];
+                foreach ($grupo['entidades'] ?? [] as $e) {
+                    if (is_string($e) && $e !== '') {
+                        $ents[] = $e;
+                    }
+                }
+                if ($ents === []) {
+                    continue;
+                }
+                $ph = implode(', ', array_fill(0, count($ents), '?'));
+                $parte = "a.entidad IN ({$ph})";
+                $params = array_merge($params, $ents);
+                $acciones = $grupo['acciones'] ?? null;
+                if (is_array($acciones) && $acciones !== []) {
+                    $clean = [];
+                    foreach ($acciones as $ac) {
+                        if (is_string($ac) && $ac !== '') {
+                            $clean[] = $ac;
+                        }
+                    }
+                    if ($clean !== []) {
+                        $phA = implode(', ', array_fill(0, count($clean), '?'));
+                        $parte = "({$parte} AND a.accion IN ({$phA}))";
+                        $params = array_merge($params, $clean);
+                    }
+                }
+                $orModulo[] = $parte;
+            }
+            if ($orModulo !== []) {
+                $condiciones[] = '(' . implode(' OR ', $orModulo) . ')';
+            }
+        }
+
         $accion = trim((string)($filtros['accion'] ?? ''));
         if ($accion !== '') {
             $condiciones[] = 'a.accion = ?';
@@ -124,6 +164,22 @@ class AuditoriaRepository
         if ($hasta !== '') {
             $condiciones[] = 'a.created_at <= ?';
             $params[] = strlen($hasta) === 10 ? $hasta . ' 23:59:59' : $hasta;
+        }
+
+        $q = trim((string)($filtros['q'] ?? ''));
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $orQ = '(a.usuario_nombre LIKE ? OR u.nombre_usuario LIKE ? OR a.accion LIKE ? OR a.entidad LIKE ?';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            if (ctype_digit($q)) {
+                $orQ .= ' OR a.entidad_id = ?';
+                $params[] = (int)$q;
+            }
+            $orQ .= ')';
+            $condiciones[] = $orQ;
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
