@@ -947,7 +947,7 @@ class MatrizService
             'ambito' => $fila['ambito'],
             'proyecto' => $fila['proyecto'],
             'periodicidad_id' => $fila['periodicidad_id'] !== null ? (int)$fila['periodicidad_id'] : null,
-            'periodicidad_nombre' => $fila['periodicidad_nombre'] ?? null,
+            'periodicidad_nombre' => humanizar_nombre_unidad($fila['periodicidad_nombre'] ?? null),
             'obligatoria' => (int)$fila['obligatoria'] === 1,
             'activa' => (int)$fila['activa'] === 1,
             'created_at' => $fila['created_at'] ?? null,

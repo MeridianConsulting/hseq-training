@@ -75,7 +75,7 @@ class CatalogService
 
     public function listar(array $def, string $filtroEstado, ?string $buscar): array
     {
-        return $this->repo->listar($def, $filtroEstado, $buscar);
+        return $this->presentarFilas($def, $this->repo->listar($def, $filtroEstado, $buscar));
     }
 
     /**
@@ -93,7 +93,10 @@ class CatalogService
         $offset = ($pagina - 1) * $porPagina;
 
         return [
-            'items' => $this->repo->listar($def, $filtroEstado, $buscar, $porPagina, $offset),
+            'items' => $this->presentarFilas(
+                $def,
+                $this->repo->listar($def, $filtroEstado, $buscar, $porPagina, $offset)
+            ),
             'total' => $this->repo->contar($def, $filtroEstado, $buscar),
             'page' => $pagina,
             'per_page' => $porPagina,
@@ -108,7 +111,7 @@ class CatalogService
             throw new HttpException('Registro no encontrado', 404);
         }
 
-        return $registro;
+        return $this->presentarFila($def, $registro);
     }
 
     /**
@@ -116,7 +119,7 @@ class CatalogService
      */
     public function crear(array $def, array $datos, ?array $actor = null): array
     {
-        $datos = $this->limpiar($datos);
+        $datos = $this->limpiar($def, $datos);
 
         if ($this->repo->nombreDuplicado($def, (string)$datos['nombre'])) {
             throw new HttpException('Ya existe un registro con este nombre.', 409);
@@ -143,7 +146,7 @@ class CatalogService
     public function actualizar(array $def, int $id, array $datos, ?array $actor = null): array
     {
         $actual = $this->ver($def, $id);
-        $datos = $this->limpiar($datos);
+        $datos = $this->limpiar($def, $datos);
 
         if (isset($datos['nombre']) && $this->repo->nombreDuplicado($def, (string)$datos['nombre'], $id)) {
             throw new HttpException('Ya existe un registro con este nombre.', 409);
@@ -263,7 +266,7 @@ class CatalogService
      * @param array<string, mixed> $datos
      * @return array<string, mixed>
      */
-    private function limpiar(array $datos): array
+    private function limpiar(array $def, array $datos): array
     {
         if (array_key_exists('activo', $datos) && $datos['activo'] === null) {
             unset($datos['activo']);
@@ -273,6 +276,13 @@ class CatalogService
             $datos['nombre'] = trim($datos['nombre']);
             if ($datos['nombre'] === '') {
                 throw new HttpException('El nombre es obligatorio.', 422);
+            }
+            $tabla = (string)($def['tabla'] ?? '');
+            if (in_array($tabla, ['procesos', 'proyectos', 'areas', 'modalidades', 'tipos_capacitacion'], true)) {
+                $datos['nombre'] = mb_strtoupper($datos['nombre'], 'UTF-8');
+            }
+            if (in_array($tabla, ['vigencias', 'periodicidades'], true)) {
+                $datos['nombre'] = humanizar_nombre_unidad($datos['nombre']) ?? $datos['nombre'];
             }
         }
 
@@ -330,5 +340,33 @@ class CatalogService
         }
 
         return $campos;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $filas
+     * @return list<array<string,mixed>>
+     */
+    private function presentarFilas(array $def, array $filas): array
+    {
+        $out = [];
+        foreach ($filas as $fila) {
+            $out[] = $this->presentarFila($def, $fila);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @return array<string,mixed>
+     */
+    private function presentarFila(array $def, array $fila): array
+    {
+        $tabla = (string)($def['tabla'] ?? '');
+        if (in_array($tabla, ['vigencias', 'periodicidades'], true) && isset($fila['nombre'])) {
+            $fila['nombre'] = humanizar_nombre_unidad($fila['nombre']) ?? $fila['nombre'];
+        }
+
+        return $fila;
     }
 }

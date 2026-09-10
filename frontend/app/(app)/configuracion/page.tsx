@@ -16,7 +16,7 @@ import { Table } from "@/components/ui/table";
 import { useDebouncedCallback } from "@/hooks/useFiltrosUrl";
 import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import { detalleItemCatalogo } from "@/lib/catalogos";
+import { detalleItemCatalogo, humanizarNombreUnidad } from "@/lib/catalogos";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
 
@@ -54,6 +54,9 @@ function Contenido() {
   useEffect(() => {
     void (async () => {
       const r = await apiGet<TipoCatalogo[]>("/api/catalogs");
+      if (r.cancelada) {
+        return;
+      }
       if (!r.success || !r.data) {
         setError(r.message || "No fue posible cargar los catálogos.");
         return;
@@ -79,6 +82,9 @@ function Contenido() {
       }),
     );
     setCargando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible cargar el catálogo.");
       return;
@@ -142,6 +148,9 @@ function Contenido() {
       ? await apiPut<ItemCatalogo>(`/api/catalogs/${tipo.tipo}/${id}`, datos)
       : await apiPost<ItemCatalogo>(`/api/catalogs/${tipo.tipo}`, datos);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No se pudo guardar.");
       return;
@@ -163,6 +172,9 @@ function Contenido() {
       return;
     }
     const r = await apiDelete(`/api/catalogs/${tipo.tipo}/${id}`);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       setError(r.message || "No se pudo inactivar.");
       return;
@@ -181,6 +193,9 @@ function Contenido() {
       return;
     }
     const r = await apiPut<ItemCatalogo>(`/api/catalogs/${tipo.tipo}/${id}`, { activo: 1 });
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       setError(r.message || "No se pudo reactivar.");
       return;
@@ -269,7 +284,7 @@ function Contenido() {
             { clave: "acciones", etiqueta: "" },
           ]}
           filas={items.map((item) => [
-            String(item.nombre ?? ""),
+            humanizarNombreUnidad(String(item.nombre ?? "")),
             detalleItemCatalogo(item),
             item.activo === undefined ? (
               "—"

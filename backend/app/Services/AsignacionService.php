@@ -677,7 +677,7 @@ class AsignacionService
             'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'],
             'origen' => (string)$fila['origen'],
             'periodicidad_nombre' => isset($fila['periodicidad_nombre']) && $fila['periodicidad_nombre'] !== ''
-                ? (string)$fila['periodicidad_nombre']
+                ? humanizar_nombre_unidad((string)$fila['periodicidad_nombre'])
                 : null,
             'obligatoria' => array_key_exists('obligatoria', $fila) && $fila['obligatoria'] !== null
                 ? ((int)$fila['obligatoria'] === 1)

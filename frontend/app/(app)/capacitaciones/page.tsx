@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Filters } from "@/components/ui/filters";
 import { Field, inputClass } from "@/components/ui/field";
-import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
+import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -24,6 +24,7 @@ import {
   type ListaPaginada,
 } from "@/lib/api";
 import type { Capacitacion, ItemCatalogo } from "@/lib/tipos";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { FormularioCapacitacion, type DatosCapacitacion } from "./formulario";
 
@@ -65,6 +66,9 @@ function Contenido() {
   const [editando, setEditando] = useState<Capacitacion | null>(null);
   const [catalogos, setCatalogos] = useState<Record<string, ItemCatalogo[]>>({});
   const [erroresApi, setErroresApi] = useState<ApiErrorMap | null>(null);
+  const [masFiltros, setMasFiltros] = useState(() =>
+    Boolean(valores.es_tarea_critica || valores.evaluacion),
+  );
 
   async function cargar(paginaActual = pagina) {
     setCargando(true);
@@ -82,6 +86,9 @@ function Contenido() {
     );
     setCargando(false);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar las capacitaciones.");
       return;
@@ -110,10 +117,13 @@ function Contenido() {
       const entradas = await Promise.all(
         tipos.map(async (tipo) => {
           const r = await apiGet<{ items: ItemCatalogo[] }>(`/api/catalogs/${tipo}?activos=1`);
-          return [tipo, r.data?.items ?? []] as const;
+          return [tipo, r] as const;
         }),
       );
-      setCatalogos(Object.fromEntries(entradas));
+      if (entradas.some(([, r]) => r.cancelada)) {
+        return;
+      }
+      setCatalogos(Object.fromEntries(entradas.map(([tipo, r]) => [tipo, r.data?.items ?? []])));
     })();
   }, []);
 
@@ -163,6 +173,8 @@ function Contenido() {
     });
   }
 
+  const extrasActivos = [valores.es_tarea_critica, valores.evaluacion].filter(Boolean).length;
+
   function abrirNueva() {
     setEditando(null);
     setErroresApi(null);
@@ -208,6 +220,9 @@ function Contenido() {
       ? await apiPut<Capacitacion>(`/api/capacitaciones/${editando.capacitacion_id}`, cuerpo)
       : await apiPost<Capacitacion>("/api/capacitaciones", cuerpo);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       if (respuesta.errors) {
         setErroresApi(respuesta.errors);
@@ -232,6 +247,9 @@ function Contenido() {
     }
 
     const respuesta = await apiDelete(`/api/capacitaciones/${item.capacitacion_id}`);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible eliminar la capacitación.");
       return;
@@ -296,6 +314,24 @@ function Contenido() {
             ))}
           </select>
         </Field>
+        <Field etiqueta="Estado">
+          <select
+            className={inputClass}
+            value={valores.estado}
+            onChange={(e) => setFiltro("estado", e.target.value)}
+          >
+            <option value="">Todas</option>
+            <option value="ACTIVA">Activa</option>
+            <option value="INACTIVA">Inactiva</option>
+          </select>
+        </Field>
+      </Filters>
+
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={extrasActivos}
+      >
         <Field etiqueta="Tarea crítica">
           <select
             className={inputClass}
@@ -318,18 +354,7 @@ function Contenido() {
             <option value="0">No</option>
           </select>
         </Field>
-        <Field etiqueta="Estado">
-          <select
-            className={inputClass}
-            value={valores.estado}
-            onChange={(e) => setFiltro("estado", e.target.value)}
-          >
-            <option value="">Todas</option>
-            <option value="ACTIVA">Activa</option>
-            <option value="INACTIVA">Inactiva</option>
-          </select>
-        </Field>
-      </Filters>
+      </MasFiltros>
 
       <FiltrosActivos
         chips={chips}
@@ -364,7 +389,7 @@ function Contenido() {
             item.duracion_estimada_horas,
             item.tipo_nombre ?? "—",
             item.modalidad_nombre ?? "—",
-            item.vigencia_nombre ?? "No vence",
+            humanizarNombreUnidad(item.vigencia_nombre) || "No vence",
             siNo(item.es_tarea_critica),
             siNo(item.evaluacion),
             item.evaluacion ? (item.nota_minima ?? "—") : "No aplica",

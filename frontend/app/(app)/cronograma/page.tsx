@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { Ban, CalendarClock, ClipboardCheck, Eye, Play, Users } from "lucide-react";
 import { apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { ItemCronograma, TableroCronograma, TrabajadorCronograma } from "@/lib/tipos";
 
 function filtroInicial(): FiltroCronogramaValor {
@@ -53,7 +54,7 @@ function tonoEstado(estado: string) {
 }
 
 function etiquetaVigencia(item: ItemCronograma): string {
-  return item.vigencia_nombre ?? "No vence";
+  return humanizarNombreUnidad(item.vigencia_nombre) || "No vence";
 }
 
 function sesionActiva(item: ItemCronograma): number | null {
@@ -119,6 +120,9 @@ function Contenido() {
 
       if (abortado.actual) return;
 
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar el cronograma.");
         setTablero(null);
@@ -149,6 +153,9 @@ function Contenido() {
     const respuesta = await apiGet<{ items: TrabajadorCronograma[] }>(
       `/api/cronograma/${item.plan_detalle_id}/trabajadores`,
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar los trabajadores.");
       return;
@@ -165,6 +172,9 @@ function Contenido() {
       { fecha_programada: fechaNueva },
     );
     setGuardando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible guardar la programación.");
       return;
@@ -180,6 +190,9 @@ function Contenido() {
       return;
     }
     const respuesta = await apiPost<ItemCronograma>(`/api/cronograma/${item.plan_detalle_id}/cancelar`, {});
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible guardar la programación.");
       return;
@@ -194,6 +207,9 @@ function Contenido() {
     setGuardando(true);
     const respuesta = await apiPost<ItemCronograma>(`/api/cronograma/${iniciarDe.plan_detalle_id}/iniciar`, {});
     setGuardando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible iniciar la capacitación.");
       return;

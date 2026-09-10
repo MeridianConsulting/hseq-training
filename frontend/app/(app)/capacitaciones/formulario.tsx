@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import type { ApiErrorMap } from "@/lib/api";
 import type { Capacitacion, ItemCatalogo } from "@/lib/tipos";
-import { conValorHistorico } from "@/lib/catalogos";
+import { conValorHistorico, humanizarNombreUnidad } from "@/lib/catalogos";
 
 export type DatosCapacitacion = {
   codigo: string;
@@ -64,7 +64,7 @@ function desdeItem(item: Capacitacion): DatosCapacitacion {
 function opciones(items: ItemCatalogo[], pk: string) {
   return items.map((item) => (
     <option key={String(item[pk])} value={String(item[pk])}>
-      {String(item.nombre ?? "")}
+      {String(humanizarNombreUnidad(String(item.nombre ?? "")) || item.nombre || "")}
     </option>
   ));
 }

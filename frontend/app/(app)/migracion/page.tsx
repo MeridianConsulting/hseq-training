@@ -50,6 +50,9 @@ function Contenido() {
         per_page: 20,
       }),
     );
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible cargar las inconsistencias.");
       return;
@@ -73,6 +76,9 @@ function Contenido() {
     form.append("anio_programa", anio);
     const r = await apiPostForm<Migracion>("/api/migracion/validar", form);
     setValidando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setMigracion(null);
       setInconsistencias([]);
@@ -90,6 +96,9 @@ function Contenido() {
     setError(null);
     const r = await apiPost<Migracion>(`/api/migracion/${migracion.migracion_id}/confirmar`);
     setConfirmando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible confirmar la migración.");
       return;
@@ -104,6 +113,9 @@ function Contenido() {
     setError(null);
     const r = await apiPost<Migracion>(`/api/migracion/${migracion.migracion_id}/cancelar`);
     setCancelando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible cancelar la migración.");
       return;

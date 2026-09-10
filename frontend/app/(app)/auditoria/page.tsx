@@ -1,17 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
-import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
+import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type { CambioAuditoria, RegistroAuditoria } from "@/lib/tipos";
+
+const FILTROS_DEFAULT = {
+  buscar: "",
+  modulo: "",
+  accion: "",
+  usuario: "",
+  entidad_id: "",
+  desde: "",
+  hasta: "",
+};
 
 const MODULOS = [
   { valor: "", etiqueta: "Todos" },
@@ -67,6 +77,13 @@ const ACCIONES_UNICAS = ACCIONES.filter(
   (op, idx, arr) => arr.findIndex((o) => o.valor === op.valor) === idx,
 );
 
+function formatoFecha(valor: string | null): string {
+  if (!valor) return "—";
+  const [anio, mes, dia] = valor.slice(0, 10).split("-");
+  if (!dia) return valor;
+  return `${dia}/${mes}/${anio}`;
+}
+
 function formatoFechaHora(valor: string | null): string {
   if (!valor) return "—";
   const m = valor.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
@@ -96,16 +113,18 @@ export default function AuditoriaPage() {
 }
 
 function Contenido() {
-  const { valores, setFiltro, limpiar } = useFiltrosUrl(
-    { modulo: "", accion: "", usuario: "", desde: "", hasta: "", entidad_id: "", q: "" },
-    { keysDebounce: ["usuario", "q", "entidad_id"] },
-  );
+  const { valores, setFiltro, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
+    keysDebounce: ["buscar", "usuario", "entidad_id"],
+  });
   const [items, setItems] = useState<RegistroAuditoria[]>([]);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
   const [cargando, setCargando] = useState(true);
   const [expandida, setExpandida] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [masFiltros, setMasFiltros] = useState(() =>
+    Boolean(valores.entidad_id || valores.desde || valores.hasta),
+  );
 
   async function cargar(paginaActual = 1) {
     setCargando(true);
@@ -113,16 +132,19 @@ function Contenido() {
       withQuery("/api/auditoria", {
         page: paginaActual,
         per_page: 20,
-        modulo: valores.modulo,
-        accion: valores.accion,
-        usuario: valores.usuario,
-        desde: valores.desde,
-        hasta: valores.hasta,
-        entidad_id: valores.entidad_id,
-        q: valores.q,
+        q: valores.buscar.trim() || undefined,
+        modulo: valores.modulo || undefined,
+        accion: valores.accion || undefined,
+        usuario: valores.usuario.trim() || undefined,
+        desde: valores.desde || undefined,
+        hasta: valores.hasta || undefined,
+        entidad_id: valores.entidad_id || undefined,
       }),
     );
     setCargando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success || !r.data) {
       setError(r.message || "No fue posible consultar la auditoría.");
       return;
@@ -136,43 +158,55 @@ function Contenido() {
 
   useDebouncedCallback(() => {
     void cargar(1);
-  }, [valores.modulo, valores.accion, valores.usuario, valores.desde, valores.hasta, valores.entidad_id, valores.q]);
+  }, [
+    valores.buscar,
+    valores.modulo,
+    valores.accion,
+    valores.usuario,
+    valores.desde,
+    valores.hasta,
+    valores.entidad_id,
+  ]);
 
-  const chips: ChipFiltro[] = [];
-  if (valores.modulo) {
-    chips.push({
-      clave: "modulo",
-      etiqueta: "Módulo",
-      valor: MODULOS.find((m) => m.valor === valores.modulo)?.etiqueta ?? valores.modulo,
-    });
-  }
-  if (valores.accion) {
-    chips.push({
-      clave: "accion",
-      etiqueta: "Acción",
-      valor: ACCIONES_UNICAS.find((a) => a.valor === valores.accion)?.etiqueta ?? valores.accion,
-    });
-  }
-  if (valores.usuario) {
-    chips.push({ clave: "usuario", etiqueta: "Usuario", valor: valores.usuario });
-  }
-  if (valores.entidad_id) {
-    chips.push({ clave: "entidad_id", etiqueta: "Registro", valor: valores.entidad_id });
-  }
-  if (valores.q) {
-    chips.push({ clave: "q", etiqueta: "Búsqueda", valor: valores.q });
-  }
-  if (valores.desde) {
-    chips.push({ clave: "desde", etiqueta: "Desde", valor: valores.desde });
-  }
-  if (valores.hasta) {
-    chips.push({ clave: "hasta", etiqueta: "Hasta", valor: valores.hasta });
-  }
+  const chipsActivos = useMemo(() => {
+    const chips: ChipFiltro[] = [];
+    if (valores.buscar.trim()) {
+      chips.push({ clave: "buscar", etiqueta: "Buscar", valor: valores.buscar.trim() });
+    }
+    if (valores.modulo) {
+      chips.push({
+        clave: "modulo",
+        etiqueta: "Módulo",
+        valor: MODULOS.find((m) => m.valor === valores.modulo)?.etiqueta ?? valores.modulo,
+      });
+    }
+    if (valores.accion) {
+      chips.push({
+        clave: "accion",
+        etiqueta: "Acción",
+        valor: ACCIONES_UNICAS.find((a) => a.valor === valores.accion)?.etiqueta ?? valores.accion,
+      });
+    }
+    if (valores.usuario.trim()) {
+      chips.push({ clave: "usuario", etiqueta: "Usuario", valor: valores.usuario.trim() });
+    }
+    if (valores.entidad_id) {
+      chips.push({ clave: "entidad_id", etiqueta: "Identificador", valor: valores.entidad_id });
+    }
+    if (valores.desde) {
+      chips.push({ clave: "desde", etiqueta: "Fecha desde", valor: formatoFecha(valores.desde) });
+    }
+    if (valores.hasta) {
+      chips.push({ clave: "hasta", etiqueta: "Fecha hasta", valor: formatoFecha(valores.hasta) });
+    }
+    return chips;
+  }, [valores]);
 
-  const hayFiltros = chips.length > 0;
-  const vacio = hayFiltros
-    ? "No se encontraron eventos para los filtros seleccionados."
-    : "No se encontraron eventos para los filtros seleccionados.";
+  const extrasActivos = [valores.entidad_id, valores.desde, valores.hasta].filter(Boolean).length;
+  const vacio =
+    chipsActivos.length > 0
+      ? "No se encontraron eventos para los filtros seleccionados."
+      : "No hay eventos de auditoría para mostrar.";
 
   return (
     <>
@@ -181,7 +215,16 @@ function Contenido() {
         descripcion="Consulta de trazabilidad: quién hizo qué, cuándo y qué cambió. Los eventos no se pueden editar ni eliminar."
       />
       {error ? <Alert tono="error">{error}</Alert> : null}
+
       <Filters>
+        <Field etiqueta="Buscar">
+          <input
+            className={inputClass}
+            value={valores.buscar}
+            onChange={(e) => setFiltro("buscar", e.target.value)}
+            placeholder="Usuario, acción, módulo o id"
+          />
+        </Field>
         <Field etiqueta="Módulo">
           <select
             className={inputClass}
@@ -216,49 +259,48 @@ function Contenido() {
             placeholder="Nombre o usuario"
           />
         </Field>
-        <Field etiqueta="Identificador">
-          <input
-            className={inputClass}
-            value={valores.entidad_id}
-            onChange={(e) => setFiltro("entidad_id", e.target.value.replace(/[^\d]/g, ""))}
-            placeholder="Id del registro"
-            inputMode="numeric"
-          />
-        </Field>
-        <Field etiqueta="Buscar">
-          <input
-            className={inputClass}
-            value={valores.q}
-            onChange={(e) => setFiltro("q", e.target.value)}
-            placeholder="Usuario, acción, módulo o id"
-          />
-        </Field>
-        <Field etiqueta="Desde">
-          <input
-            type="date"
-            className={inputClass}
-            value={valores.desde}
-            onChange={(e) => setFiltro("desde", e.target.value)}
-          />
-        </Field>
-        <Field etiqueta="Hasta">
-          <input
-            type="date"
-            className={inputClass}
-            value={valores.hasta}
-            onChange={(e) => setFiltro("hasta", e.target.value)}
-          />
-        </Field>
       </Filters>
 
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={extrasActivos}
+      >
+            <Field etiqueta="Identificador">
+              <input
+                className={inputClass}
+                value={valores.entidad_id}
+                onChange={(e) => setFiltro("entidad_id", e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Id del registro"
+                inputMode="numeric"
+              />
+            </Field>
+            <Field etiqueta="Fecha desde">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.desde}
+                onChange={(e) => setFiltro("desde", e.target.value)}
+              />
+            </Field>
+            <Field etiqueta="Fecha hasta">
+              <input
+                type="date"
+                className={inputClass}
+                value={valores.hasta}
+                onChange={(e) => setFiltro("hasta", e.target.value)}
+              />
+            </Field>
+      </MasFiltros>
+
       <FiltrosActivos
-        chips={chips}
+        chips={chipsActivos}
         onQuitar={(clave) => setFiltro(clave, "")}
         onLimpiar={limpiar}
       />
 
       {cargando ? (
-        <ListaCargando />
+        <ListaCargando mensaje="Cargando auditoría…" />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
@@ -340,6 +382,7 @@ function FilaAuditoria({
               {ruta ? (
                 <Link
                   href={ruta}
+                  prefetch={false}
                   className="text-sm font-medium text-hseq-700 hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >

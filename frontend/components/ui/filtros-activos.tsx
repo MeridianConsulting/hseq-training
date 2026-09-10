@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type ChipFiltro = {
@@ -58,6 +58,43 @@ export function FiltersBar({
     <div className="mb-4 space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
       {acciones ? <div className="flex flex-wrap items-end gap-2">{acciones}</div> : null}
+    </div>
+  );
+}
+
+export function MasFiltros({
+  abierto,
+  onToggle,
+  extrasActivos = 0,
+  children,
+}: {
+  abierto: boolean;
+  onToggle: () => void;
+  extrasActivos?: number;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mb-4">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-hseq-700 hover:text-hseq-800"
+        aria-expanded={abierto}
+        onClick={onToggle}
+      >
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${abierto ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+        {abierto ? "Menos filtros" : "Más filtros"}
+        {!abierto && extrasActivos > 0 ? (
+          <span className="rounded-full bg-hseq-100 px-1.5 text-xs font-medium text-hseq-800">
+            {extrasActivos}
+          </span>
+        ) : null}
+      </button>
+      {abierto ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+      ) : null}
     </div>
   );
 }

@@ -71,3 +71,48 @@ if (!function_exists('nullable_trimmed_string')) {
         return $trimmed === '' ? null : $trimmed;
     }
 }
+
+if (!function_exists('humanizar_nombre_unidad')) {
+    /**
+     * El ENUM interno es ANIOS (sin Ñ). En pantalla debe verse AÑO/AÑOS.
+     */
+    function humanizar_nombre_unidad(mixed $nombre): ?string
+    {
+        if ($nombre === null) {
+            return null;
+        }
+        $texto = trim((string)$nombre);
+        if ($texto === '') {
+            return null;
+        }
+        $texto = preg_replace('/\bANIOS\b/iu', 'AÑOS', $texto) ?? $texto;
+        $texto = preg_replace('/\bANIO\b/iu', 'AÑO', $texto) ?? $texto;
+
+        return $texto;
+    }
+}
+
+if (!function_exists('etiqueta_unidad')) {
+    function etiqueta_unidad(mixed $unidad, mixed $cantidad = null): ?string
+    {
+        $clave = strtoupper(trim((string)$unidad));
+        if ($clave === '') {
+            return null;
+        }
+        $mapa = [
+            'DIAS' => ['día', 'días'],
+            'MESES' => ['mes', 'meses'],
+            'ANIOS' => ['año', 'años'],
+        ];
+        if (!isset($mapa[$clave])) {
+            return humanizar_nombre_unidad($clave);
+        }
+        if ($cantidad === null || $cantidad === '') {
+            return $mapa[$clave][1];
+        }
+        $n = (int)$cantidad;
+        $palabra = $n === 1 ? $mapa[$clave][0] : $mapa[$clave][1];
+
+        return $n . ' ' . $palabra;
+    }
+}

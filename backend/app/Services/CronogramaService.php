@@ -448,9 +448,11 @@ class CronogramaService
             'requiere_evaluacion' => (int)($fila['evaluacion'] ?? 0) === 1,
             'requiere_certificado' => (int)($fila['certificado'] ?? 0) === 1,
             'vigencia_id' => $fila['vigencia_id'] !== null ? (int)$fila['vigencia_id'] : null,
-            'vigencia_nombre' => $fila['vigencia_nombre'] !== null && $fila['vigencia_nombre'] !== ''
-                ? (string)$fila['vigencia_nombre']
-                : null,
+            'vigencia_nombre' => humanizar_nombre_unidad(
+                $fila['vigencia_nombre'] !== null && $fila['vigencia_nombre'] !== ''
+                    ? (string)$fila['vigencia_nombre']
+                    : null
+            ),
             'vigencia_cantidad' => $fila['vigencia_cantidad'] !== null ? (int)$fila['vigencia_cantidad'] : null,
             'vigencia_unidad' => $fila['vigencia_unidad'] !== null && $fila['vigencia_unidad'] !== ''
                 ? (string)$fila['vigencia_unidad']

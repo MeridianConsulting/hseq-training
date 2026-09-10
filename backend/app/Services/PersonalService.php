@@ -991,7 +991,7 @@ class PersonalService
                 : null,
             'proceso_nombre' => $fila['proceso_nombre'] ?? null,
             'proyecto' => $fila['proyecto'] ?? null,
-            'periodicidad_nombre' => $fila['periodicidad_nombre'] ?? null,
+            'periodicidad_nombre' => humanizar_nombre_unidad($fila['periodicidad_nombre'] ?? null),
         ];
     }
 

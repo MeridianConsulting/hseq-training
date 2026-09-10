@@ -230,6 +230,9 @@ export function FormularioSesion({
       : await apiPost<DetalleSesion>("/api/sesiones", cuerpo);
 
     setGuardando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       setErrorGeneral(r.message || "No fue posible guardar la sesión.");
       setErrores({
@@ -508,6 +511,9 @@ export function PanelConvocados({
       asignacion_ids: seleccionados,
     });
     setGuardando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       setError(r.message || "No fue posible convocar a los trabajadores.");
       return;
@@ -527,6 +533,9 @@ export function PanelConvocados({
     setError(null);
     const r = await apiDelete<DetalleSesion>(`/api/sesiones/${sesionId}/participantes/${asignacionId}`);
     setGuardando(false);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       setError(r.message || "No fue posible retirar al trabajador.");
       return;

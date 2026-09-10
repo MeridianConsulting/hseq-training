@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
-import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
+import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -99,6 +99,7 @@ function Contenido() {
   const [detalle, setDetalle] = useState<AlertaProximaVencer | null>(null);
   const [soportesDetalle, setSoportesDetalle] = useState<SoporteCumplimiento[]>([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [masFiltros, setMasFiltros] = useState(() => Boolean(desde || hasta));
 
   const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
 
@@ -118,6 +119,9 @@ function Contenido() {
       }),
     );
     setCargando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar las alertas. Intente nuevamente.");
       return;
@@ -160,6 +164,9 @@ function Contenido() {
   useEffect(() => {
     void (async () => {
       const respuesta = await apiGet<OpcionesAlertas>("/api/alertas/opciones");
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar las alertas. Intente nuevamente.");
         return;
@@ -245,6 +252,18 @@ function Contenido() {
       {error ? <Alert tono="error">{error}</Alert> : null}
 
       <Filters>
+        <Field etiqueta="Empleado">
+          <input
+            className={inputClass}
+            value={q}
+            placeholder="Nombre o cédula"
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setQAplicado(q.trim());
+            }}
+            onBlur={() => setQAplicado(q.trim())}
+          />
+        </Field>
         <Field etiqueta="Proceso">
           <select
             className={inputClass}
@@ -265,7 +284,6 @@ function Contenido() {
             ))}
           </select>
         </Field>
-
         {muestraProyecto ? (
           <Field etiqueta="Proyecto">
             <select
@@ -282,7 +300,6 @@ function Contenido() {
             </select>
           </Field>
         ) : null}
-
         <Field etiqueta="Estado">
           <select
             className={inputClass}
@@ -294,20 +311,6 @@ function Contenido() {
             <option value="vencidas">Vencidas</option>
           </select>
         </Field>
-
-        <Field etiqueta="Empleado">
-          <input
-            className={inputClass}
-            value={q}
-            placeholder="Nombre o cédula"
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setQAplicado(q.trim());
-            }}
-            onBlur={() => setQAplicado(q.trim())}
-          />
-        </Field>
-
         <Field etiqueta="Capacitación">
           <select
             className={inputClass}
@@ -322,7 +325,13 @@ function Contenido() {
             ))}
           </select>
         </Field>
+      </Filters>
 
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={[desde, hasta].filter(Boolean).length}
+      >
         <Field etiqueta="Vencimiento desde">
           <input
             type="date"
@@ -340,7 +349,7 @@ function Contenido() {
             onChange={(e) => setHasta(e.target.value)}
           />
         </Field>
-      </Filters>
+      </MasFiltros>
 
       <FiltrosActivos chips={chips} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
 
@@ -393,6 +402,7 @@ function Contenido() {
                 {item.persona_id_ext ? (
                   <Link
                     href={rutaHistorial(item)}
+                    prefetch={false}
                     className="font-medium text-slate-600 underline-offset-2 hover:underline"
                   >
                     Ver trabajador
@@ -503,6 +513,7 @@ function Contenido() {
             {detalle.persona_id_ext ? (
               <Link
                 href={rutaHistorial(detalle)}
+                prefetch={false}
                 className="inline-flex font-medium text-hseq-800 underline-offset-2 hover:underline"
               >
                 Ir al historial del trabajador

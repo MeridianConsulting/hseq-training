@@ -251,7 +251,7 @@ class VencimientoService
         return [
             'cantidad' => $cantidad !== null && $cantidad > 0 ? $cantidad : null,
             'unidad' => $unidad,
-            'nombre' => $nombre,
+            'nombre' => humanizar_nombre_unidad($nombre),
             'origen' => $origen,
             'etiqueta' => $this->etiquetaPeriodicidad($cantidad, $unidad, $nombre),
         ];
@@ -274,16 +274,13 @@ class VencimientoService
     private function etiquetaPeriodicidad(?int $cantidad, ?string $unidad, ?string $nombre): string
     {
         if ($nombre !== null && $nombre !== '') {
-            return $nombre;
+            return humanizar_nombre_unidad($nombre) ?? $nombre;
         }
         if ($cantidad === null || $cantidad <= 0 || $unidad === null || $unidad === '') {
             return 'Sin vencimiento';
         }
 
-        $etiquetas = ['DIAS' => 'días', 'MESES' => 'meses', 'ANIOS' => 'años'];
-        $u = $etiquetas[$unidad] ?? strtolower($unidad);
-
-        return $cantidad . ' ' . $u;
+        return etiqueta_unidad($unidad, $cantidad) ?? 'Sin vencimiento';
     }
 
     /** @return array<string,int> */

@@ -121,6 +121,9 @@ export function FormularioAsignacion({
     void (async () => {
       const r = await apiGet<PerfilTrabajador>(`/api/personal/${personaId}/perfil`);
       setCargandoContexto(false);
+      if (r.cancelada) {
+        return;
+      }
       if (!r.success || !r.data) {
         setFicha(null);
         setAplicables([]);

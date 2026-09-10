@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
+import { MasFiltros } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -15,7 +16,7 @@ import { Table } from "@/components/ui/table";
 import { Download } from "lucide-react";
 import { FichaTrabajador, GruposCapacitacion, ListaPeriodos } from "./historial";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
-import { procesoRequiereProyecto } from "@/lib/catalogos";
+import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   FichaTrabajadorReporte,
   GrupoHistorial,
@@ -191,6 +192,7 @@ function celda(tipo: string, clave: string, item: Record<string, unknown>) {
   if (clave === "trabajador" && item.persona_id_ext) {
     return (
       <Link
+        prefetch={false}
         href={withQuery("/asignaciones", {
           persona_id: Number(item.persona_id_ext),
           nombre: typeof item.trabajador === "string" ? item.trabajador : undefined,
@@ -202,6 +204,7 @@ function celda(tipo: string, clave: string, item: Record<string, unknown>) {
       </Link>
     );
   }
+  if (clave === "periodicidad") return humanizarNombreUnidad(texto(valor)) || "—";
   return texto(valor);
 }
 
@@ -260,6 +263,7 @@ function Contenido() {
   const [detalle, setDetalle] = useState<Record<string, unknown> | null>(null);
   const [soportesDetalle, setSoportesDetalle] = useState<SoporteCumplimiento[]>([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [masFiltros, setMasFiltros] = useState(false);
 
   const esHistorial = tipo === "historial_trabajador";
   const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
@@ -318,6 +322,9 @@ function Contenido() {
         per_page: esHistorial ? 20000 : 20,
       }),
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar el reporte.");
       setItems([]);
@@ -482,28 +489,6 @@ function Contenido() {
             </select>
           </Field>
         ) : null}
-        {muestraPeriodo ? (
-          <>
-            <Field etiqueta="Fecha inicial">
-              <input className={inputClass} type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-            </Field>
-            <Field etiqueta="Fecha final">
-              <input className={inputClass} type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-            </Field>
-          </>
-        ) : null}
-        {muestraEstado ? (
-          <Field etiqueta="Estado">
-            <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
-              <option value="">Todos</option>
-              {ESTADOS.map((e) => (
-                <option key={e} value={e}>
-                  {etiquetaEstado(e)}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
         {esHistorial ? (
           <Field etiqueta="Trabajador">
             <input
@@ -546,6 +531,43 @@ function Contenido() {
             />
           </Field>
         )}
+        {muestraEstado ? (
+          <Field etiqueta="Estado">
+            <select className={inputClass} value={estado} onChange={(e) => setEstado(e.target.value)}>
+              <option value="">Todos</option>
+              {ESTADOS.map((e) => (
+                <option key={e} value={e}>
+                  {etiquetaEstado(e)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+      </Filters>
+
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={
+          [
+            muestraPeriodo ? desde : "",
+            muestraPeriodo ? hasta : "",
+            esHistorial ? cargoId : "",
+            esHistorial ? tipoCapId : "",
+            esHistorial ? capacitacionId : "",
+          ].filter(Boolean).length
+        }
+      >
+        {muestraPeriodo ? (
+          <>
+            <Field etiqueta="Fecha inicial">
+              <input className={inputClass} type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+            </Field>
+            <Field etiqueta="Fecha final">
+              <input className={inputClass} type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+            </Field>
+          </>
+        ) : null}
         {esHistorial ? (
           <>
             <Field etiqueta="Cargo">
@@ -584,7 +606,7 @@ function Contenido() {
             </Field>
           </>
         ) : null}
-      </Filters>
+      </MasFiltros>
 
       {Object.keys(etiquetas).length > 0 ? (
         <p className="mb-4 text-sm text-slate-600">
@@ -774,6 +796,7 @@ function Contenido() {
 
             {typeof detalle.persona_id_ext === "number" ? (
               <Link
+                prefetch={false}
                 href={withQuery("/asignaciones", {
                   persona_id: detalle.persona_id_ext,
                   nombre: typeof detalle.trabajador === "string" ? detalle.trabajador : undefined,

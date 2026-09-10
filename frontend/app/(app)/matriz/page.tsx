@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
-import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
+import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet, apiPost, withQuery } from "@/lib/api";
 import { procesoRequiereProyecto } from "@/lib/catalogos";
@@ -58,6 +58,7 @@ function Contenido() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [masFiltros, setMasFiltros] = useState(() => verTodos);
 
   const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
   const contextoListo = procesoId !== "" && (!muestraProyecto || proyecto !== "");
@@ -65,6 +66,9 @@ function Contenido() {
   useEffect(() => {
     void (async () => {
       const respuesta = await apiGet<OpcionesMatriz>("/api/matriz/opciones");
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar los filtros de la matriz.");
         return;
@@ -96,6 +100,9 @@ function Contenido() {
         return;
       }
       setCargando(false);
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar la matriz.");
         setVista(null);
@@ -202,6 +209,9 @@ function Contenido() {
     });
     setGuardando(false);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No se pudo guardar la matriz.");
       return;
@@ -265,17 +275,6 @@ function Contenido() {
           </Field>
         ) : null}
 
-        <Field etiqueta="Cargos del contexto">
-          <label className="flex items-center gap-2 pt-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-hseq-800"
-              checked={verTodos}
-              onChange={(e) => setVerTodos(e.target.checked)}
-            />
-            Ver todos los cargos
-          </label>
-        </Field>
         <Field etiqueta="Buscar cargo">
           <input
             className={inputClass}
@@ -293,6 +292,24 @@ function Contenido() {
           />
         </Field>
       </Filters>
+
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={verTodos ? 1 : 0}
+      >
+        <Field etiqueta="Cargos del contexto">
+          <label className="flex items-center gap-2 pt-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-hseq-800"
+              checked={verTodos}
+              onChange={(e) => setVerTodos(e.target.checked)}
+            />
+            Ver todos los cargos
+          </label>
+        </Field>
+      </MasFiltros>
 
       <FiltrosActivos
         chips={chips}

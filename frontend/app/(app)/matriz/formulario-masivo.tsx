@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import type { Capacitacion, CargoCorporativo, ItemCatalogo } from "@/lib/tipos";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 
 export type DatosMatrizMasiva = {
   capacitacion_id: string;
@@ -140,7 +141,7 @@ export function FormularioMatrizMasiva({
             <option value="">Seleccione</option>
             {periodicidades.map((p) => (
               <option key={String(p.periodicidad_id)} value={String(p.periodicidad_id)}>
-                {String(p.nombre)}
+                {humanizarNombreUnidad(String(p.nombre)) || String(p.nombre)}
               </option>
             ))}
           </select>

@@ -597,7 +597,7 @@ class ReporteService
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
             'fecha_ingreso' => $fila['fecha_ingreso'] ?? null,
-            'periodicidad' => $fila['periodicidad_nombre'] ?? null,
+            'periodicidad' => humanizar_nombre_unidad($fila['periodicidad_nombre'] ?? null),
             'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
                 ? (float)$fila['nota_evaluacion']
                 : null,

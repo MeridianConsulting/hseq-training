@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { apiGet, withQuery } from "@/lib/api";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { PreviewCumplimiento, SoporteCumplimiento } from "@/lib/tipos";
 
 export type DatosCumplimiento = {
@@ -268,7 +269,7 @@ export function FormularioCumplimiento({
             value={
               item
                 ? item.fecha_vencimiento
-                  ? `${formatoFecha(item.fecha_vencimiento)} · ${item.etiqueta_periodicidad}`
+                  ? `${formatoFecha(item.fecha_vencimiento)} · ${humanizarNombreUnidad(item.etiqueta_periodicidad)}`
                   : "Sin vencimiento"
                 : "Se calcula al guardar"
             }

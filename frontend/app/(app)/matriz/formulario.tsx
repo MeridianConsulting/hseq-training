@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import type { Capacitacion, CargoCorporativo, FilaMatriz, ItemCatalogo } from "@/lib/tipos";
-import { conValorHistorico } from "@/lib/catalogos";
+import { conValorHistorico, humanizarNombreUnidad } from "@/lib/catalogos";
 
 export type DatosMatriz = {
   capacitacion_id: string;
@@ -168,7 +168,7 @@ export function FormularioMatriz({
           <option value="">Usar la de la capacitación</option>
           {periodicidadesVisibles.map((p) => (
             <option key={String(p.periodicidad_id)} value={String(p.periodicidad_id)}>
-              {String(p.nombre)}
+              {humanizarNombreUnidad(String(p.nombre)) || String(p.nombre)}
             </option>
           ))}
         </select>

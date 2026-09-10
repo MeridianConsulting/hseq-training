@@ -14,16 +14,34 @@ CREATE TABLE IF NOT EXISTS proyectos (
 ) ENGINE=InnoDB;
 
 INSERT INTO procesos (nombre, activo)
-SELECT 'Gestión Contable', 1 FROM DUAL
+SELECT 'GESTION CONTABLE', 1 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1 FROM procesos WHERE LOWER(TRIM(nombre)) = LOWER('Gestión Contable')
+  SELECT 1 FROM procesos WHERE LOWER(TRIM(nombre)) IN (LOWER('GESTION CONTABLE'), LOWER('Gestión Contable'))
 );
 
 INSERT INTO procesos (nombre, activo)
-SELECT 'Licitaciones', 1 FROM DUAL
+SELECT 'LICITACIONES', 1 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1 FROM procesos WHERE LOWER(TRIM(nombre)) = LOWER('Licitaciones')
+  SELECT 1 FROM procesos WHERE LOWER(TRIM(nombre)) = LOWER('LICITACIONES')
 );
+
+UPDATE procesos
+SET nombre = 'GESTION CONTABLE'
+WHERE nombre <> 'GESTION CONTABLE'
+  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+        UPPER(TRIM(nombre)), 'Á','A'), 'É','E'), 'Í','I'), 'Ó','O'), 'Ú','U')
+      = 'GESTION CONTABLE';
+
+UPDATE procesos
+SET nombre = 'LICITACIONES'
+WHERE LOWER(TRIM(nombre)) = 'licitaciones'
+  AND nombre <> 'LICITACIONES';
+
+-- PetroServicios es proyecto de obra, no proceso HSEQ.
+UPDATE procesos
+SET activo = 0
+WHERE activo = 1
+  AND LOWER(TRIM(nombre)) = 'petroservicios';
 
 UPDATE procesos
 SET activo = 0
@@ -39,10 +57,15 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO proyectos (nombre, activo)
-SELECT 'PetroServicios', 1 FROM DUAL
+SELECT 'PETROSERVICIOS', 1 FROM DUAL
 WHERE NOT EXISTS (
-  SELECT 1 FROM proyectos WHERE LOWER(TRIM(nombre)) = LOWER('PetroServicios')
+  SELECT 1 FROM proyectos WHERE LOWER(TRIM(nombre)) = LOWER('PETROSERVICIOS')
 );
+
+UPDATE proyectos
+SET nombre = 'PETROSERVICIOS'
+WHERE LOWER(TRIM(nombre)) = 'petroservicios'
+  AND nombre <> BINARY 'PETROSERVICIOS';
 
 INSERT INTO proyectos (nombre, activo)
 SELECT 'CW', 1 FROM DUAL

@@ -35,6 +35,9 @@ export function PanelOperativo({
   async function cargar(id: number) {
     setCargando(true);
     const respuesta = await apiGet<DetalleSesion>(`/api/sesiones/${id}`);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar la sesión.");
       setSesion(null);
@@ -78,6 +81,9 @@ export function PanelOperativo({
     setFinalizando(true);
     const respuesta = await apiPost<DetalleSesion>(`/api/sesiones/${sesion.sesion_id}/finalizar`, {});
     setFinalizando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible finalizar la capacitación.");
       return;

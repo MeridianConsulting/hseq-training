@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft } from "lucide-react";
 import { apiGet } from "@/lib/api";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { Asignacion, Cumplimiento, PerfilTrabajador, PersonaCorporativa } from "@/lib/tipos";
 
 function formatoFecha(valor: string | null | undefined): string {
@@ -117,6 +118,9 @@ function Contenido() {
       setCargando(true);
       const respuesta = await apiGet<PerfilTrabajador>(`/api/personal/${id}/perfil`);
       setCargando(false);
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible consultar la información del trabajador.");
         setPerfil(null);
@@ -140,6 +144,7 @@ function Contenido() {
           acciones={
             <Link
               href="/personal"
+              prefetch={false}
               className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -166,6 +171,7 @@ function Contenido() {
         acciones={
           <Link
             href="/personal"
+            prefetch={false}
             className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -208,7 +214,7 @@ function Contenido() {
             etiquetaCapacitacion(item),
             item.proceso_nombre ?? "—",
             item.proyecto ?? "—",
-            item.periodicidad_nombre ?? "—",
+            humanizarNombreUnidad(item.periodicidad_nombre) || "—",
           ])}
         />
       </Bloque>

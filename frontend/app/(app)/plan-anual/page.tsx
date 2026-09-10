@@ -15,7 +15,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import { procesoRequiereProyecto } from "@/lib/catalogos";
+import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   CapacitacionPlanOpcion,
   CargoCorporativo,
@@ -122,6 +122,9 @@ function Contenido() {
   useEffect(() => {
     void (async () => {
       const respuesta = await apiGet<OpcionesPlanAnual>("/api/planes-anuales/opciones");
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar las opciones del plan.");
         return;
@@ -140,6 +143,9 @@ function Contenido() {
         buscar: buscar.trim() || undefined,
       }),
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar los planes.");
       return;
@@ -152,6 +158,9 @@ function Contenido() {
 
   async function abrirPlan(id: number) {
     const respuesta = await apiGet<PlanAnual>(`/api/planes-anuales/${id}`);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible cargar el plan.");
       return;
@@ -184,6 +193,9 @@ function Contenido() {
         }),
       );
       if (abortado.actual) return;
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setAlcance([]);
         return;
@@ -238,6 +250,9 @@ function Contenido() {
     setGuardando(true);
     const respuesta = await apiPost<PlanAnual>("/api/planes-anuales", { anio: Number(anioNuevo) });
     setGuardando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible guardar el Plan Anual.");
       return;
@@ -284,6 +299,9 @@ function Contenido() {
       ? await apiPut<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/actividades/${editandoId}`, payload)
       : await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/actividades`, payload);
     setGuardando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible guardar el Plan Anual.");
       return;
@@ -302,6 +320,9 @@ function Contenido() {
     const respuesta = await apiDelete<PlanAnual>(
       `/api/planes-anuales/${plan.plan_anual_id}/actividades/${detalleId}`,
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible retirar la actividad.");
       return;
@@ -314,6 +335,9 @@ function Contenido() {
   async function enviarAprobacion() {
     if (!plan) return;
     const respuesta = await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/enviar-revision`, {});
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible enviar el Plan Anual a aprobación.");
       return;
@@ -326,6 +350,9 @@ function Contenido() {
   async function devolverPlan() {
     if (!plan) return;
     const respuesta = await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/devolver`, {});
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible devolver el plan.");
       return;
@@ -341,6 +368,9 @@ function Contenido() {
       return;
     }
     const respuesta = await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/aprobar`, {});
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No tiene permisos para aprobar este plan.");
       return;
@@ -699,7 +729,7 @@ function Contenido() {
               </div>
               <div>
                 <dt className="text-xs uppercase text-slate-500">Vigencia</dt>
-                <dd>{detalleVer.vigencia_nombre ?? "—"}</dd>
+                <dd>{humanizarNombreUnidad(detalleVer.vigencia_nombre) || "—"}</dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-slate-500">Tarea crítica</dt>

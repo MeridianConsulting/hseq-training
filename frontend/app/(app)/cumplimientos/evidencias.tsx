@@ -18,6 +18,9 @@ export async function subirSoportes(
       `/api/cumplimientos/${cumplimientoId}/soportes`,
       form,
     );
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       return r.message || "No fue posible cargar el archivo.";
     }
@@ -56,6 +59,9 @@ export function ListaEvidencias({
       return;
     }
     const r = await apiDelete(`/api/cumplimientos/soportes/${item.soporte_id}`);
+    if (r.cancelada) {
+      return;
+    }
     if (!r.success) {
       onError?.(r.message || "No fue posible eliminar el archivo.");
       return;

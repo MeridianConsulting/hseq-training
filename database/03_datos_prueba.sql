@@ -54,7 +54,7 @@ FROM (
          'Presentar el SG-SST, reglamento interno y riesgos generales al ingreso.' AS objetivo,
          'Politica HSEQ, riesgos, EPP, reporte de incidentes, canales de emergencia.' AS temario,
          'HSE' AS categoria, 'INDUCCION' AS tipo, 4.00 AS horas, 'ALTA' AS criticidad, 0 AS tarea_critica,
-         'Meridian Consulting - HSEQ interno' AS proveedor, 'UNICA VEZ' AS periodicidad, '1 ANIO' AS vigencia,
+         'Meridian Consulting - HSEQ interno' AS proveedor, 'UNICA VEZ' AS periodicidad, '1 AÑO' AS vigencia,
          'PRESENCIAL' AS modalidad, 1 AS evaluacion, 3.50 AS nota_minima, 1 AS certificado, 1 AS asistencia,
          'Decreto 1072 de 2015' AS fuente
   UNION ALL
@@ -62,7 +62,7 @@ FROM (
          'Actualizar al personal en cambios del sistema de gestion y lecciones aprendidas.',
          'Indicadores, cambios normativos, investigacion de accidentes, cultura de autocuidado.',
          'HSE', 'REINDUCCION', 3.00, 'MEDIA', 0,
-         'Meridian Consulting - HSEQ interno', 'ANUAL', '1 ANIO',
+         'Meridian Consulting - HSEQ interno', 'ANUAL', '1 AÑO',
          'MIXTA', 1, 3.50, 1, 1,
          'Resolucion 0312 de 2019'
   UNION ALL
@@ -70,7 +70,7 @@ FROM (
          'Capacitar en prevencion de caidas y uso de sistemas de proteccion contra caidas.',
          'Normativa, EPP, inspeccion de equipos, rescate basico, permiso de trabajo.',
          'HSE', 'TAREA CRITICA', 8.00, 'ALTA', 1,
-         'Consejo Colombiano de Seguridad', 'ANUAL', '1 ANIO',
+         'Consejo Colombiano de Seguridad', 'ANUAL', '1 AÑO',
          'PRESENCIAL', 1, 4.00, 1, 1,
          'Resolucion 0312 de 2019'
   UNION ALL
@@ -78,7 +78,7 @@ FROM (
          'Identificar peligros y controles para ingreso a espacios confinados.',
          'Atmosferas, medicion de gases, vigia, rescate, permiso de trabajo.',
          'HSE', 'TAREA CRITICA', 8.00, 'ALTA', 1,
-         'Consejo Colombiano de Seguridad', 'ANUAL', '1 ANIO',
+         'Consejo Colombiano de Seguridad', 'ANUAL', '1 AÑO',
          'PRESENCIAL', 1, 4.00, 1, 1,
          'Decreto 1072 de 2015'
   UNION ALL
@@ -86,7 +86,7 @@ FROM (
          'Formar brigadistas en atencion inicial de lesionados.',
          'RCP, hemorragias, quemaduras, movilizacion, botiquin.',
          'HSE', 'OBLIGATORIA', 8.00, 'ALTA', 0,
-         'Cruz Roja Colombiana', 'BIANUAL', '2 ANIOS',
+         'Cruz Roja Colombiana', 'BIANUAL', '2 AÑOS',
          'PRESENCIAL', 1, 3.50, 1, 1,
          'Resolucion 0312 de 2019'
   UNION ALL
@@ -94,7 +94,7 @@ FROM (
          'Preparar la brigada para respuesta a emergencias en sede y campo.',
          'Plan de emergencias, puntos de encuentro, extintores, evacuacion.',
          'HSE', 'OBLIGATORIA', 6.00, 'ALTA', 0,
-         'Cruz Roja Colombiana', 'ANUAL', '1 ANIO',
+         'Cruz Roja Colombiana', 'ANUAL', '1 AÑO',
          'PRESENCIAL', 0, 0.00, 1, 1,
          'Decreto 1072 de 2015'
   UNION ALL
@@ -102,7 +102,7 @@ FROM (
          'Dar a conocer el alcance del sistema de gestion de SST.',
          'Contexto, partes interesadas, no conformidades, mejora continua.',
          'CALIDAD', 'OBLIGATORIA', 4.00, 'MEDIA', 0,
-         'SENA', 'UNICA VEZ', '1 ANIO',
+         'SENA', 'UNICA VEZ', '1 AÑO',
          'VIRTUAL', 1, 3.00, 0, 0,
          'ISO 45001'
   UNION ALL
@@ -110,7 +110,7 @@ FROM (
          'Alinear practicas HSEQ con el Registro Uniforme de contratistas.',
          'Estandares RUC, evidencias, auditorias de cliente, no conformidades.',
          'CUMPLIMIENTO', 'OBLIGATORIA', 4.00, 'ALTA', 0,
-         'Meridian Consulting - HSEQ interno', 'ANUAL', '1 ANIO',
+         'Meridian Consulting - HSEQ interno', 'ANUAL', '1 AÑO',
          'VIRTUAL', 1, 3.50, 1, 0,
          'Guia RUC'
 ) AS v

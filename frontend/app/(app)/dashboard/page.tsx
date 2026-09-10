@@ -77,6 +77,9 @@ function Contenido() {
         return;
       }
 
+      if (dash.cancelada) {
+        return;
+      }
       if (!dash.success || !dash.data) {
         setError(dash.message || "No fue posible cargar los indicadores.");
         setResumen(null);

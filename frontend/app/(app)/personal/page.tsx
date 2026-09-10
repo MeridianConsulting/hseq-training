@@ -67,6 +67,9 @@ function Contenido() {
     );
     setCargando(false);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "Error al obtener la información del sistema corporativo.");
       return;

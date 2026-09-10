@@ -10,13 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, inputClass } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
-import { FiltrosActivos, ListaCargando, type ChipFiltro } from "@/components/ui/filtros-activos";
+import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { ChevronDown, Eye, UserRound } from "lucide-react";
+import { Eye, UserRound } from "lucide-react";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type {
   ConsultaCumplimiento,
@@ -150,6 +150,9 @@ function Contenido() {
           fecha_vencimiento_hasta: valores.fecha_vencimiento_hasta || undefined,
         }),
       );
+      if (respuesta.cancelada) {
+        return;
+      }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar los cumplimientos.");
         return;
@@ -259,6 +262,9 @@ function Contenido() {
     const respuesta = await apiGet<DetalleConsultaCumplimiento>(
       `/api/cumplimientos/consulta/${item.asignacion_id}`,
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible consultar el detalle.");
       return;
@@ -270,6 +276,9 @@ function Contenido() {
     const respuesta = await apiGet<SituacionTrabajadorCumplimiento>(
       `/api/cumplimientos/consulta/trabajador/${personaId}`,
     );
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible consultar al trabajador.");
       return;
@@ -302,6 +311,7 @@ function Contenido() {
               </p>
               <Link
                 href={`/personal/${situacion.trabajador.persona_id_ext}`}
+                prefetch={false}
                 className="text-sm text-hseq-800 underline"
               >
                 Ver ficha en Personal
@@ -382,26 +392,11 @@ function Contenido() {
         </Field>
       </Filters>
 
-      <div className="mb-4">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-hseq-700 hover:text-hseq-800"
-          aria-expanded={masFiltros}
-          onClick={() => setMasFiltros((abierto) => !abierto)}
-        >
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${masFiltros ? "rotate-180" : ""}`}
-            aria-hidden
-          />
-          {masFiltros ? "Menos filtros" : "Más filtros"}
-          {!masFiltros && extrasActivos > 0 ? (
-            <span className="rounded-full bg-hseq-100 px-1.5 text-xs font-medium text-hseq-800">
-              {extrasActivos}
-            </span>
-          ) : null}
-        </button>
-        {masFiltros ? (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={extrasActivos}
+      >
             <Field etiqueta="Cargo">
               <select
                 className={inputClass}
@@ -498,9 +493,7 @@ function Contenido() {
                 onChange={(e) => setFiltro("fecha_vencimiento_hasta", e.target.value)}
               />
             </Field>
-          </div>
-        ) : null}
-      </div>
+      </MasFiltros>
 
       <FiltrosActivos chips={chipsActivos} onQuitar={(clave) => setFiltro(clave, clave === "estado_laboral" ? "Activo" : "")} onLimpiar={limpiar} />
 
@@ -522,6 +515,7 @@ function Contenido() {
               <span key="p" className="flex flex-col">
                 <Link
                   href={`/personal/${item.persona_id_ext}`}
+                  prefetch={false}
                   className="font-medium text-hseq-800 underline-offset-2 hover:underline"
                 >
                   {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}

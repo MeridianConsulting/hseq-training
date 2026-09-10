@@ -701,9 +701,9 @@ class PlanAnualService
 
         $vigencia = null;
         if (!empty($fila['vigencia_nombre'])) {
-            $vigencia = (string)$fila['vigencia_nombre'];
+            $vigencia = humanizar_nombre_unidad((string)$fila['vigencia_nombre']);
         } elseif (!empty($fila['vigencia_cantidad']) && !empty($fila['vigencia_unidad'])) {
-            $vigencia = (int)$fila['vigencia_cantidad'] . ' ' . $fila['vigencia_unidad'];
+            $vigencia = humanizar_nombre_unidad((int)$fila['vigencia_cantidad'] . ' ' . $fila['vigencia_unidad']);
         }
 
         return [

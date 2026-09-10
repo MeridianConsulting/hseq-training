@@ -38,7 +38,7 @@ export function conValorHistorico(
     return items;
   }
 
-  const etiqueta = nombre && nombre.trim() !== "" ? `${nombre} (inactivo)` : `Registro ${id} (inactivo)`;
+  const etiqueta = nombre && nombre.trim() !== "" ? `${humanizarNombreUnidad(nombre)} (inactivo)` : `Registro ${id} (inactivo)`;
 
   return [...items, { [pk]: id, nombre: etiqueta }];
 }
@@ -49,10 +49,18 @@ const ETIQUETAS_UNIDAD: Record<string, { singular: string; plural: string }> = {
   ANIOS: { singular: "año", plural: "años" },
 };
 
+/** El ENUM interno es ANIOS; en pantalla se muestra AÑO/AÑOS. */
+export function humanizarNombreUnidad(texto: string | null | undefined): string {
+  if (texto == null || texto.trim() === "") {
+    return "";
+  }
+  return texto.replace(/\bANIOS\b/gi, "AÑOS").replace(/\bANIO\b/gi, "AÑO");
+}
+
 export function etiquetaUnidad(unidad: string, cantidad?: number): string {
-  const info = ETIQUETAS_UNIDAD[unidad];
+  const info = ETIQUETAS_UNIDAD[unidad.toUpperCase()];
   if (!info) {
-    return unidad;
+    return humanizarNombreUnidad(unidad) || unidad;
   }
   if (cantidad === undefined) {
     return info.plural;

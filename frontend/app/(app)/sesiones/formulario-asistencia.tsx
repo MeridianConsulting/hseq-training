@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Table } from "@/components/ui/table";
 import { apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type {
   DetalleSesion,
   ParticipanteSesion,
@@ -123,6 +124,9 @@ export function FormularioAsistencia({
     });
     setGuardando(false);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success || !respuesta.data) {
       setError(respuesta.message || "No fue posible guardar la asistencia.");
       return;
@@ -165,6 +169,9 @@ export function FormularioAsistencia({
     });
     setReprogramando(false);
 
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible reprogramar.");
       return;
@@ -283,6 +290,9 @@ export function FormularioAsistencia({
       notas: notasPayload,
     });
     setGuardandoCump(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible registrar el cumplimiento.");
       return;
@@ -328,6 +338,9 @@ export function FormularioAsistencia({
       items,
     });
     setGuardandoEval(false);
+    if (respuesta.cancelada) {
+      return;
+    }
     if (!respuesta.success) {
       setError(respuesta.message || "No fue posible registrar la evaluación.");
       return;
@@ -601,7 +614,7 @@ export function FormularioAsistencia({
                         <span className="block text-xs text-slate-500">
                           Vence: {formatoVence(prev?.fecha_vencimiento ?? p.fecha_vencimiento)}
                           {prev?.etiqueta_periodicidad
-                            ? ` · ${prev.etiqueta_periodicidad}`
+                            ? ` · ${humanizarNombreUnidad(prev.etiqueta_periodicidad)}`
                             : ""}
                         </span>
                       </span>
