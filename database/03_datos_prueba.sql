@@ -69,7 +69,7 @@ FROM (
   SELECT 'HSEQ-ALT-001', 'Trabajo seguro en alturas',
          'Capacitar en prevencion de caidas y uso de sistemas de proteccion contra caidas.',
          'Normativa, EPP, inspeccion de equipos, rescate basico, permiso de trabajo.',
-         'HSE', 'TAREA CRITICA', 8.00, 'ALTA', 1,
+         'HSE', 'OBLIGATORIA', 8.00, 'ALTA', 1,
          'Consejo Colombiano de Seguridad', 'ANUAL', '1 AÑO',
          'PRESENCIAL', 1, 4.00, 1, 1,
          'Resolucion 0312 de 2019'
@@ -77,7 +77,7 @@ FROM (
   SELECT 'HSEQ-ESP-001', 'Espacios confinados',
          'Identificar peligros y controles para ingreso a espacios confinados.',
          'Atmosferas, medicion de gases, vigia, rescate, permiso de trabajo.',
-         'HSE', 'TAREA CRITICA', 8.00, 'ALTA', 1,
+         'HSE', 'OBLIGATORIA', 8.00, 'ALTA', 1,
          'Consejo Colombiano de Seguridad', 'ANUAL', '1 AÑO',
          'PRESENCIAL', 1, 4.00, 1, 1,
          'Decreto 1072 de 2015'

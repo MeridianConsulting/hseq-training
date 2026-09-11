@@ -247,6 +247,37 @@ class MatrizRepository
         return $salida;
     }
 
+    /**
+     * Proceso de matriz para un cargo (oficina o proyecto del trabajador).
+     */
+    public function procesoIdParaCargo(int $cargoId, ?string $proyecto = null): ?int
+    {
+        if ($cargoId < 1) {
+            return null;
+        }
+
+        $proyectoNorm = $proyecto !== null ? trim($proyecto) : '';
+        foreach ($this->procesosDeCargos([$cargoId]) as $fila) {
+            if ((int)$fila['cargo_id'] !== $cargoId) {
+                continue;
+            }
+            $filaProyecto = $fila['proyecto'];
+            if ($filaProyecto !== null && $proyectoNorm === '') {
+                continue;
+            }
+            if ($filaProyecto !== null && strcasecmp($filaProyecto, $proyectoNorm) !== 0) {
+                continue;
+            }
+
+            $id = (int)$fila['proceso_id'];
+            if ($id > 0) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
     public function buscarPorClave(array $datos): ?array
     {
         return $this->db->fetch(

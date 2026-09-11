@@ -319,6 +319,8 @@ class AsignacionRepository
     {
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
+        $cargoSql = ContextoLaboralSql::cargoId();
+        $procesoSql = ContextoLaboralSql::procesoId();
 
         return "SELECT a.asignacion_id,
                        a.persona_id_ext,
@@ -328,9 +330,9 @@ class AsignacionRepository
                        a.fecha_asignacion,
                        a.fecha_limite_cumplimiento,
                        a.origen,
-                       a.cargo_id_ext,
+                       {$cargoSql} AS cargo_id_ext,
                        a.area_id,
-                       a.proceso_id,
+                       {$procesoSql} AS proceso_id,
                        a.ambito,
                        a.proyecto,
                        e.estado_calculado,
@@ -356,7 +358,7 @@ class AsignacionRepository
                 LEFT JOIN periodicidades per_mat ON per_mat.periodicidad_id = mat.periodicidad_id
                 LEFT JOIN periodicidades per_cap ON per_cap.periodicidad_id = cap.periodicidad_default_id
                 LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
-                LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext";
+                LEFT JOIN {$cargos} cg ON cg.cargo_id = {$cargoSql}";
     }
 
     /**
@@ -394,7 +396,7 @@ class AsignacionRepository
         }
 
         if ($cargoId !== null && $cargoId > 0) {
-            $condiciones[] = 'a.cargo_id_ext = ?';
+            $condiciones[] = ContextoLaboralSql::cargoId() . ' = ?';
             $params[] = $cargoId;
         }
 
@@ -409,7 +411,7 @@ class AsignacionRepository
         }
 
         if ($procesoId !== null && $procesoId > 0) {
-            $condiciones[] = 'a.proceso_id = ?';
+            $condiciones[] = ContextoLaboralSql::procesoId() . ' = ?';
             $params[] = $procesoId;
         }
 

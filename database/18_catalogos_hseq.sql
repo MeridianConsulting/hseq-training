@@ -104,7 +104,33 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO tipos_capacitacion (nombre, descripcion, activo)
+SELECT 'OBLIGATORIA', 'Capacitación obligatoria del programa HSEQ', 1 FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM tipos_capacitacion WHERE LOWER(TRIM(nombre)) = LOWER('OBLIGATORIA')
+);
+
+INSERT INTO tipos_capacitacion (nombre, descripcion, activo)
+SELECT 'TECNICA', 'Capacitación técnica', 1 FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM tipos_capacitacion WHERE LOWER(TRIM(nombre)) = LOWER('TECNICA')
+);
+
+INSERT INTO tipos_capacitacion (nombre, descripcion, activo)
+SELECT 'BIENESTAR', 'Capacitación de bienestar', 1 FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM tipos_capacitacion WHERE LOWER(TRIM(nombre)) = LOWER('BIENESTAR')
+);
+
+INSERT INTO tipos_capacitacion (nombre, descripcion, activo)
 SELECT 'CAPACITACION GENERAL', 'Capacitación general del programa HSEQ', 1 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM tipos_capacitacion WHERE LOWER(TRIM(nombre)) = LOWER('CAPACITACION GENERAL')
 );
+
+-- Tarea crítica es el Sí/No de la capacitación, no un tipo.
+UPDATE tipos_capacitacion
+SET activo = 0
+WHERE activo = 1
+  AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+        UPPER(TRIM(nombre)), 'Á','A'), 'É','E'), 'Í','I'), 'Ó','O'), 'Ú','U')
+      = 'TAREA CRITICA';

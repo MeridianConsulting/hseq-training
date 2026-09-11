@@ -75,6 +75,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->post('', [SesionController::class, 'store'], [[PermisoMiddleware::class, 'sesiones.crear']]);
         $router->get('/{id}/convocables', [SesionController::class, 'convocablesDeSesion'], [[PermisoMiddleware::class, 'sesiones.ver']]);
         $router->post('/{id}/participantes', [SesionController::class, 'convocar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
+        $router->post('/{id}/sincronizar-convocados', [SesionController::class, 'sincronizarConvocados'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->delete('/{id}/participantes/{asignacionId}', [SesionController::class, 'retirar'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->put('/{id}/asistencia', [SesionController::class, 'asistencia'], [[PermisoMiddleware::class, 'sesiones.editar']]);
         $router->post('/{id}/finalizar', [SesionController::class, 'finalizar'], [[PermisoMiddleware::class, 'sesiones.editar']]);

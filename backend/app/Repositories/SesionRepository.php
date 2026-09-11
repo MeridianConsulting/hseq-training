@@ -22,6 +22,7 @@ class SesionRepository
                     d.plan_anual_id,
                     d.capacitacion_id,
                     d.mes_programado,
+                    d.fecha_programada,
                     d.estado_programacion,
                     p.anio,
                     p.estado AS plan_estado,
@@ -94,6 +95,34 @@ class SesionRepository
     public function actualizar(int $id, array $datos): int
     {
         return $this->db->update('sesiones_capacitacion', $datos, 'sesion_id = ?', [$id]);
+    }
+
+    public function alinearFechaProgramada(int $planDetalleId, string $fecha): void
+    {
+        $sesiones = $this->db->fetchAll(
+            "SELECT sesion_id, fecha_hora, estado
+             FROM sesiones_capacitacion
+             WHERE plan_detalle_id = ?",
+            [$planDetalleId]
+        );
+        foreach ($sesiones as $sesion) {
+            if (strtoupper((string)($sesion['estado'] ?? '')) !== 'PROGRAMADA') {
+                continue;
+            }
+            $hora = '08:00:00';
+            $actual = (string)($sesion['fecha_hora'] ?? '');
+            if (strlen($actual) >= 19) {
+                $hora = substr($actual, 11, 8);
+            } elseif (strlen($actual) >= 16) {
+                $hora = substr($actual, 11, 5) . ':00';
+            }
+            $this->db->update(
+                'sesiones_capacitacion',
+                ['fecha_hora' => $fecha . ' ' . $hora],
+                'sesion_id = ?',
+                [(int)$sesion['sesion_id']]
+            );
+        }
     }
 
     public function contarParticipantes(int $sesionId): int

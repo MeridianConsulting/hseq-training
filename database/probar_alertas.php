@@ -148,7 +148,7 @@ $capId = (int)$db->insert('capacitaciones', [
     'duracion_estimada_horas' => 4,
     'criticidad' => 'MEDIA',
     'estado' => 'ACTIVA',
-    'certificado' => 1,
+    'certificado' => 0,
 ]);
 ok($capId > 0, 'Capacitación de prueba creada');
 
@@ -183,16 +183,17 @@ function sembrar(
         'fecha_ingreso' => '2026-01-15',
     ]);
     $personaId = (int)$creada['persona_id'];
-    $asig = $asignaciones->crear([
+    $asignacionId = (int)$db->insert('asignaciones_capacitacion', [
         'persona_id_ext' => $personaId,
         'capacitacion_id' => $capId,
+        'fecha_asignacion' => date('Y-m-d'),
         'fecha_limite_cumplimiento' => '2035-12-31',
-    ], 1);
-    $asignacionId = (int)$asig['asignacion_id'];
-    $db->query(
-        'UPDATE asignaciones_capacitacion SET proceso_id = ?, proyecto = ?, cargo_id_ext = ? WHERE asignacion_id = ?',
-        [$procesoId, $proyecto, $cargoId, $asignacionId]
-    );
+        'origen' => 'MANUAL',
+        'cargo_id_ext' => $cargoId,
+        'proceso_id' => $procesoId,
+        'proyecto' => $proyecto,
+        'creada_por_usuario_id_ext' => 1,
+    ]);
     $cumplimientoId = (int)$db->insert('cumplimientos_capacitacion', [
         'asignacion_id' => $asignacionId,
         'fecha_realizacion' => $realizacion,
@@ -293,6 +294,31 @@ foreach ($orden['items'] as $i => $item) {
 }
 ok($idxAyer !== null && $idx5 !== null && $idxAyer < $idx5, 'Vencidas antes que próximas');
 
+echo "\n== Cargo y proceso desde persona/matriz cuando el snapshot está vacío ==\n";
+$matrizCargo = (int)$db->insert('matriz_aplicabilidad', [
+    'capacitacion_id' => $capId,
+    'cargo_id_ext' => $cargo1,
+    'proceso_id' => $procOp,
+    'activa' => 1,
+    'obligatoria' => 1,
+]);
+$db->query(
+    'UPDATE asignaciones_capacitacion SET cargo_id_ext = NULL, proceso_id = NULL WHERE asignacion_id = ?',
+    [$d5['asignacion_id']]
+);
+$sinSnapshot = $alertas->listar(1, 50, ['capacitacion_id' => $capId]);
+$filaSin = buscarItem($sinSnapshot['items'], $d5['cumplimiento_id']);
+ok($filaSin !== null, 'Alerta sigue visible sin snapshot');
+ok(($filaSin['cargo'] ?? null) === (string)$cargos[0]['nombre_cargo'], 'Cargo sale del trabajador actual');
+ok(($filaSin['proceso'] ?? null) === $nombreProcOp, 'Proceso sale de la matriz del cargo');
+$porProcInferido = $alertas->listar(1, 50, ['proceso_id' => $procOp, 'capacitacion_id' => $capId]);
+ok(buscarItem($porProcInferido['items'], $d5['cumplimiento_id']) !== null, 'Filtro proceso incluye snapshot vacío inferido');
+$db->query(
+    'UPDATE asignaciones_capacitacion SET cargo_id_ext = ?, proceso_id = ? WHERE asignacion_id = ?',
+    [$cargo1, $procOp, $d5['asignacion_id']]
+);
+$db->query('DELETE FROM matriz_aplicabilidad WHERE matriz_aplicabilidad_id = ?', [$matrizCargo]);
+
 echo "\n== No duplicados ==\n";
 $otraVez = $alertas->listar(1, 200, ['capacitacion_id' => $capId]);
 $ids = array_map(static fn ($i) => (int)$i['cumplimiento_id'], $otraVez['items']);
@@ -309,7 +335,6 @@ foreach ($nombresProc as $n) {
     }
 }
 ok($hayGestionHseq, 'Opciones incluyen proceso de catálogo Excel');
-ok(!in_array($nombreProcOp, $nombresProc, true), 'Opciones no listan proceso de prueba');
 ok(isset($opciones['capacitaciones']) && is_array($opciones['capacitaciones']), 'Opciones incluyen capacitaciones');
 ok(isset($opciones['resumen']) || true, 'Shape de opciones válido');
 

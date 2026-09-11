@@ -191,6 +191,7 @@ class CronogramaService
                 'fecha_programada' => $fecha,
                 'mes_programado' => $mes,
             ]);
+            $this->sesiones->alinearFechaProgramada($detalleId, $fecha);
         } catch (PDOException $e) {
             throw new HttpException('No fue posible guardar la programación.', 500);
         }
@@ -251,6 +252,11 @@ class CronogramaService
         foreach ($existentes as $sesion) {
             $estado = strtoupper((string)($sesion['estado'] ?? ''));
             if ($estado === 'PROGRAMADA') {
+                $sesionId = (int)($sesion['sesion_id'] ?? 0);
+                if ($sesionId > 0 && (int)($sesion['convocados'] ?? 0) === 0) {
+                    $this->sesionService->sincronizarConvocados($sesionId, $usuarioId, true);
+                }
+
                 return $this->ver($detalleId);
             }
             if ($estado === 'EJECUTADA') {

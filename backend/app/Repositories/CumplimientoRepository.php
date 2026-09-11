@@ -349,6 +349,8 @@ class CumplimientoRepository
     {
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
+        $cargoSql = ContextoLaboralSql::cargoId();
+        $procesoSql = ContextoLaboralSql::procesoId();
 
         return "SELECT a.asignacion_id,
                        a.persona_id_ext,
@@ -356,8 +358,8 @@ class CumplimientoRepository
                        a.fecha_asignacion,
                        a.fecha_limite_cumplimiento,
                        a.origen,
-                       a.cargo_id_ext,
-                       a.proceso_id,
+                       {$cargoSql} AS cargo_id_ext,
+                       {$procesoSql} AS proceso_id,
                        a.proyecto,
                        a.matriz_aplicabilidad_id,
                        a.ambito,
@@ -392,9 +394,9 @@ class CumplimientoRepository
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 LEFT JOIN tipos_capacitacion tc ON tc.tipo_capacitacion_id = cap.tipo_capacitacion_id
                 LEFT JOIN vigencias vg ON vg.vigencia_id = cap.vigencia_id
-                LEFT JOIN procesos pr ON pr.proceso_id = a.proceso_id
                 LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
-                LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext";
+                LEFT JOIN {$cargos} cg ON cg.cargo_id = {$cargoSql}
+                LEFT JOIN procesos pr ON pr.proceso_id = {$procesoSql}";
     }
 
     /**
@@ -425,13 +427,13 @@ class CumplimientoRepository
 
         $cargoId = $filtros['cargo_id'] ?? null;
         if ($cargoId !== null && (int)$cargoId > 0) {
-            $condiciones[] = 'a.cargo_id_ext = ?';
+            $condiciones[] = ContextoLaboralSql::cargoId() . ' = ?';
             $params[] = (int)$cargoId;
         }
 
         $procesoId = $filtros['proceso_id'] ?? null;
         if ($procesoId !== null && (int)$procesoId > 0) {
-            $condiciones[] = 'a.proceso_id = ?';
+            $condiciones[] = ContextoLaboralSql::procesoId() . ' = ?';
             $params[] = (int)$procesoId;
         }
 

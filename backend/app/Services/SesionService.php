@@ -259,6 +259,72 @@ class SesionService
     }
 
     /**
+     * Convoca a quienes tienen la capacitación asignada y aún no están en la sesión.
+     * Amplía el cupo si hace falta. Con $soloSiVacia no toca una sesión que ya tiene gente.
+     */
+    public function sincronizarConvocados(int $sesionId, int $usuarioId, bool $soloSiVacia = true): array
+    {
+        try {
+            $this->repo->transaccion(function () use ($sesionId, $usuarioId, $soloSiVacia): void {
+                $sesion = $this->repo->bloquearPorId($sesionId);
+                if ($sesion === null) {
+                    throw new HttpException('La sesión no existe.', 404);
+                }
+                $this->exigirSesionOperable(
+                    $sesion,
+                    'No es posible convocar trabajadores a una capacitación finalizada.',
+                    'No es posible convocar trabajadores a una sesión cancelada.'
+                );
+
+                $planDetalleId = (int)($sesion['plan_detalle_id'] ?? 0);
+                if ($planDetalleId < 1) {
+                    throw new HttpException('La sesión no está asociada a un detalle del plan anual.', 422);
+                }
+
+                $actuales = $this->repo->idsParticipantes($sesionId);
+                if ($soloSiVacia && $actuales !== []) {
+                    return;
+                }
+
+                $capacitacionId = (int)$sesion['capacitacion_id'];
+                $pendientes = $this->repo->convocables($capacitacionId, $planDetalleId, $sesionId, null);
+                $ids = [];
+                foreach ($pendientes as $fila) {
+                    $id = (int)($fila['asignacion_id'] ?? 0);
+                    if ($id > 0) {
+                        $ids[] = $id;
+                    }
+                }
+                if ($ids === []) {
+                    return;
+                }
+
+                $cupo = (int)($sesion['cupo_maximo'] ?? 0);
+                $necesario = count($actuales) + count($ids);
+                if ($cupo < $necesario) {
+                    $this->repo->actualizar($sesionId, ['cupo_maximo' => $necesario]);
+                    $cupo = $necesario;
+                }
+
+                $this->insertarConvocadosAtomico(
+                    $sesionId,
+                    $capacitacionId,
+                    $cupo,
+                    $ids,
+                    $usuarioId > 0 ? $usuarioId : null,
+                    true
+                );
+            });
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (PDOException $e) {
+            throw $this->errorPersistencia($e, 'No fue posible convocar a los trabajadores.');
+        }
+
+        return $this->ver($sesionId);
+    }
+
+    /**
      * @param array<string,mixed> $datos
      * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
      */
@@ -590,7 +656,13 @@ class SesionService
      */
     private function prepararCampos(array $datos, array $detalle): array
     {
-        $fechaHora = $this->combinarFechaHora($datos['fecha'] ?? null, $datos['hora'] ?? null);
+        $fechaPlan = $detalle['fecha_programada'] !== null && $detalle['fecha_programada'] !== ''
+            ? substr((string)$detalle['fecha_programada'], 0, 10)
+            : null;
+        $fechaHora = $this->combinarFechaHora(
+            $fechaPlan !== null && $fechaPlan !== '' ? $fechaPlan : ($datos['fecha'] ?? null),
+            $datos['hora'] ?? null
+        );
         $anioFecha = (int)substr($fechaHora, 0, 4);
         $anioPlan = (int)$detalle['anio'];
         if ($anioFecha !== $anioPlan) {

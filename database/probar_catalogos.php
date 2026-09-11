@@ -154,6 +154,27 @@ if ($admin !== null && (int)($nAdmin['total'] ?? 0) === 1) {
     echo "No hay un unico rol admin activo; se omite el bloqueo.\n";
 }
 
+echo "\n== Vigencia equivalente 12 meses / 1 año ==\n";
+$defVig = $svc->definicion('vigencias');
+$anio = $db->fetch(
+    "SELECT vigencia_id, nombre FROM vigencias WHERE cantidad = 1 AND unidad = 'ANIOS' AND activo = 1 LIMIT 1"
+);
+if ($anio === null) {
+    echo "Sin vigencia de 1 año activa; se omite.\n";
+} else {
+    try {
+        $svc->crear($defVig, [
+            'nombre' => '12 meses prueba ' . date('His'),
+            'cantidad' => 12,
+            'unidad' => 'MESES',
+        ]);
+        ok(false, 'Debio rechazar 12 meses equivalente a 1 año');
+    } catch (HttpException $e) {
+        ok($e->getStatusCode() === 409, 'HTTP 409 en vigencia equivalente');
+        ok(str_contains($e->getMessage(), 'equivalente'), $e->getMessage());
+    }
+}
+
 echo "\n== Integridad de tablas ==\n";
 $db->fetchAll('SELECT capacitacion_id FROM capacitaciones LIMIT 1');
 $db->fetchAll('SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad LIMIT 1');

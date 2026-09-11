@@ -125,6 +125,8 @@ class CatalogService
             throw new HttpException('Ya existe un registro con este nombre.', 409);
         }
 
+        $this->asegurarDuracionUnica($def, $datos, null);
+
         $id = $this->repo->crear($def, $datos);
         $creado = $this->ver($def, $id);
         if ($actor !== null) {
@@ -150,6 +152,13 @@ class CatalogService
 
         if (isset($datos['nombre']) && $this->repo->nombreDuplicado($def, (string)$datos['nombre'], $id)) {
             throw new HttpException('Ya existe un registro con este nombre.', 409);
+        }
+
+        $quedaraActivo = array_key_exists('activo', $datos)
+            ? (int)$datos['activo'] === 1
+            : (int)($actual['activo'] ?? 1) === 1;
+        if ($quedaraActivo) {
+            $this->asegurarDuracionUnica($def, array_merge($actual, $datos), $id);
         }
 
         if (array_key_exists('activo', $datos) && (int)$datos['activo'] === 0) {
@@ -218,7 +227,8 @@ class CatalogService
 
     public function reactivar(array $def, int $id): array
     {
-        $this->ver($def, $id);
+        $actual = $this->ver($def, $id);
+        $this->asegurarDuracionUnica($def, $actual, $id);
         $this->repo->reactivar($def, $id);
 
         return $this->ver($def, $id);
@@ -257,6 +267,42 @@ class CatalogService
         if ($this->repo->contarRolesAdminActivos($id) === 0) {
             throw new HttpException(
                 'No es posible inactivar el único rol Administrador HSEQ.',
+                409
+            );
+        }
+    }
+
+    /**
+     * 1 año y 12 meses (o 2 años y 24 meses) no pueden convivir activos.
+     *
+     * @param array<string, mixed> $datos
+     */
+    private function asegurarDuracionUnica(array $def, array $datos, ?int $exceptoId): void
+    {
+        $tabla = (string)($def['tabla'] ?? '');
+        if (!in_array($tabla, ['vigencias', 'periodicidades'], true)) {
+            return;
+        }
+
+        $meses = meses_equivalentes($datos['cantidad'] ?? null, $datos['unidad'] ?? null);
+        if ($meses === null) {
+            return;
+        }
+
+        $pk = (string)$def['pk'];
+        $tipo = $tabla === 'vigencias' ? 'vigencia' : 'periodicidad';
+        foreach ($this->repo->listar($def, 'activos', null) as $fila) {
+            $id = (int)($fila[$pk] ?? 0);
+            if ($exceptoId !== null && $id === $exceptoId) {
+                continue;
+            }
+            $eq = meses_equivalentes($fila['cantidad'] ?? null, $fila['unidad'] ?? null);
+            if ($eq !== $meses) {
+                continue;
+            }
+            $nombre = humanizar_nombre_unidad($fila['nombre'] ?? null) ?? (string)($fila['nombre'] ?? '');
+            throw new HttpException(
+                "Ya existe una {$tipo} equivalente: {$nombre}. Un año equivale a 12 meses.",
                 409
             );
         }

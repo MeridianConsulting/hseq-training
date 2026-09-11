@@ -29,12 +29,15 @@ class AlertaRepository
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
 
+        $cargoSql = ContextoLaboralSql::cargoId();
+        $procesoSql = ContextoLaboralSql::procesoId();
+
         return $this->db->fetchAll(
             "SELECT v.asignacion_id,
                     v.persona_id_ext,
                     v.capacitacion_id,
-                    a.proceso_id,
-                    a.cargo_id_ext,
+                    {$procesoSql} AS proceso_id,
+                    {$cargoSql} AS cargo_id_ext,
                     v.proyecto,
                     v.fecha_limite_cumplimiento,
                     v.fecha_realizacion,
@@ -59,8 +62,8 @@ class AlertaRepository
              INNER JOIN {$personas} per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
              LEFT JOIN cumplimientos_capacitacion cump ON cump.cumplimiento_id = v.cumplimiento_id
              LEFT JOIN capacitaciones cap ON cap.capacitacion_id = v.capacitacion_id
-             LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
-             LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
+             LEFT JOIN procesos proc ON proc.proceso_id = {$procesoSql}
+             LEFT JOIN {$cargos} car ON car.cargo_id = {$cargoSql}
              {$where}
              ORDER BY
                CASE
@@ -274,7 +277,7 @@ class AlertaRepository
 
         $procesoId = $filtros['proceso_id'] ?? null;
         if ($procesoId !== null && $procesoId > 0) {
-            $condiciones[] = 'a.proceso_id = ?';
+            $condiciones[] = ContextoLaboralSql::procesoId() . ' = ?';
             $params[] = $procesoId;
         }
 
@@ -286,7 +289,7 @@ class AlertaRepository
 
         $cargoId = $filtros['cargo_id_ext'] ?? null;
         if ($cargoId !== null && $cargoId > 0) {
-            $condiciones[] = 'a.cargo_id_ext = ?';
+            $condiciones[] = ContextoLaboralSql::cargoId() . ' = ?';
             $params[] = $cargoId;
         }
 

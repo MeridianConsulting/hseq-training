@@ -23,7 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { CalendarPlus, Eye, Pencil, RefreshCw, Trash2, Users } from "lucide-react";
+import { CalendarPlus, Eye, RefreshCw, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type {
@@ -696,21 +696,6 @@ function Contenido() {
                 >
                   <Eye className="h-4 w-4" aria-hidden />
                 </Button>
-                {puede("asignaciones.editar") ? (
-                  <Button
-                    type="button"
-                    variante="ghost"
-                    className="px-2"
-                    title="Actualizar fecha"
-                    aria-label="Actualizar fecha límite"
-                    onClick={() => {
-                      setEditando(item);
-                      setAbierto(true);
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden />
-                  </Button>
-                ) : null}
                 {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
                   <Button
                     type="button"

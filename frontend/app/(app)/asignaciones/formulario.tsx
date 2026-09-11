@@ -269,7 +269,8 @@ export function FormularioAsignacion({
           onChange={(e) => set("fecha_limite_cumplimiento", e.target.value)}
         />
         <span className="mt-1 block text-xs text-slate-500">
-          Plazo para realizar el curso.
+          Plazo de la persona para realizar el curso. La fecha de la capacitación se define en el
+          Plan anual.
         </span>
       </Field>
 

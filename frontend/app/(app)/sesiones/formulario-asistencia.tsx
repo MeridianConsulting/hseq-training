@@ -113,6 +113,11 @@ export function FormularioAsistencia({
       }
     }
 
+    if (filas.length === 0) {
+      setError("Esta sesión no tiene trabajadores convocados. Agréguelos en «Convocar o retirar trabajadores».");
+      return;
+    }
+
     setGuardando(true);
     const respuesta = await apiPut<DetalleSesion>(`/api/sesiones/${sesion.sesion_id}/asistencia`, {
       items: filas.map((fila) => ({
@@ -231,7 +236,7 @@ export function FormularioAsistencia({
           withQuery("/api/cumplimientos/previsualizar", {
             sesion_id: sesion.sesion_id,
             asignacion_ids: seleccionCump.join(","),
-            fecha_realizacion: fechaCump,
+            fecha_realizacion: sesion.fecha ?? fechaCump,
           }),
         );
         setPreviewCump(r.success && r.data ? r.data : null);
@@ -284,7 +289,7 @@ export function FormularioAsistencia({
     const respuesta = await apiPost<ResultadoMasivoCumplimiento>("/api/cumplimientos/masivo", {
       sesion_id: sesion.sesion_id,
       asignacion_ids: seleccionCump,
-      fecha_realizacion: fechaCump,
+      fecha_realizacion: sesion.fecha ?? fechaCump,
       resultado: "APROBADO",
       horas_efectivas: Number(horasCump),
       notas: notasPayload,
@@ -387,6 +392,7 @@ export function FormularioAsistencia({
           { clave: "motivo", etiqueta: "Razón de ausencia" },
           { clave: "obs", etiqueta: "Observación" },
         ]}
+        vacio="No hay trabajadores convocados. Ábralos en «Convocar o retirar trabajadores» o asigne el curso en Asignaciones."
         filas={sesion.participantes.map((p) => {
           const fila = filas.find((f) => f.asignacion_id === p.asignacion_id) ?? {
             asignacion_id: p.asignacion_id,
@@ -437,7 +443,7 @@ export function FormularioAsistencia({
         })}
       />
 
-      {editable ? (
+      {editable && filas.length > 0 ? (
         <div className="flex justify-end">
           <Button type="submit" disabled={guardando}>
             {guardando ? "Guardando…" : "Guardar asistencia"}
@@ -630,9 +636,12 @@ export function FormularioAsistencia({
                   type="date"
                   className={inputClass}
                   required
-                  value={fechaCump}
-                  onChange={(e) => setFechaCump(e.target.value)}
+                  readOnly
+                  value={sesion.fecha ?? fechaCump}
                 />
+                <span className="mt-1 block text-xs text-slate-500">
+                  Es la fecha programada del Plan anual.
+                </span>
               </Field>
               <Field etiqueta="Resultado">
                 <select className={inputClass} value="APROBADO" disabled>

@@ -86,15 +86,19 @@ class CronogramaRepository
                 $ids[$n] = $n;
             }
         }
-        if ($ids === []) {
-            return [];
-        }
 
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
-        $in = implode(',', array_fill(0, count($ids), '?'));
-        $lista = array_values($ids);
-        $params = array_merge([$capacitacionId], $lista, $lista);
+        $params = [$capacitacionId];
+        $ordenCargo = '0';
+        if ($ids !== []) {
+            $lista = array_values($ids);
+            $in = implode(',', array_fill(0, count($lista), '?'));
+            $ordenCargo = "(CASE WHEN a.cargo_id_ext IN ({$in})
+                    OR (a.cargo_id_ext IS NULL AND per.cargo_id IN ({$in}))
+                 THEN 1 ELSE 0 END)";
+            $params = array_merge($params, $lista, $lista);
+        }
 
         return $this->db->fetchAll(
             "SELECT a.asignacion_id,
@@ -105,15 +109,12 @@ class CronogramaRepository
                     e.estado_calculado
              FROM asignaciones_capacitacion a
              INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
-             LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             INNER JOIN {$personas} per ON per.persona_id = a.persona_id_ext
              LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext
              LEFT JOIN {$cargos} cgp ON cgp.cargo_id = per.cargo_id
              WHERE a.capacitacion_id = ?
-               AND (
-                    a.cargo_id_ext IN ({$in})
-                    OR (a.cargo_id_ext IS NULL AND per.cargo_id IN ({$in}))
-               )
-             ORDER BY per.nombre_completo_nombres_primero ASC, a.asignacion_id ASC",
+               AND per.estado = 'Activo'
+             ORDER BY {$ordenCargo} DESC, per.nombre_completo_nombres_primero ASC, a.asignacion_id ASC",
             $params
         );
     }

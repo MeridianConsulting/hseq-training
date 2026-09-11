@@ -332,7 +332,7 @@ class AsignacionService
                 'origen' => 'MANUAL',
                 'cargo_id_ext' => $persona['cargo_id'],
                 'area_id' => null,
-                'proceso_id' => null,
+                'proceso_id' => $this->procesoIdDePersona($persona),
                 'ambito' => null,
                 'proyecto' => $persona['proyecto'],
                 'creada_por_usuario_id_ext' => $usuarioId,
@@ -462,7 +462,7 @@ class AsignacionService
                     'origen' => 'MANUAL',
                     'cargo_id_ext' => $persona['cargo_id'],
                     'area_id' => null,
-                    'proceso_id' => null,
+                    'proceso_id' => $this->procesoIdDePersona($persona),
                     'ambito' => null,
                     'proyecto' => $persona['proyecto'],
                     'creada_por_usuario_id_ext' => $usuarioId,
@@ -701,6 +701,25 @@ class AsignacionService
             'dias_restantes' => $dias,
             'etiqueta_dias' => VencimientoService::etiquetaDias($dias),
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     */
+    private function procesoIdDePersona(array $persona): ?int
+    {
+        $lista = $persona['procesos'] ?? [];
+        if (is_array($lista) && $lista !== []) {
+            $id = (int)($lista[0]['proceso_id'] ?? 0);
+            if ($id > 0) {
+                return $id;
+            }
+        }
+
+        $cargoId = (int)($persona['cargo_id'] ?? 0);
+        $proyecto = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
+
+        return $this->matriz->procesoIdParaCargo($cargoId, $proyecto !== '' ? $proyecto : null);
     }
 
     private function exigirPersonaActiva(array $persona): void

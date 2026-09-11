@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
-import { ArrowLeft, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
@@ -103,6 +103,8 @@ function Contenido() {
   const [detalleVer, setDetalleVer] = useState<DetallePlanAnual | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [buscarCap, setBuscarCap] = useState("");
+  const [fechaDe, setFechaDe] = useState<DetallePlanAnual | null>(null);
+  const [fechaNueva, setFechaNueva] = useState("");
 
   const muestraProyectoForm = procesoRequiereProyecto(form.proceso_id, opciones.procesos);
   const muestraProyectoFiltro = procesoRequiereProyecto(filtroProceso, opciones.procesos);
@@ -332,6 +334,27 @@ function Contenido() {
     setError(null);
   }
 
+  async function guardarFecha(e: FormEvent) {
+    e.preventDefault();
+    if (!plan || !fechaDe) return;
+    setGuardando(true);
+    const respuesta = await apiPut(`/api/cronograma/${fechaDe.plan_detalle_id}/reprogramar`, {
+      fecha_programada: fechaNueva,
+    });
+    setGuardando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
+    if (!respuesta.success) {
+      setError(respuesta.message || "No fue posible guardar la fecha.");
+      return;
+    }
+    setFechaDe(null);
+    setMensaje("Fecha programada actualizada. El cronograma usa esta misma fecha.");
+    setError(null);
+    await abrirPlan(plan.plan_anual_id);
+  }
+
   async function enviarAprobacion() {
     if (!plan) return;
     const respuesta = await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/enviar-revision`, {});
@@ -381,6 +404,7 @@ function Contenido() {
   }
 
   const editable = plan?.estado === "BORRADOR" && puede("planes.editar");
+  const puedeFecha = Boolean(plan) && puede("planes.editar") && plan?.estado !== "EN_REVISION";
 
   if (plan) {
     return (
@@ -541,6 +565,20 @@ function Contenido() {
                       <Button type="button" variante="ghost" onClick={() => setDetalleVer(d)}>
                         <Eye className="h-4 w-4" aria-hidden />
                       </Button>
+                      {puedeFecha && plan.estado === "APROBADO" ? (
+                        <Button
+                          type="button"
+                          variante="ghost"
+                          title="Cambiar fecha programada"
+                          aria-label="Cambiar fecha programada"
+                          onClick={() => {
+                            setFechaDe(d);
+                            setFechaNueva(d.fecha_programada ?? "");
+                          }}
+                        >
+                          <CalendarClock className="h-4 w-4" aria-hidden />
+                        </Button>
+                      ) : null}
                       {editable ? (
                         <>
                           <Button type="button" variante="ghost" onClick={() => abrirFormulario(d)}>
@@ -692,6 +730,40 @@ function Contenido() {
               </Button>
             </div>
           </form>
+        </Modal>
+
+        <Modal
+          abierto={fechaDe !== null}
+          titulo="Cambiar fecha programada"
+          onCerrar={() => setFechaDe(null)}
+        >
+          {fechaDe ? (
+            <form className="space-y-4" onSubmit={(e) => void guardarFecha(e)}>
+              <p className="text-sm text-slate-600">
+                {fechaDe.capacitacion_codigo} — {fechaDe.capacitacion_nombre}. Esta es la única fecha
+                que se puede editar; el cronograma y la sesión la toman de aquí.
+              </p>
+              <Field etiqueta="Fecha programada">
+                <input
+                  className={inputClass}
+                  type="date"
+                  required
+                  min={`${plan.anio}-01-01`}
+                  max={`${plan.anio}-12-31`}
+                  value={fechaNueva}
+                  onChange={(e) => setFechaNueva(e.target.value)}
+                />
+              </Field>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variante="secondary" onClick={() => setFechaDe(null)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={guardando}>
+                  {guardando ? "Guardando…" : "Guardar fecha"}
+                </Button>
+              </div>
+            </form>
+          ) : null}
         </Modal>
 
         <Modal

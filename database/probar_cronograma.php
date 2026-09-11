@@ -36,6 +36,37 @@ function ok(bool $condicion, string $mensaje): void
     echo "OK: {$mensaje}\n";
 }
 
+function limpiarPersonaCapacitaciones(Database $db, int $personaId): void
+{
+    $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$personaId]);
+    foreach ($asigs as $a) {
+        $aid = (int)$a['asignacion_id'];
+        $cumps = $db->fetchAll('SELECT cumplimiento_id FROM cumplimientos_capacitacion WHERE asignacion_id = ?', [$aid]);
+        foreach ($cumps as $c) {
+            $cid = (int)$c['cumplimiento_id'];
+            $db->query('DELETE FROM soportes_cumplimiento WHERE cumplimiento_id = ?', [$cid]);
+            $db->query('DELETE FROM cumplimientos_capacitacion WHERE cumplimiento_id = ?', [$cid]);
+        }
+        $db->query('DELETE FROM sesion_participantes WHERE asignacion_id = ?', [$aid]);
+        $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [$aid]);
+        $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [$aid]);
+    }
+}
+
+function borrarPersonaPrueba(Database $db, $personalDb, string $personasT, string $contratosT, string $doc): ?int
+{
+    $prev = $personalDb->fetch("SELECT persona_id FROM {$personasT} WHERE numero_documento = ?", [$doc]);
+    if ($prev === null) {
+        return null;
+    }
+    $pid = (int)$prev['persona_id'];
+    limpiarPersonaCapacitaciones($db, $pid);
+    $personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$pid]);
+    $personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$pid]);
+
+    return $pid;
+}
+
 function borrarPlanAnio(Database $db, int $anio): void
 {
     $plan = $db->fetch('SELECT plan_anual_id FROM planes_anuales WHERE anio = ?', [$anio]);
@@ -82,30 +113,14 @@ $cumplimientos = new CumplimientoService();
 
 $anioPrueba = 2028;
 $doc = '9000770301';
+$doc2 = '9000770302';
 $personasT = Database::personalTable('personas');
 $contratosT = Database::personalTable('contratos');
 
 echo "== Limpieza previa año {$anioPrueba} ==\n";
 borrarPlanAnio($db, $anioPrueba);
-$prev = $personalDb->fetch("SELECT persona_id FROM {$personasT} WHERE numero_documento = ?", [$doc]);
-if ($prev !== null) {
-    $pid = (int)$prev['persona_id'];
-    $asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$pid]);
-    foreach ($asigs as $a) {
-        $aid = (int)$a['asignacion_id'];
-        $cumps = $db->fetchAll('SELECT cumplimiento_id FROM cumplimientos_capacitacion WHERE asignacion_id = ?', [$aid]);
-        foreach ($cumps as $c) {
-            $cid = (int)$c['cumplimiento_id'];
-            $db->query('DELETE FROM soportes_cumplimiento WHERE cumplimiento_id = ?', [$cid]);
-            $db->query('DELETE FROM cumplimientos_capacitacion WHERE cumplimiento_id = ?', [$cid]);
-        }
-        $db->query('DELETE FROM sesion_participantes WHERE asignacion_id = ?', [$aid]);
-        $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [$aid]);
-        $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [$aid]);
-    }
-    $personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$pid]);
-    $personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$pid]);
-}
+borrarPersonaPrueba($db, $personalDb, $personasT, $contratosT, $doc);
+borrarPersonaPrueba($db, $personalDb, $personasT, $contratosT, $doc2);
 
 $opciones = $planes->opciones();
 $procesoGp = null;
@@ -267,6 +282,42 @@ ok((int)$conAsig['total'] >= 1, 'Trabajador del cargo aparece');
 ok($conAsig['items'][0]['numero_documento'] === $doc, 'Documento del trabajador');
 ok(($conAsig['items'][0]['estado_asignacion'] ?? '') !== '', 'Estado de la asignación');
 
+$cargoOtroId = 0;
+foreach ($mapaCargos['por_id'] as $idCargo => $_nombre) {
+    if ((int)$idCargo !== (int)$cargoId) {
+        $cargoOtroId = (int)$idCargo;
+        break;
+    }
+}
+ok($cargoOtroId > 0, 'Hay otro cargo en el catálogo');
+$matriz->crear([
+    'capacitacion_id' => $capId,
+    'cargo_id_ext' => $cargoOtroId,
+    'proceso_id' => $procesoOtroId,
+    'ambito' => 'ADMINISTRACION',
+    'obligatoria' => 1,
+    'activa' => 1,
+], 1);
+$persona2 = $personal->crear([
+    'numero_documento' => $doc2,
+    'nombre_completo' => 'Prueba Cronograma Dos',
+    'correo' => 'cronograma2@hseq.test',
+    'cargo_id' => $cargoOtroId,
+    'fecha_ingreso' => '2026-01-15',
+], false);
+$persona2Id = (int)$persona2['persona_id'];
+$asignaciones->crear([
+    'persona_id_ext' => $persona2Id,
+    'capacitacion_id' => $capId,
+    'fecha_asignacion' => '2028-01-10',
+    'fecha_limite_cumplimiento' => '2028-12-31',
+], 1);
+$mixtos = $cronograma->trabajadores($detalleId);
+ok((int)$mixtos['total'] >= 2, 'También lista asignados de otro cargo');
+$docsLista = array_map(static fn (array $t): string => (string)$t['numero_documento'], $mixtos['items']);
+ok(in_array($doc2, $docsLista, true), 'Incluye al trabajador de otro cargo');
+borrarPersonaPrueba($db, $personalDb, $personasT, $contratosT, $doc2);
+
 echo "\n== Reprogramar ==\n";
 $reprog = $cronograma->reprogramar($detalleId, ['fecha_programada' => '2028-04-20']);
 ok($reprog['fecha_programada'] === '2028-04-20', 'Fecha actualizada');
@@ -287,11 +338,27 @@ try {
 }
 
 echo "\n== Iniciar y finalizar ==\n";
+$vacia = $sesiones->crear([
+    'plan_detalle_id' => $detalleId,
+    'fecha' => '2028-04-20',
+    'hora' => '08:00',
+    'modalidad_id' => (int)$modalidad['modalidad_id'],
+    'ubicacion_id' => (int)$ubicacion['ubicacion_id'],
+    'proveedor_id' => (int)$proveedor['proveedor_id'],
+    'cupo_maximo' => 1,
+], 1);
+ok((int)$vacia['convocados'] === 0, 'Sesión creada sin convocados');
+
 $iniciada = $cronograma->iniciar($detalleId, 1);
 ok($iniciada['estado_operativo'] === 'EN_EJECUCION', 'Iniciar pasa a En ejecución');
 ok(count($iniciada['sesiones']) === 1, 'Una sesión operativa');
 ok(($iniciada['sesiones'][0]['estado'] ?? '') === 'PROGRAMADA', 'Sesión PROGRAMADA');
-ok((int)$iniciada['sesiones'][0]['convocados'] >= 1, 'Convoca trabajadores existentes');
+ok((int)$iniciada['sesiones'][0]['sesion_id'] === (int)$vacia['sesion_id'], 'Reutiliza la sesión vacía');
+ok((int)$iniciada['sesiones'][0]['convocados'] >= 1, 'Rellena convocados al iniciar');
+ok(
+    (int)$iniciada['sesiones'][0]['cupo_maximo'] >= (int)$iniciada['sesiones'][0]['convocados'],
+    'Amplía el cupo al convocar'
+);
 $sesionId = (int)$iniciada['sesiones'][0]['sesion_id'];
 
 $otraVez = $cronograma->iniciar($detalleId, 1);
@@ -416,22 +483,9 @@ $sigueEnTablero = $cronograma->tablero(['tipo' => 'anual', 'anio' => $anioPrueba
 ok((int)$sigueEnTablero['total'] === 2, 'Cancelada sigue visible en el tablero');
 
 echo "\n== Limpieza ==\n";
-$asigs = $db->fetchAll('SELECT asignacion_id FROM asignaciones_capacitacion WHERE persona_id_ext = ?', [$personaId]);
-foreach ($asigs as $a) {
-    $aid = (int)$a['asignacion_id'];
-    $cumps = $db->fetchAll('SELECT cumplimiento_id FROM cumplimientos_capacitacion WHERE asignacion_id = ?', [$aid]);
-    foreach ($cumps as $c) {
-        $cid = (int)$c['cumplimiento_id'];
-        $db->query('DELETE FROM soportes_cumplimiento WHERE cumplimiento_id = ?', [$cid]);
-        $db->query('DELETE FROM cumplimientos_capacitacion WHERE cumplimiento_id = ?', [$cid]);
-    }
-    $db->query('DELETE FROM sesion_participantes WHERE asignacion_id = ?', [$aid]);
-    $db->query('DELETE FROM plan_detalle_asignaciones WHERE asignacion_id = ?', [$aid]);
-    $db->query('DELETE FROM asignaciones_capacitacion WHERE asignacion_id = ?', [$aid]);
-}
+borrarPersonaPrueba($db, $personalDb, $personasT, $contratosT, $doc);
+borrarPersonaPrueba($db, $personalDb, $personasT, $contratosT, $doc2);
 borrarPlanAnio($db, $anioPrueba);
-$personalDb->query("DELETE FROM {$contratosT} WHERE persona_id = ?", [$personaId]);
-$personalDb->query("DELETE FROM {$personasT} WHERE persona_id = ?", [$personaId]);
 $matrizFilas = $db->fetchAll('SELECT matriz_aplicabilidad_id FROM matriz_aplicabilidad WHERE capacitacion_id = ?', [$capId]);
 foreach ($matrizFilas as $m) {
     $db->query('DELETE FROM matriz_aplicabilidad WHERE matriz_aplicabilidad_id = ?', [(int)$m['matriz_aplicabilidad_id']]);

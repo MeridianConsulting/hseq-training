@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { PanelOperativo } from "@/app/(app)/cronograma/panel-operativo";
 import { FiltroCronograma, type FiltroCronogramaValor } from "@/components/cronograma/filtro-cronograma";
 import { RequierePermiso } from "@/components/requiere-permiso";
@@ -8,12 +8,11 @@ import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
-import { Ban, CalendarClock, ClipboardCheck, Eye, Play, Users } from "lucide-react";
-import { apiGet, apiPost, apiPut, withQuery } from "@/lib/api";
+import { Ban, ClipboardCheck, Eye, Play, Users } from "lucide-react";
+import { apiGet, apiPost, withQuery } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { ItemCronograma, TableroCronograma, TrabajadorCronograma } from "@/lib/tipos";
 
@@ -92,8 +91,6 @@ function Contenido() {
   const [detalle, setDetalle] = useState<ItemCronograma | null>(null);
   const [trabajadoresDe, setTrabajadoresDe] = useState<ItemCronograma | null>(null);
   const [trabajadores, setTrabajadores] = useState<TrabajadorCronograma[]>([]);
-  const [reprogramar, setReprogramar] = useState<ItemCronograma | null>(null);
-  const [fechaNueva, setFechaNueva] = useState("");
   const [iniciarDe, setIniciarDe] = useState<ItemCronograma | null>(null);
   const [panel, setPanel] = useState<{ item: ItemCronograma; sesionId: number } | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -161,28 +158,6 @@ function Contenido() {
       return;
     }
     setTrabajadores(respuesta.data.items ?? []);
-  }
-
-  async function guardarReprogramacion(e: FormEvent) {
-    e.preventDefault();
-    if (!reprogramar) return;
-    setGuardando(true);
-    const respuesta = await apiPut<ItemCronograma>(
-      `/api/cronograma/${reprogramar.plan_detalle_id}/reprogramar`,
-      { fecha_programada: fechaNueva },
-    );
-    setGuardando(false);
-    if (respuesta.cancelada) {
-      return;
-    }
-    if (!respuesta.success) {
-      setError(respuesta.message || "No fue posible guardar la programación.");
-      return;
-    }
-    setReprogramar(null);
-    setMensaje(respuesta.message || "Programación actualizada correctamente.");
-    setError(null);
-    recargar();
   }
 
   async function cancelarProgramacion(item: ItemCronograma) {
@@ -295,18 +270,6 @@ function Contenido() {
                 <Button type="button" variante="ghost" onClick={() => void abrirTrabajadores(item)}>
                   <Users className="h-4 w-4" aria-hidden />
                 </Button>
-                {programada(item) && puede("planes.editar") ? (
-                  <Button
-                    type="button"
-                    variante="ghost"
-                    onClick={() => {
-                      setReprogramar(item);
-                      setFechaNueva(item.fecha_programada ?? "");
-                    }}
-                  >
-                    <CalendarClock className="h-4 w-4" aria-hidden />
-                  </Button>
-                ) : null}
                 {programada(item) && puede("planes.editar") ? (
                   <Button type="button" variante="ghost" onClick={() => void cancelarProgramacion(item)}>
                     <Ban className="h-4 w-4" aria-hidden />
@@ -432,8 +395,12 @@ function Contenido() {
         {trabajadoresDe ? (
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
-              {trabajadoresDe.codigo} — {trabajadoresDe.tema}. {trabajadoresDe.cantidad_programada} trabajador
-              {trabajadoresDe.cantidad_programada === 1 ? "" : "es"} según la matriz. Solo consulta; las asignaciones se gestionan en el módulo de asignaciones.
+              {trabajadoresDe.codigo} — {trabajadoresDe.tema}. {trabajadores.length} trabajador
+              {trabajadores.length === 1 ? "" : "es"} con el curso asignado
+              {trabajadoresDe.cantidad_programada > 0
+                ? ` (la matriz estima ${trabajadoresDe.cantidad_programada} por cargo)`
+                : ""}
+              . Si faltan personas, asígnelas en el módulo de asignaciones.
             </p>
             <Table
               columnas={[
@@ -442,7 +409,7 @@ function Contenido() {
                 { clave: "car", etiqueta: "Cargo" },
                 { clave: "est", etiqueta: "Estado" },
               ]}
-              vacio="No hay asignaciones existentes para los cargos de esta programación."
+              vacio="Nadie tiene esta capacitación asignada. Cree la asignación en el módulo de asignaciones."
               filas={trabajadores.map((t) => [
                 t.numero_documento,
                 t.persona_nombre,
@@ -451,39 +418,6 @@ function Contenido() {
               ])}
             />
           </div>
-        ) : null}
-      </Modal>
-
-      <Modal
-        abierto={reprogramar !== null}
-        titulo="Reprogramar fecha"
-        onCerrar={() => setReprogramar(null)}
-      >
-        {reprogramar ? (
-          <form className="space-y-4" onSubmit={(e) => void guardarReprogramacion(e)}>
-            <p className="text-sm text-slate-600">
-              {reprogramar.codigo} — {reprogramar.tema}. Solo se actualiza la fecha de esta programación.
-            </p>
-            <Field etiqueta="Fecha programada">
-              <input
-                className={inputClass}
-                type="date"
-                required
-                min={`${reprogramar.anio}-01-01`}
-                max={`${reprogramar.anio}-12-31`}
-                value={fechaNueva}
-                onChange={(e) => setFechaNueva(e.target.value)}
-              />
-            </Field>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variante="secondary" onClick={() => setReprogramar(null)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={guardando}>
-                {guardando ? "Guardando…" : "Guardar"}
-              </Button>
-            </div>
-          </form>
         ) : null}
       </Modal>
 
@@ -497,7 +431,7 @@ function Contenido() {
             <p className="text-sm text-slate-600">
               Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} el{" "}
               {formatearFecha(iniciarDe.fecha_programada)} a las 08:00, con los trabajadores
-              programados según la matriz.
+              que ya tienen esta capacitación asignada.
             </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variante="secondary" onClick={() => setIniciarDe(null)}>

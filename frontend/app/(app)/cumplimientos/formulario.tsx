@@ -184,9 +184,12 @@ export function FormularioCumplimiento({
           type="date"
           className={inputClass}
           required
+          readOnly
           value={datos.fecha_realizacion}
-          onChange={(e) => setDatos((prev) => ({ ...prev, fecha_realizacion: e.target.value }))}
         />
+        <span className="mt-1 block text-xs text-slate-500">
+          Es la fecha programada del Plan anual.
+        </span>
       </Field>
       <Field etiqueta="Resultado">
         <select

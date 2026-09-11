@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelConvocados } from "@/app/(app)/cronograma/formulario-sesion";
 import { FormularioAsistencia } from "@/app/(app)/sesiones/formulario-asistencia";
 import { ListaEvidencias, subirSoportes } from "@/app/(app)/cumplimientos/evidencias";
 import { useAuth } from "@/components/auth-provider";
@@ -44,10 +45,23 @@ export function PanelOperativo({
       setCargando(false);
       return;
     }
-    setSesion(respuesta.data);
+
+    let detalle = respuesta.data;
+    const operable = detalle.estado === "PROGRAMADA";
+    if (puede("sesiones.editar") && operable && detalle.participantes.length === 0) {
+      const sync = await apiPost<DetalleSesion>(`/api/sesiones/${id}/sincronizar-convocados`, {});
+      if (sync.cancelada) {
+        return;
+      }
+      if (sync.success && sync.data) {
+        detalle = sync.data;
+      }
+    }
+
+    setSesion(detalle);
     setError(null);
     setCargando(false);
-    await cargarSoportes(respuesta.data);
+    await cargarSoportes(detalle);
   }
 
   async function cargarSoportes(detalle: DetalleSesion) {
@@ -122,6 +136,25 @@ export function PanelOperativo({
         {item.codigo} — {item.tema}. Fecha programada: {item.fecha_programada ?? "—"}.
       </p>
       {error ? <Alert tono="error">{error}</Alert> : null}
+
+      {puede("sesiones.editar") && !cerrada ? (
+        <details
+          className="rounded-lg border border-slate-200 p-4"
+          open={sesion.participantes.length === 0}
+        >
+          <summary className="cursor-pointer text-sm font-semibold text-hseq-900">
+            Convocar o retirar trabajadores
+          </summary>
+          <p className="mt-2 mb-3 text-sm text-slate-600">
+            Aparecen quienes ya tienen esta capacitación asignada. Si la lista de asistencia está
+            vacía, convóquelos aquí.
+          </p>
+          <PanelConvocados
+            sesionId={sesion.sesion_id}
+            onCambio={() => void cargar(sesion.sesion_id)}
+          />
+        </details>
+      ) : null}
 
       <FormularioAsistencia
         sesion={sesion}

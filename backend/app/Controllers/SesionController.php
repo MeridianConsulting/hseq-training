@@ -130,6 +130,25 @@ class SesionController extends Controller
         $this->success($actualizada, 'Trabajadores convocados.');
     }
 
+    public function sincronizarConvocados(Request $request, string $id): void
+    {
+        $actualizada = $this->service->sincronizarConvocados((int)$id, $request->userId(), true);
+
+        $this->auditoria->dePeticion(
+            $request,
+            'convocar',
+            'sesiones_capacitacion',
+            (int)$id,
+            [
+                'origen' => 'sincronizar',
+                'convocados' => $actualizada['convocados'],
+                'cupo_maximo' => $actualizada['cupo_maximo'],
+            ]
+        );
+
+        $this->success($actualizada, 'Trabajadores convocados a la sesión.');
+    }
+
     public function retirar(Request $request, string $id, string $asignacionId): void
     {
         $actualizada = $this->service->retirar((int)$id, (int)$asignacionId);

@@ -25,7 +25,15 @@ class CatalogRepository
     {
         [$where, $params] = $this->condiciones($def, $filtroEstado, $buscar);
         $tabla = $this->identificador((string)$def['tabla']);
-        $sql = "SELECT * FROM {$tabla} {$where} ORDER BY nombre ASC";
+        $orden = 'ORDER BY nombre ASC';
+        if (in_array((string)($def['tabla'] ?? ''), ['vigencias', 'periodicidades'], true)) {
+            $orden = "ORDER BY CASE unidad
+                WHEN 'ANIOS' THEN cantidad * 12
+                WHEN 'MESES' THEN cantidad
+                WHEN 'DIAS' THEN cantidad / 30
+                ELSE 9999 END, nombre ASC";
+        }
+        $sql = "SELECT * FROM {$tabla} {$where} {$orden}";
         if ($limite !== null) {
             $limite = max(1, $limite);
             $offset = max(0, (int)$offset);

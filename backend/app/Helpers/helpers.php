@@ -116,3 +116,23 @@ if (!function_exists('etiqueta_unidad')) {
         return $n . ' ' . $palabra;
     }
 }
+
+if (!function_exists('meses_equivalentes')) {
+    /** Convierte años/meses a meses para detectar duplicados (1 año = 12 meses). */
+    function meses_equivalentes(mixed $cantidad, mixed $unidad): ?int
+    {
+        $n = (int)$cantidad;
+        $clave = strtoupper(trim((string)$unidad));
+        if ($n <= 0) {
+            return null;
+        }
+        if ($clave === 'ANIOS') {
+            return $n * 12;
+        }
+        if ($clave === 'MESES') {
+            return $n;
+        }
+
+        return null;
+    }
+}

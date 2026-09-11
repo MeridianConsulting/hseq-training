@@ -215,7 +215,7 @@ export function FormularioSesion({
     const cuerpo = {
       plan_detalle_id: item.plan_detalle_id,
       capacitacion_id: item.capacitacion_id,
-      fecha: datos.fecha,
+      fecha: item.fecha_programada ?? datos.fecha,
       hora: datos.hora,
       modalidad_id: Number(datos.modalidad_id),
       ubicacion_id: datos.ubicacion_id ? Number(datos.ubicacion_id) : null,
@@ -265,9 +265,12 @@ export function FormularioSesion({
             className={inputClass}
             type="date"
             required
-            value={datos.fecha}
-            onChange={(e) => set("fecha", e.target.value)}
+            readOnly
+            value={item.fecha_programada ?? datos.fecha}
           />
+          <span className="mt-1 block text-xs text-slate-500">
+            Viene del Plan anual. Para cambiarla, edite la actividad en el Plan anual.
+          </span>
         </Field>
         <Field etiqueta="Hora" error={errores.hora}>
           <input
@@ -374,7 +377,7 @@ export function FormularioSesion({
               <p className="px-3 py-4 text-sm text-slate-500">Cargando trabajadores…</p>
             ) : convocables.length === 0 ? (
               <p className="px-3 py-4 text-sm text-slate-500">
-                No hay trabajadores con esta capacitación asignada.
+                Nadie tiene esta capacitación asignada. Asígnela en el módulo de asignaciones y vuelva a abrir.
               </p>
             ) : (
               convocables.map((persona) => (
@@ -604,7 +607,11 @@ export function PanelConvocados({
         />
         <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200">
           {convocables.length === 0 ? (
-            <p className="px-3 py-4 text-sm text-slate-500">No hay más trabajadores disponibles para convocar.</p>
+            <p className="px-3 py-4 text-sm text-slate-500">
+              {participantes.length === 0
+                ? "Nadie tiene esta capacitación asignada. Asígnela en el módulo de asignaciones y vuelva a abrir."
+                : "No hay más trabajadores disponibles para convocar."}
+            </p>
           ) : (
             convocables.map((persona) => (
               <FilaConvocable

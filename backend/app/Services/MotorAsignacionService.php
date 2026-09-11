@@ -354,7 +354,10 @@ class MotorAsignacionService
                 'origen' => $origen,
                 'cargo_id_ext' => $cargoId > 0 ? $cargoId : null,
                 'area_id' => null,
-                'proceso_id' => null,
+                'proceso_id' => $this->matriz->procesoIdParaCargo(
+                    $cargoId,
+                    $proyectoPersona !== '' ? $proyectoPersona : null
+                ),
                 'ambito' => null,
                 'proyecto' => $proyectoPersona !== '' ? $proyectoPersona : null,
                 'creada_por_usuario_id_ext' => $usuarioId,
