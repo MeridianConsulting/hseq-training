@@ -164,6 +164,25 @@ class MatrizRepository
     }
 
     /**
+     * Marcas activas de una capacitación (todos los procesos/cargos/proyectos).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function marcasActivasDeCapacitacion(int $capacitacionId): array
+    {
+        return $this->db->fetchAll(
+            $this->selectBase() . '
+                WHERE m.activa = 1
+                  AND cap.estado = \'ACTIVA\'
+                  AND m.capacitacion_id = ?
+                  AND m.proceso_id IS NOT NULL
+                  AND m.cargo_id_ext IS NOT NULL
+             ORDER BY pr.nombre ASC, m.cargo_id_ext ASC, m.proyecto ASC',
+            [$capacitacionId]
+        );
+    }
+
+    /**
      * Cargos con al menos una marca activa en el proceso (capacitaciones ACTIVA).
      *
      * @return list<int>

@@ -255,6 +255,7 @@ export type ItemCronograma = {
   vigencia_unidad?: string | null;
   cargos_aplicables: CargoCorporativo[];
   sesiones: SesionCronograma[];
+  proceso_ids?: number[];
 };
 
 export type TrabajadorCronograma = {
@@ -900,6 +901,15 @@ export type OpcionesPlanAnual = {
   capacitaciones: CapacitacionPlanOpcion[];
 };
 
+export type AlcancePlanAnual = {
+  proceso_id: number;
+  proceso_nombre: string;
+  cargo_id: number;
+  nombre_cargo: string;
+  proyecto: string | null;
+  requiere_proyecto?: boolean;
+};
+
 export type DetallePlanAnual = {
   plan_detalle_id: number;
   capacitacion_id: number;
@@ -918,10 +928,12 @@ export type DetallePlanAnual = {
   trimestre: number;
   cantidad_programada: number;
   proceso_id: number | null;
+  proceso_ids?: number[];
   proceso_nombre: string | null;
   ambito: string | null;
   proyecto: string | null;
   cargos_aplicables: CargoCorporativo[];
+  alcances?: AlcancePlanAnual[];
 };
 
 export type PlanAnual = {

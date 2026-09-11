@@ -282,6 +282,20 @@ CREATE TABLE plan_anual_detalle (
   CONSTRAINT chk_plan_mes CHECK (mes_programado BETWEEN 1 AND 12)
 ) ENGINE=InnoDB;
 
+CREATE TABLE plan_detalle_alcances (
+  plan_detalle_alcance_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  plan_detalle_id INT UNSIGNED NOT NULL,
+  proceso_id INT UNSIGNED NOT NULL,
+  cargo_id_ext INT UNSIGNED NOT NULL,
+  proyecto VARCHAR(120) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pda_alcance (plan_detalle_id, proceso_id, cargo_id_ext, proyecto),
+  KEY ix_pda_alc_proceso (proceso_id),
+  CONSTRAINT fk_pda_alc_detalle FOREIGN KEY (plan_detalle_id)
+    REFERENCES plan_anual_detalle(plan_detalle_id) ON DELETE CASCADE,
+  CONSTRAINT fk_pda_alc_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE sesiones_capacitacion (
   sesion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   plan_detalle_id INT UNSIGNED NULL,

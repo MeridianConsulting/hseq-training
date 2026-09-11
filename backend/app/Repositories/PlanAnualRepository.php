@@ -176,6 +176,26 @@ class PlanAnualRepository
         return $this->db->fetch($sql, $params);
     }
 
+    public function buscarDetallePorCapFecha(
+        int $planId,
+        int $capacitacionId,
+        string $fecha,
+        ?int $exceptoDetalleId = null
+    ): ?array {
+        $sql = 'SELECT * FROM plan_anual_detalle
+                WHERE plan_anual_id = ?
+                  AND capacitacion_id = ?
+                  AND fecha_programada = ?';
+        $params = [$planId, $capacitacionId, $fecha];
+        if ($exceptoDetalleId !== null && $exceptoDetalleId > 0) {
+            $sql .= ' AND plan_detalle_id <> ?';
+            $params[] = $exceptoDetalleId;
+        }
+        $sql .= ' LIMIT 1';
+
+        return $this->db->fetch($sql, $params);
+    }
+
     public function actualizarDetalle(int $detalleId, array $datos): int
     {
         return $this->db->update('plan_anual_detalle', $datos, 'plan_detalle_id = ?', [$detalleId]);
@@ -184,6 +204,80 @@ class PlanAnualRepository
     public function crearDetalle(array $datos): int
     {
         return (int)$this->db->insert('plan_anual_detalle', $datos);
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function alcancesDeDetalle(int $detalleId): array
+    {
+        return $this->db->fetchAll(
+            'SELECT a.plan_detalle_alcance_id,
+                    a.plan_detalle_id,
+                    a.proceso_id,
+                    a.cargo_id_ext,
+                    a.proyecto,
+                    pr.nombre AS proceso_nombre
+             FROM plan_detalle_alcances a
+             INNER JOIN procesos pr ON pr.proceso_id = a.proceso_id
+             WHERE a.plan_detalle_id = ?
+             ORDER BY pr.nombre ASC, a.cargo_id_ext ASC',
+            [$detalleId]
+        );
+    }
+
+    /**
+     * @param list<int> $detalleIds
+     * @return array<int, list<array<string,mixed>>>
+     */
+    public function alcancesPorDetalles(array $detalleIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $detalleIds))));
+        if ($ids === []) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $filas = $this->db->fetchAll(
+            "SELECT a.plan_detalle_alcance_id,
+                    a.plan_detalle_id,
+                    a.proceso_id,
+                    a.cargo_id_ext,
+                    a.proyecto,
+                    pr.nombre AS proceso_nombre
+             FROM plan_detalle_alcances a
+             INNER JOIN procesos pr ON pr.proceso_id = a.proceso_id
+             WHERE a.plan_detalle_id IN ({$in})
+             ORDER BY pr.nombre ASC, a.cargo_id_ext ASC",
+            $ids
+        );
+        $por = [];
+        foreach ($filas as $fila) {
+            $id = (int)$fila['plan_detalle_id'];
+            $por[$id][] = $fila;
+        }
+
+        return $por;
+    }
+
+    /**
+     * @param list<array{proceso_id:int,cargo_id:int,proyecto:string}> $alcances
+     */
+    public function reemplazarAlcances(int $detalleId, array $alcances): void
+    {
+        $this->eliminarAlcancesDetalle($detalleId);
+        foreach ($alcances as $fila) {
+            $this->db->insert('plan_detalle_alcances', [
+                'plan_detalle_id' => $detalleId,
+                'proceso_id' => (int)$fila['proceso_id'],
+                'cargo_id_ext' => (int)$fila['cargo_id'],
+                'proyecto' => (string)($fila['proyecto'] ?? ''),
+            ]);
+        }
+    }
+
+    public function eliminarAlcancesDetalle(int $detalleId): int
+    {
+        return $this->db->delete('plan_detalle_alcances', 'plan_detalle_id = ?', [$detalleId]);
     }
 
     public function actualizarCantidad(int $detalleId, int $cantidad): int
@@ -460,8 +554,16 @@ class PlanAnualRepository
         if ($procesoId !== null && $procesoId > 0) {
             $condiciones[] = 'EXISTS (
                 SELECT 1 FROM plan_anual_detalle d
-                WHERE d.plan_anual_id = p.plan_anual_id AND d.proceso_id = ?
+                WHERE d.plan_anual_id = p.plan_anual_id
+                  AND (
+                    d.proceso_id = ?
+                    OR EXISTS (
+                        SELECT 1 FROM plan_detalle_alcances a
+                        WHERE a.plan_detalle_id = d.plan_detalle_id AND a.proceso_id = ?
+                    )
+                  )
             )';
+            $params[] = $procesoId;
             $params[] = $procesoId;
         }
 
@@ -469,8 +571,16 @@ class PlanAnualRepository
             $condiciones[] = 'EXISTS (
                 SELECT 1 FROM plan_anual_detalle d
                 WHERE d.plan_anual_id = p.plan_anual_id
-                  AND d.proyecto COLLATE utf8mb4_unicode_ci = ?
+                  AND (
+                    d.proyecto COLLATE utf8mb4_unicode_ci = ?
+                    OR EXISTS (
+                        SELECT 1 FROM plan_detalle_alcances a
+                        WHERE a.plan_detalle_id = d.plan_detalle_id
+                          AND a.proyecto COLLATE utf8mb4_unicode_ci = ?
+                    )
+                  )
             )';
+            $params[] = $proyecto;
             $params[] = $proyecto;
         }
 

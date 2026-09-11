@@ -17,8 +17,8 @@ import { ArrowLeft, CalendarClock, Check, Eye, Pencil, Plus, RotateCcw, Send, Tr
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
+  AlcancePlanAnual,
   CapacitacionPlanOpcion,
-  CargoCorporativo,
   DetallePlanAnual,
   OpcionesPlanAnual,
   PlanAnual,
@@ -53,18 +53,24 @@ function etiquetaCapacitacion(c: CapacitacionPlanOpcion): string {
   return `${c.codigo} — ${c.nombre}`;
 }
 
+type LineaAlcance = {
+  proceso_id: string;
+  cargo_id: string;
+  proyecto: string;
+};
+
 type FormularioActividad = {
   capacitacion_id: string;
-  proceso_id: string;
-  proyecto: string;
   fecha_programada: string;
+  lineas: LineaAlcance[];
 };
+
+const LINEA_VACIA: LineaAlcance = { proceso_id: "", cargo_id: "", proyecto: "" };
 
 const FORM_VACIO: FormularioActividad = {
   capacitacion_id: "",
-  proceso_id: "",
-  proyecto: "",
   fecha_programada: "",
+  lineas: [{ ...LINEA_VACIA }],
 };
 
 export default function PlanAnualPage() {
@@ -100,15 +106,22 @@ function Contenido() {
   const [formAbierto, setFormAbierto] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<FormularioActividad>(FORM_VACIO);
-  const [alcance, setAlcance] = useState<CargoCorporativo[]>([]);
+  const [matrizItems, setMatrizItems] = useState<AlcancePlanAnual[]>([]);
   const [detalleVer, setDetalleVer] = useState<DetallePlanAnual | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [buscarCap, setBuscarCap] = useState("");
   const [fechaDe, setFechaDe] = useState<DetallePlanAnual | null>(null);
   const [fechaNueva, setFechaNueva] = useState("");
 
-  const muestraProyectoForm = procesoRequiereProyecto(form.proceso_id, opciones.procesos);
   const muestraProyectoFiltro = procesoRequiereProyecto(filtroProceso, opciones.procesos);
+
+  const procesosMatriz = useMemo(() => {
+    const mapa = new Map<number, string>();
+    for (const item of matrizItems) {
+      mapa.set(item.proceso_id, item.proceso_nombre);
+    }
+    return [...mapa.entries()].map(([proceso_id, nombre]) => ({ proceso_id, nombre }));
+  }, [matrizItems]);
 
   const capsSugeridas = useMemo(() => {
     const q = buscarCap.trim().toLowerCase();
@@ -178,21 +191,15 @@ function Contenido() {
   }, []);
 
   useEffect(() => {
-    if (!formAbierto || form.capacitacion_id === "" || form.proceso_id === "") {
-      setAlcance([]);
-      return;
-    }
-    if (muestraProyectoForm && form.proyecto === "") {
-      setAlcance([]);
+    if (!formAbierto || form.capacitacion_id === "") {
+      setMatrizItems([]);
       return;
     }
     const abortado = { actual: false };
     void (async () => {
-      const respuesta = await apiGet<{ cargos_aplicables: CargoCorporativo[] }>(
+      const respuesta = await apiGet<{ items: AlcancePlanAnual[] }>(
         withQuery("/api/planes-anuales/alcance", {
           capacitacion_id: form.capacitacion_id,
-          proceso_id: form.proceso_id,
-          proyecto: muestraProyectoForm ? form.proyecto : undefined,
         }),
       );
       if (abortado.actual) return;
@@ -200,21 +207,24 @@ function Contenido() {
         return;
       }
       if (!respuesta.success || !respuesta.data) {
-        setAlcance([]);
+        setMatrizItems([]);
         return;
       }
-      setAlcance(respuesta.data.cargos_aplicables ?? []);
+      setMatrizItems(respuesta.data.items ?? []);
     })();
     return () => {
       abortado.actual = true;
     };
-  }, [formAbierto, form.capacitacion_id, form.proceso_id, form.proyecto, muestraProyectoForm]);
+  }, [formAbierto, form.capacitacion_id]);
 
   const actividadesFiltradas = useMemo(() => {
     if (!plan?.detalles) return [];
     const q = buscarDetalle.trim().toLowerCase();
     return plan.detalles.filter((d) => {
-      if (filtroProceso !== "" && String(d.proceso_id ?? "") !== filtroProceso) return false;
+      if (filtroProceso !== "") {
+        const ids = (d.proceso_ids?.length ? d.proceso_ids : d.proceso_id != null ? [d.proceso_id] : []).map(String);
+        if (!ids.includes(filtroProceso)) return false;
+      }
       if (muestraProyectoFiltro && filtroProyecto !== "" && (d.proyecto ?? "") !== filtroProyecto) {
         return false;
       }
@@ -267,14 +277,43 @@ function Contenido() {
     setPlan(respuesta.data);
   }
 
+  function cargosDeLinea(linea: LineaAlcance): AlcancePlanAnual[] {
+    if (linea.proceso_id === "") return [];
+    const gp = procesoRequiereProyecto(linea.proceso_id, opciones.procesos);
+    return matrizItems.filter((item) => {
+      if (String(item.proceso_id) !== linea.proceso_id) return false;
+      if (gp) {
+        return (item.proyecto ?? "") === linea.proyecto;
+      }
+      return !item.proyecto;
+    });
+  }
+
+  function claveMarca(item: { proceso_id: number | string; cargo_id: number | string; proyecto?: string | null }): string {
+    return `${item.proceso_id}:${item.cargo_id}:${item.proyecto ?? ""}`;
+  }
+
   function abrirFormulario(detalle?: DetallePlanAnual) {
     if (detalle) {
       setEditandoId(detalle.plan_detalle_id);
+      const lineas =
+        detalle.alcances && detalle.alcances.length > 0
+          ? detalle.alcances.map((a) => ({
+              proceso_id: String(a.proceso_id),
+              cargo_id: String(a.cargo_id),
+              proyecto: a.proyecto ?? "",
+            }))
+          : [
+              {
+                proceso_id: detalle.proceso_id ? String(detalle.proceso_id) : "",
+                cargo_id: detalle.cargos_aplicables[0] ? String(detalle.cargos_aplicables[0].cargo_id) : "",
+                proyecto: detalle.proyecto ?? "",
+              },
+            ];
       setForm({
         capacitacion_id: String(detalle.capacitacion_id),
-        proceso_id: detalle.proceso_id ? String(detalle.proceso_id) : "",
-        proyecto: detalle.proyecto ?? "",
         fecha_programada: detalle.fecha_programada ?? "",
+        lineas,
       });
       setBuscarCap(`${detalle.capacitacion_codigo} — ${detalle.capacitacion_nombre}`);
     } else {
@@ -282,6 +321,7 @@ function Contenido() {
       setForm({
         ...FORM_VACIO,
         fecha_programada: plan ? `${plan.anio}-01-15` : "",
+        lineas: [{ ...LINEA_VACIA }],
       });
       setBuscarCap("");
     }
@@ -292,12 +332,24 @@ function Contenido() {
   async function guardarActividad(e: FormEvent) {
     e.preventDefault();
     if (!plan) return;
+    const alcances = form.lineas
+      .filter((l) => l.proceso_id !== "" && l.cargo_id !== "")
+      .map((l) => ({
+        proceso_id: Number(l.proceso_id),
+        cargo_id: Number(l.cargo_id),
+        proyecto: procesoRequiereProyecto(l.proceso_id, opciones.procesos) ? l.proyecto || null : null,
+      }));
+    if (alcances.length === 0) {
+      setErrorForm("Agregue al menos un cargo y proceso aplicables a esta capacitación.");
+      return;
+    }
     setGuardando(true);
     const payload = {
       capacitacion_id: Number(form.capacitacion_id),
-      proceso_id: Number(form.proceso_id),
-      proyecto: muestraProyectoForm ? form.proyecto : null,
+      proceso_id: alcances[0].proceso_id,
+      proyecto: alcances[0].proyecto,
       fecha_programada: form.fecha_programada,
+      alcances,
     };
     const respuesta = editandoId
       ? await apiPut<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/actividades/${editandoId}`, payload)
@@ -659,7 +711,11 @@ function Contenido() {
                       onClick={() => {
                         setBuscarCap(etiquetaCapacitacion(c));
                         setErrorForm(null);
-                        setForm((f) => ({ ...f, capacitacion_id: String(c.capacitacion_id) }));
+                        setForm((f) => ({
+                          ...f,
+                          capacitacion_id: String(c.capacitacion_id),
+                          lineas: [{ ...LINEA_VACIA }],
+                        }));
                       }}
                     >
                       <span className="font-medium text-slate-800">{etiquetaCapacitacion(c)}</span>
@@ -678,62 +734,141 @@ function Contenido() {
                 Seleccionada: {capSeleccionada ? etiquetaCapacitacion(capSeleccionada) : buscarCap}
               </p>
             )}
-            <Field etiqueta="Proceso">
-              <select
-                className={inputClass}
-                required
-                value={form.proceso_id}
-                onChange={(e) => {
-                  const valor = e.target.value;
-                  setErrorForm(null);
-                  setForm((f) => ({
-                    ...f,
-                    proceso_id: valor,
-                    proyecto: procesoRequiereProyecto(valor, opciones.procesos) ? f.proyecto : "",
-                  }));
-                }}
-              >
-                <option value="">Seleccione</option>
-                {opciones.procesos.map((p) => (
-                  <option key={p.proceso_id} value={p.proceso_id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {muestraProyectoForm ? (
-              <Field etiqueta="Proyecto">
-                <select
-                  className={inputClass}
-                  required
-                  value={form.proyecto}
-                  onChange={(e) => {
-                    setErrorForm(null);
-                    setForm((f) => ({ ...f, proyecto: e.target.value }));
-                  }}
-                >
-                  <option value="">Seleccione</option>
-                  {opciones.proyectos.map((nombre) => (
-                    <option key={nombre} value={nombre}>
-                      {nombre}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            ) : null}
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <p className="mb-1 font-medium">Cargos aplicables (matriz)</p>
-              {alcance.length === 0 ? (
-                <p className="text-slate-500">
-                  Seleccione capacitación y proceso para consultar el alcance. Si no hay marcas en la matriz, no se podrá guardar.
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium text-hseq-900">Cargos y procesos (matriz)</p>
+              <p className="text-xs text-slate-500">
+                Solo aparecen combinaciones habilitadas para esta capacitación. Puede agregar otro
+                cargo de otro proceso.
+              </p>
+              {form.capacitacion_id === "" ? (
+                <p className="text-sm text-slate-500">Seleccione primero la capacitación.</p>
+              ) : matrizItems.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Esta capacitación no tiene marcas activas en la matriz.
                 </p>
               ) : (
-                <ul className="list-disc pl-5">
-                  {alcance.map((c) => (
-                    <li key={c.cargo_id}>{c.nombre_cargo}</li>
-                  ))}
-                </ul>
+                form.lineas.map((linea, indice) => {
+                  const gp = procesoRequiereProyecto(linea.proceso_id, opciones.procesos);
+                  const cargos = cargosDeLinea(linea);
+                  const ocupadas = new Set(
+                    form.lineas.map((l, i) => (i === indice ? "" : claveMarca(l))).filter(Boolean),
+                  );
+                  return (
+                    <div key={`linea-${indice}`} className="space-y-2 rounded-md border border-slate-100 bg-slate-50 p-3">
+                      <Field etiqueta="Proceso">
+                        <select
+                          className={inputClass}
+                          required
+                          value={linea.proceso_id}
+                          onChange={(e) => {
+                            const valor = e.target.value;
+                            setErrorForm(null);
+                            setForm((f) => {
+                              const lineas = [...f.lineas];
+                              lineas[indice] = {
+                                proceso_id: valor,
+                                cargo_id: "",
+                                proyecto: procesoRequiereProyecto(valor, opciones.procesos)
+                                  ? lineas[indice].proyecto
+                                  : "",
+                              };
+                              return { ...f, lineas };
+                            });
+                          }}
+                        >
+                          <option value="">Seleccione</option>
+                          {procesosMatriz.map((p) => (
+                            <option key={p.proceso_id} value={p.proceso_id}>
+                              {p.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      {gp ? (
+                        <Field etiqueta="Proyecto">
+                          <select
+                            className={inputClass}
+                            required
+                            value={linea.proyecto}
+                            onChange={(e) => {
+                              setErrorForm(null);
+                              setForm((f) => {
+                                const lineas = [...f.lineas];
+                                lineas[indice] = { ...lineas[indice], proyecto: e.target.value, cargo_id: "" };
+                                return { ...f, lineas };
+                              });
+                            }}
+                          >
+                            <option value="">Seleccione</option>
+                            {opciones.proyectos.map((nombre) => (
+                              <option key={nombre} value={nombre}>
+                                {nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      ) : null}
+                      <Field etiqueta="Cargo">
+                        <select
+                          className={inputClass}
+                          required
+                          value={linea.cargo_id}
+                          disabled={linea.proceso_id === "" || (gp && linea.proyecto === "")}
+                          onChange={(e) => {
+                            setErrorForm(null);
+                            setForm((f) => {
+                              const lineas = [...f.lineas];
+                              lineas[indice] = { ...lineas[indice], cargo_id: e.target.value };
+                              return { ...f, lineas };
+                            });
+                          }}
+                        >
+                          <option value="">Seleccione</option>
+                          {cargos
+                            .filter(
+                              (c) =>
+                                String(c.cargo_id) === linea.cargo_id ||
+                                !ocupadas.has(claveMarca({ ...linea, cargo_id: String(c.cargo_id) })),
+                            )
+                            .map((c) => (
+                              <option key={`${c.proceso_id}-${c.cargo_id}-${c.proyecto ?? ""}`} value={c.cargo_id}>
+                                {c.nombre_cargo}
+                              </option>
+                            ))}
+                        </select>
+                      </Field>
+                      {form.lineas.length > 1 ? (
+                        <Button
+                          type="button"
+                          variante="ghost"
+                          onClick={() => {
+                            setErrorForm(null);
+                            setForm((f) => ({
+                              ...f,
+                              lineas: f.lineas.filter((_, i) => i !== indice),
+                            }));
+                          }}
+                        >
+                          Quitar
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })
               )}
+              {form.capacitacion_id !== "" && matrizItems.length > 0 ? (
+                <Button
+                  type="button"
+                  variante="secondary"
+                  onClick={() => {
+                    setErrorForm(null);
+                    setForm((f) => ({ ...f, lineas: [...f.lineas, { ...LINEA_VACIA }] }));
+                  }}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Agregar otro cargo / proceso
+                </Button>
+              ) : null}
             </div>
             <div className="flex justify-end gap-2">
               <Button

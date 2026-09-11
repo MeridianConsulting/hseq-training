@@ -39,12 +39,27 @@ class CronogramaRepository
         $extras = '';
 
         if ($procesoId !== null) {
-            $extras .= ' AND d.proceso_id = ?';
+            $extras .= ' AND (
+                d.proceso_id = ?
+                OR EXISTS (
+                    SELECT 1 FROM plan_detalle_alcances a
+                    WHERE a.plan_detalle_id = d.plan_detalle_id AND a.proceso_id = ?
+                )
+            )';
+            $params[] = $procesoId;
             $params[] = $procesoId;
         }
 
         if ($proyecto !== null && $proyecto !== '') {
-            $extras .= ' AND d.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $extras .= ' AND (
+                d.proyecto COLLATE utf8mb4_unicode_ci = ?
+                OR EXISTS (
+                    SELECT 1 FROM plan_detalle_alcances a
+                    WHERE a.plan_detalle_id = d.plan_detalle_id
+                      AND a.proyecto COLLATE utf8mb4_unicode_ci = ?
+                )
+            )';
+            $params[] = $proyecto;
             $params[] = $proyecto;
         }
 

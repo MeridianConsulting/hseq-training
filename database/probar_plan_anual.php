@@ -219,6 +219,7 @@ ok((float)$marzo['duracion_estimada_horas'] === 4.0, 'Duración viene del catál
 ok($marzo['proyecto'] === 'FRONTERA', 'Proyecto Frontera');
 $idsCargos = array_map(static fn (array $c): int => (int)$c['cargo_id'], $marzo['cargos_aplicables']);
 ok(in_array((int)$cargoId, $idsCargos, true), 'Alcance incluye el cargo de la matriz');
+ok(($marzo['alcances'] ?? []) !== [], 'La actividad guarda el cargo/proceso de la matriz');
 ok((int)$marzo['cantidad_programada'] >= 1, 'cantidad_programada cubre gente del cargo');
 $detalleMarzoId = (int)$marzo['plan_detalle_id'];
 

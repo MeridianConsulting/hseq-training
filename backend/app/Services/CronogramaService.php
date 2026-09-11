@@ -54,10 +54,12 @@ class CronogramaService
         $procesos = $this->alertas->procesosActivos();
         $detalleIds = array_map(static fn (array $fila): int => (int)$fila['plan_detalle_id'], $filas);
         $sesionesPorDetalle = $this->sesionesPorDetalle($detalleIds);
+        $alcancesPor = $this->planes->alcancesPorDetalles($detalleIds);
         $porMes = [];
         $items = [];
         foreach ($filas as $fila) {
-            $item = $this->item($fila, $sesionesPorDetalle);
+            $detalleId = (int)$fila['plan_detalle_id'];
+            $item = $this->item($fila, $sesionesPorDetalle, $alcancesPor[$detalleId] ?? []);
             $items[] = $item;
             $porMes[(int)$fila['mes_programado']][] = $item;
         }
@@ -121,11 +123,7 @@ class CronogramaService
     public function trabajadores(int $detalleId): array
     {
         $fila = $this->exigirAprobado($detalleId);
-        $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : 0;
-        $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
-        $cargos = $procesoId > 0
-            ? $this->cargosAplicables((int)$fila['capacitacion_id'], $procesoId, $proyecto)
-            : [];
+        $cargos = $this->cargosDeProgramacion($fila);
         $cargoIds = array_map(static fn (array $c): int => (int)$c['cargo_id'], $cargos);
         $filas = $this->repo->trabajadoresProgramados((int)$fila['capacitacion_id'], $cargoIds);
 
@@ -167,23 +165,16 @@ class CronogramaService
         $anio = (int)$fila['anio'];
         $fecha = $this->fechaEnAnio((string)($datos['fecha_programada'] ?? ''), $anio);
         $mes = (int)substr($fecha, 5, 2);
-        $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null;
-        $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
         $fechaAnterior = substr((string)($fila['fecha_programada'] ?? ''), 0, 10);
 
-        $duplicado = $this->planes->buscarDetalleActividad(
+        $duplicado = $this->planes->buscarDetallePorCapFecha(
             (int)$fila['plan_anual_id'],
             (int)$fila['capacitacion_id'],
-            $procesoId,
-            $proyecto,
             $fecha,
             $detalleId
         );
         if ($duplicado !== null) {
-            throw new HttpException(
-                'Ya existe una actividad con la misma capacitación, proceso, proyecto y fecha.',
-                409
-            );
+            throw new HttpException('Ya existe una actividad con la misma capacitación y fecha.', 409);
         }
 
         try {
@@ -409,9 +400,10 @@ class CronogramaService
     /**
      * @param array<string,mixed> $fila
      * @param array<int, list<array<string,mixed>>> $sesionesPorDetalle
+     * @param list<array<string,mixed>>|null $alcances
      * @return array<string,mixed>
      */
-    private function item(array $fila, array $sesionesPorDetalle): array
+    private function item(array $fila, array $sesionesPorDetalle, ?array $alcances = null): array
     {
         $mes = (int)$fila['mes_programado'];
         $horas = $fila['duracion_estimada_horas'];
@@ -420,9 +412,28 @@ class CronogramaService
         $sesiones = $sesionesPorDetalle[$detalleId] ?? [];
         $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null;
         $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
-        $cargos = ($procesoId !== null && $procesoId > 0)
-            ? $this->cargosAplicables((int)$fila['capacitacion_id'], $procesoId, $proyecto)
-            : [];
+        $alcances = $alcances ?? $this->planes->alcancesDeDetalle($detalleId);
+        $cargos = $this->cargosDeProgramacion($fila, $alcances);
+        $nombresProceso = [];
+        $procesoIds = [];
+        foreach ($alcances as $alcance) {
+            $pid = (int)($alcance['proceso_id'] ?? 0);
+            if ($pid > 0) {
+                $procesoIds[$pid] = $pid;
+            }
+            $nombre = (string)($alcance['proceso_nombre'] ?? '');
+            if ($nombre !== '') {
+                $nombresProceso[$nombre] = $nombre;
+            }
+        }
+        if ($procesoIds === [] && $procesoId !== null && $procesoId > 0) {
+            $procesoIds[$procesoId] = $procesoId;
+        }
+        $procesoNombre = $nombresProceso !== []
+            ? implode(', ', array_values($nombresProceso))
+            : ($fila['proceso_nombre'] !== null && $fila['proceso_nombre'] !== ''
+                ? (string)$fila['proceso_nombre']
+                : null);
 
         return [
             'plan_detalle_id' => $detalleId,
@@ -441,9 +452,8 @@ class CronogramaService
             'cantidad_programada' => (int)$fila['cantidad_programada'],
             'anio' => (int)$fila['anio'],
             'proceso_id' => $procesoId,
-            'proceso_nombre' => $fila['proceso_nombre'] !== null && $fila['proceso_nombre'] !== ''
-                ? (string)$fila['proceso_nombre']
-                : null,
+            'proceso_ids' => array_values($procesoIds),
+            'proceso_nombre' => $procesoNombre,
             'ambito' => $fila['ambito'] !== null && $fila['ambito'] !== '' ? (string)$fila['ambito'] : null,
             'proyecto' => $proyecto,
             'estado_programacion' => strtoupper((string)($fila['estado_programacion'] ?? 'PROGRAMADA')),
@@ -493,6 +503,56 @@ class CronogramaService
         }
 
         return 'FINALIZADA';
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @param list<array<string,mixed>>|null $alcances
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    private function cargosDeProgramacion(array $fila, ?array $alcances = null): array
+    {
+        $detalleId = (int)($fila['plan_detalle_id'] ?? 0);
+        $filasAlcance = $alcances ?? ($detalleId > 0 ? $this->planes->alcancesDeDetalle($detalleId) : []);
+        $ids = [];
+        foreach ($filasAlcance as $alcance) {
+            $id = (int)($alcance['cargo_id_ext'] ?? 0);
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        if ($ids !== []) {
+            return $this->nombresCargos(array_values($ids));
+        }
+        $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : 0;
+        $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
+        if ($procesoId < 1) {
+            return [];
+        }
+
+        return $this->cargosAplicables((int)$fila['capacitacion_id'], $procesoId, $proyecto);
+    }
+
+    /**
+     * @param list<int> $ids
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    private function nombresCargos(array $ids): array
+    {
+        $nombres = $this->personal->nombresCargosPorIds($ids);
+        $salida = [];
+        foreach ($ids as $id) {
+            $salida[] = [
+                'cargo_id' => $id,
+                'nombre_cargo' => $nombres[$id] ?? ('Cargo ' . $id),
+            ];
+        }
+        usort(
+            $salida,
+            static fn (array $a, array $b): int => strcasecmp((string)$a['nombre_cargo'], (string)$b['nombre_cargo'])
+        );
+
+        return $salida;
     }
 
     /**
