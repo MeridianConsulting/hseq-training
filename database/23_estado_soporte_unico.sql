@@ -1,6 +1,6 @@
--- Ventana de alertas: 30 días (RF-AL-002 / RF-AL-003).
--- COMPLETADA exige APROBADO, evaluación si aplica, y al menos un soporte si pide certificado o listado.
--- Uso: mysql -u root --default-character-set=utf8mb4 meridian_capacitaciones < database/16_alertas_ventana_30.sql
+-- Un archivo adjunto (certificado, listado u otro) cierra COMPLETADA si hay APROBADO
+-- y la nota, cuando la capacitación evalúa. El formulario operativo solo sube CERTIFICADO.
+-- Uso: mysql -u root --default-character-set=utf8mb4 meridian_capacitaciones < database/23_estado_soporte_unico.sql
 
 USE meridian_capacitaciones;
 

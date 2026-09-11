@@ -1,4 +1,5 @@
--- COMPLETADA exige resultado APROBADO y los requisitos de la capacitación (evaluación, certificado, listado).
+-- COMPLETADA exige resultado APROBADO, evaluación si aplica, y al menos un soporte
+-- si la capacitación pide certificado o listado (cualquier tipo de archivo cuenta).
 -- Uso: mysql -u root --default-character-set=utf8mb4 meridian_capacitaciones < database/17_estado_cumplimiento_requisitos.sql
 
 USE meridian_capacitaciones;
@@ -26,14 +27,8 @@ SELECT
       THEN 'PENDIENTE'
     WHEN cap.evaluacion = 1 AND (c.nota_evaluacion IS NULL OR c.nota_evaluacion < cap.nota_minima)
       THEN 'PENDIENTE'
-    WHEN cap.certificado = 1 AND NOT EXISTS (
+    WHEN (cap.certificado = 1 OR cap.requiere_listado_asistencia = 1) AND NOT EXISTS (
            SELECT 1 FROM soportes_cumplimiento so WHERE so.cumplimiento_id = c.cumplimiento_id
-         )
-      THEN 'PENDIENTE'
-    WHEN cap.requiere_listado_asistencia = 1 AND NOT EXISTS (
-           SELECT 1 FROM soportes_cumplimiento so
-           WHERE so.cumplimiento_id = c.cumplimiento_id
-             AND so.tipo_soporte = 'LISTADO_ASISTENCIA'
          )
       THEN 'PENDIENTE'
     WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()

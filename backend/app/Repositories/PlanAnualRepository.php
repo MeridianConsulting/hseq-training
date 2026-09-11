@@ -211,6 +211,57 @@ class PlanAnualRepository
         return $fila !== null;
     }
 
+    public function detalleTieneEjecucion(int $detalleId): bool
+    {
+        $ejecutada = $this->db->fetch(
+            "SELECT sesion_id FROM sesiones_capacitacion
+             WHERE plan_detalle_id = ?
+               AND estado = 'EJECUTADA'
+             LIMIT 1",
+            [$detalleId]
+        );
+        if ($ejecutada !== null) {
+            return true;
+        }
+
+        $asistencia = $this->db->fetch(
+            "SELECT sp.sesion_participante_id
+             FROM sesion_participantes sp
+             INNER JOIN sesiones_capacitacion s ON s.sesion_id = sp.sesion_id
+             WHERE s.plan_detalle_id = ?
+               AND sp.estado_asistencia IN ('ASISTIO', 'TARDE', 'AUSENTE', 'EVALUADO')
+             LIMIT 1",
+            [$detalleId]
+        );
+        if ($asistencia !== null) {
+            return true;
+        }
+
+        $cumplimiento = $this->db->fetch(
+            "SELECT cc.cumplimiento_id
+             FROM cumplimientos_capacitacion cc
+             INNER JOIN sesiones_capacitacion s ON s.sesion_id = cc.sesion_id
+             WHERE s.plan_detalle_id = ?
+             LIMIT 1",
+            [$detalleId]
+        );
+
+        return $cumplimiento !== null;
+    }
+
+    public function eliminarSesionesDeDetalle(int $detalleId): void
+    {
+        $sesiones = $this->db->fetchAll(
+            'SELECT sesion_id FROM sesiones_capacitacion WHERE plan_detalle_id = ?',
+            [$detalleId]
+        );
+        foreach ($sesiones as $sesion) {
+            $id = (int)$sesion['sesion_id'];
+            $this->db->delete('sesion_participantes', 'sesion_id = ?', [$id]);
+            $this->db->delete('sesiones_capacitacion', 'sesion_id = ?', [$id]);
+        }
+    }
+
     public function contarEnlacesDetalle(int $detalleId): int
     {
         $fila = $this->db->fetch(

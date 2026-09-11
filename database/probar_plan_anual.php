@@ -241,6 +241,14 @@ $plan = $planes->crearActividad($planId, [
     'fecha_programada' => '2027-09-15',
 ]);
 ok(count($plan['detalles']) === 2, 'Misma cap en marzo y septiembre = dos filas');
+$detalleSeptId = 0;
+foreach ($plan['detalles'] as $d) {
+    if (($d['fecha_programada'] ?? '') === '2027-09-15') {
+        $detalleSeptId = (int)$d['plan_detalle_id'];
+        break;
+    }
+}
+ok($detalleSeptId > 0, 'Detalle de septiembre identificado');
 ok((float)$plan['total_horas'] === 8.0, 'Total horas 4+4');
 
 $periodo2027 = $periodos->periodo(['tipo' => 'anual', 'anio' => $anioPrueba]);
@@ -297,12 +305,24 @@ try {
     ok($e->getStatusCode() === 409, 'Aprobación idempotente rechazada');
 }
 
-try {
-    $planes->eliminarActividad($planId, $detalleMarzoId);
-    ok(false, 'No eliminar en aprobado');
-} catch (HttpException $e) {
-    ok($e->getStatusCode() === 409, 'Eliminar aprobado rechazado');
+echo "\n== Editar plan aprobado ==\n";
+$conJunio = $planes->crearActividad($planId, [
+    'capacitacion_id' => $capId,
+    'proceso_id' => $procesoGpId,
+    'proyecto' => 'FRONTERA',
+    'fecha_programada' => '2027-06-15',
+]);
+ok(count($conJunio['detalles']) === 3, 'Se puede agregar actividad en aprobado');
+$junioId = 0;
+foreach ($conJunio['detalles'] as $d) {
+    if (($d['fecha_programada'] ?? '') === '2027-06-15') {
+        $junioId = (int)$d['plan_detalle_id'];
+        break;
+    }
 }
+ok($junioId > 0, 'Actividad de junio creada');
+$sinJunio = $planes->eliminarActividad($planId, $junioId);
+ok(count($sinJunio['detalles']) === 2, 'Se puede retirar actividad sin sesiones en aprobado');
 
 echo "\n== Sesión usa el detalle aprobado ==\n";
 $sesion = $sesiones->crear([
@@ -316,6 +336,27 @@ $sesion = $sesiones->crear([
 ], 1);
 ok((int)$sesion['plan_detalle_id'] === $detalleMarzoId, 'Sesión ligada al plan_detalle_id');
 ok((int)$sesion['capacitacion_id'] === $capId, 'Sesión reutiliza la capacitación del plan');
+
+$sesionSept = $sesiones->crear([
+    'plan_detalle_id' => $detalleSeptId,
+    'fecha' => '2027-09-15',
+    'hora' => '08:00',
+    'modalidad_id' => (int)$modalidad['modalidad_id'],
+    'ubicacion_id' => (int)$ubicacion['ubicacion_id'],
+    'proveedor_id' => (int)$proveedor['proveedor_id'],
+    'cupo_maximo' => 10,
+], 1);
+ok((int)$sesionSept['sesion_id'] > 0, 'Sesión de septiembre creada');
+$sinSept = $planes->eliminarActividad($planId, $detalleSeptId);
+ok(count($sinSept['detalles']) === 1, 'Se retira actividad con sesión programada sin ejecución');
+
+$db->query("UPDATE sesiones_capacitacion SET estado = 'EJECUTADA' WHERE sesion_id = ?", [(int)$sesion['sesion_id']]);
+try {
+    $planes->eliminarActividad($planId, $detalleMarzoId);
+    ok(false, 'No eliminar actividad ejecutada');
+} catch (HttpException $e) {
+    ok($e->getStatusCode() === 409, 'Eliminar con ejecución rechazado');
+}
 
 echo "\n== Un plan por año e histórico ==\n";
 try {

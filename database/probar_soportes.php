@@ -293,8 +293,8 @@ ok($msg === SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 'Mensaje de certificad
 $sigue = $db->fetch('SELECT resultado FROM cumplimientos_capacitacion WHERE cumplimiento_id = ?', [$cumplimientoId]);
 ok(strtoupper((string)$sigue['resultado']) === 'ASISTIO', 'Resultado sigue ASISTIO');
 
-echo "\n== 8. Masivo con certificado=1 → 422 ==\n";
-esperaRechazo(function () use ($cumplimientos, $asignacionId, $sesionId) {
+echo "\n== 8. Masivo con certificado=1 sin archivo → 422 ==\n";
+$msgMasivo = esperaRechazo(function () use ($cumplimientos, $asignacionId, $sesionId) {
     $cumplimientos->registrarMasivo([
         'sesion_id' => $sesionId,
         'asignacion_ids' => [$asignacionId],
@@ -302,7 +302,8 @@ esperaRechazo(function () use ($cumplimientos, $asignacionId, $sesionId) {
         'resultado' => 'APROBADO',
         'horas_efectivas' => 8,
     ], 1);
-}, 'Masivo con certificado bloqueado');
+}, 'Masivo sin certificado rechazado');
+ok($msgMasivo === SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 'Masivo exige el archivo');
 
 echo "\n== 6. Extensión y MIME inválidos ==\n";
 $antesDisco = glob($soportes->directorioBase() . '/soportes/' . $cumplimientoId . '/*') ?: [];

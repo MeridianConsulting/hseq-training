@@ -625,9 +625,6 @@ class CumplimientoService
         unset($datos['fecha_vencimiento']);
         $sesionId = (int)($datos['sesion_id'] ?? 0);
         $sesion = $this->exigirSesion($sesionId);
-        if ((int)($sesion['capacitacion_certificado'] ?? 0) === 1) {
-            throw new HttpException(SoporteService::MENSAJE_MASIVO_CERTIFICADO, 422);
-        }
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
         $resultado = $this->exigirResultado($datos['resultado'] ?? null);
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
@@ -886,7 +883,7 @@ class CumplimientoService
             $existente = $this->repo->buscarPorAsignacion($asignacionId);
             if ($existente === null) {
                 throw new HttpException(
-                    'Solo se puede registrar la evaluación si el trabajador asistió o llegó tarde.',
+                    'Solo se puede registrar la evaluación si el trabajador asistió.',
                     422
                 );
             }
@@ -1109,7 +1106,7 @@ class CumplimientoService
         $asistencia = strtoupper((string)($part['estado_asistencia'] ?? ''));
         if (!in_array($asistencia, self::ASISTENCIAS_VALIDAS, true)) {
             throw new HttpException(
-                'Solo se puede registrar cumplimiento si el trabajador asistió o llegó tarde.',
+                'Solo se puede registrar cumplimiento si el trabajador asistió.',
                 422
             );
         }
@@ -1143,7 +1140,7 @@ class CumplimientoService
         if ($part === null) {
             $motivo = 'El trabajador no está convocado a esta sesión.';
         } elseif (!in_array($asistencia, self::ASISTENCIAS_VALIDAS, true)) {
-            $motivo = 'Solo se puede registrar cumplimiento si el trabajador asistió o llegó tarde.';
+            $motivo = 'Solo se puede registrar cumplimiento si el trabajador asistió.';
         } elseif ($resultadoActual === self::RESULTADO_APROBADO) {
             $motivo = self::MENSAJE_YA_REGISTRADO;
         }

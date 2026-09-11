@@ -418,7 +418,7 @@ CREATE TABLE auditoria (
 -- Estado vigente de cada asignacion:
 -- - Pendiente: usa fecha_limite_cumplimiento (plazo para realizar).
 -- - Realizada: usa cumplimientos.fecha_vencimiento (vigencia del curso tomado).
--- COMPLETADA exige APROBADO + evaluacion/soportes cuando la capacitacion los requiere.
+-- COMPLETADA exige APROBADO, evaluacion si aplica, y al menos un soporte si pide certificado o listado.
 CREATE OR REPLACE VIEW vw_estado_asignaciones AS
 SELECT
   a.asignacion_id,
@@ -442,14 +442,8 @@ SELECT
       THEN 'PENDIENTE'
     WHEN cap.evaluacion = 1 AND (c.nota_evaluacion IS NULL OR c.nota_evaluacion < cap.nota_minima)
       THEN 'PENDIENTE'
-    WHEN cap.certificado = 1 AND NOT EXISTS (
+    WHEN (cap.certificado = 1 OR cap.requiere_listado_asistencia = 1) AND NOT EXISTS (
            SELECT 1 FROM soportes_cumplimiento so WHERE so.cumplimiento_id = c.cumplimiento_id
-         )
-      THEN 'PENDIENTE'
-    WHEN cap.requiere_listado_asistencia = 1 AND NOT EXISTS (
-           SELECT 1 FROM soportes_cumplimiento so
-           WHERE so.cumplimiento_id = c.cumplimiento_id
-             AND so.tipo_soporte = 'LISTADO_ASISTENCIA'
          )
       THEN 'PENDIENTE'
     WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()

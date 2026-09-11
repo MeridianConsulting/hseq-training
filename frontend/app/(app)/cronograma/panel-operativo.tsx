@@ -160,6 +160,54 @@ export function PanelOperativo({
         sesion={sesion}
         puedeEditar={puede("sesiones.editar")}
         modoOperativo
+        extrasAntesDeCumplimiento={
+          sesion.requiere_certificado ? (
+            <div className="rounded-lg border border-slate-200 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-hseq-900">Soportes</h3>
+              {conSoporte.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Guarde la asistencia de los trabajadores para adjuntar soportes.
+                </p>
+              ) : (
+                <ul className="space-y-4">
+                  {conSoporte.map((p) => {
+                    const cid = p.cumplimiento_id as number;
+                    return (
+                      <li key={cid} className="rounded-md border border-slate-100 p-3">
+                        <p className="mb-2 text-sm font-medium text-hseq-900">
+                          {p.persona_nombre}
+                          {p.numero_documento ? (
+                            <span className="ml-1 font-normal text-slate-500">{p.numero_documento}</span>
+                          ) : null}
+                        </p>
+                        <ListaEvidencias
+                          soportes={soportes[cid] ?? []}
+                          puedeEliminar={puede("cumplimientos.editar") && !cerrada}
+                          onEliminado={() => void cargarSoportes(sesion)}
+                          onError={setError}
+                        />
+                        {puede("cumplimientos.crear") && !cerrada ? (
+                          <label className="mt-2 block text-sm">
+                            <span className="sr-only">Adjuntar soporte</span>
+                            <input
+                              type="file"
+                              className="text-sm"
+                              disabled={subiendo === cid}
+                              onChange={(e) => {
+                                void adjuntar(cid, e.target.files);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : null
+        }
         onGuardado={(actualizada, mensaje) => {
           setSesion(actualizada);
           setError(null);
@@ -167,53 +215,6 @@ export function PanelOperativo({
           void cargarSoportes(actualizada);
         }}
       />
-
-      {sesion.requiere_certificado ? (
-        <div className="rounded-lg border border-slate-200 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-hseq-900">Soportes</h3>
-          {conSoporte.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              Guarde la asistencia de los trabajadores para adjuntar soportes.
-            </p>
-          ) : (
-            <ul className="space-y-4">
-              {conSoporte.map((p) => {
-                const cid = p.cumplimiento_id as number;
-                return (
-                  <li key={cid} className="rounded-md border border-slate-100 p-3">
-                    <p className="mb-2 text-sm font-medium text-hseq-900">
-                      {p.persona_nombre}
-                      {p.numero_documento ? (
-                        <span className="ml-1 font-normal text-slate-500">{p.numero_documento}</span>
-                      ) : null}
-                    </p>
-                    <ListaEvidencias
-                      soportes={soportes[cid] ?? []}
-                      puedeEliminar={puede("cumplimientos.editar") && !cerrada}
-                      onEliminado={() => void cargarSoportes(sesion)}
-                      onError={setError}
-                    />
-                    {puede("cumplimientos.crear") && !cerrada ? (
-                      <label className="mt-2 block text-sm">
-                        <span className="sr-only">Adjuntar soporte</span>
-                        <input
-                          type="file"
-                          className="text-sm"
-                          disabled={subiendo === cid}
-                          onChange={(e) => {
-                            void adjuntar(cid, e.target.files);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : null}
 
       {puede("sesiones.editar") && !cerrada ? (
         <div className="flex justify-end">

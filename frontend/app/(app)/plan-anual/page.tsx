@@ -93,6 +93,7 @@ function Contenido() {
   const [filtroProyecto, setFiltroProyecto] = useState("");
   const [buscarDetalle, setBuscarDetalle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorForm, setErrorForm] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [crearAbierto, setCrearAbierto] = useState(false);
   const [anioNuevo, setAnioNuevo] = useState(String(new Date().getFullYear() + 1));
@@ -284,6 +285,7 @@ function Contenido() {
       });
       setBuscarCap("");
     }
+    setErrorForm(null);
     setFormAbierto(true);
   }
 
@@ -305,18 +307,19 @@ function Contenido() {
       return;
     }
     if (!respuesta.success || !respuesta.data) {
-      setError(respuesta.message || "No fue posible guardar el Plan Anual.");
+      setErrorForm(respuesta.message || "No fue posible guardar el Plan Anual.");
       return;
     }
     setPlan(respuesta.data);
     setFormAbierto(false);
+    setErrorForm(null);
     setMensaje(respuesta.message || "Actividad agregada correctamente al Plan Anual.");
     setError(null);
   }
 
   async function eliminarActividad(detalleId: number) {
     if (!plan) return;
-    if (!window.confirm("¿Retirar esta actividad del Plan Anual? La capacitación del catálogo no se elimina.")) {
+    if (!window.confirm("¿Retirar esta actividad del Plan Anual? Las sesiones programadas sin asistencia también se eliminan. La capacitación del catálogo no se borra.")) {
       return;
     }
     const respuesta = await apiDelete<PlanAnual>(
@@ -403,7 +406,8 @@ function Contenido() {
     setError(null);
   }
 
-  const editable = plan?.estado === "BORRADOR" && puede("planes.editar");
+  const editable =
+    (plan?.estado === "BORRADOR" || plan?.estado === "APROBADO") && puede("planes.editar");
   const puedeFecha = Boolean(plan) && puede("planes.editar") && plan?.estado !== "EN_REVISION";
 
   if (plan) {
@@ -453,8 +457,8 @@ function Contenido() {
           }
         />
 
-        {error ? <Alert tono="error">{error}</Alert> : null}
-        {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
+        {error && !formAbierto ? <Alert tono="error">{error}</Alert> : null}
+        {mensaje && !formAbierto ? <Alert tono="ok">{mensaje}</Alert> : null}
 
         {plan.estado === "APROBADO" ? (
           <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
@@ -604,9 +608,13 @@ function Contenido() {
         <Modal
           abierto={formAbierto}
           titulo={editandoId ? "Editar actividad" : "Agregar actividad"}
-          onCerrar={() => setFormAbierto(false)}
+          onCerrar={() => {
+            setFormAbierto(false);
+            setErrorForm(null);
+          }}
         >
           <form className="space-y-4" onSubmit={(e) => void guardarActividad(e)}>
+            {errorForm ? <Alert tono="error">{errorForm}</Alert> : null}
             <Field etiqueta="Año">
               <input className={inputClass} value={plan.anio} readOnly />
             </Field>
@@ -627,6 +635,7 @@ function Contenido() {
                 value={buscarCap}
                 onChange={(e) => {
                   setBuscarCap(e.target.value);
+                  setErrorForm(null);
                   setForm((f) => ({ ...f, capacitacion_id: "" }));
                 }}
                 placeholder="Escriba código o nombre"
@@ -649,6 +658,7 @@ function Contenido() {
                       className="block w-full px-3 py-2 text-left text-sm hover:bg-hseq-50"
                       onClick={() => {
                         setBuscarCap(etiquetaCapacitacion(c));
+                        setErrorForm(null);
                         setForm((f) => ({ ...f, capacitacion_id: String(c.capacitacion_id) }));
                       }}
                     >
@@ -675,6 +685,7 @@ function Contenido() {
                 value={form.proceso_id}
                 onChange={(e) => {
                   const valor = e.target.value;
+                  setErrorForm(null);
                   setForm((f) => ({
                     ...f,
                     proceso_id: valor,
@@ -696,7 +707,10 @@ function Contenido() {
                   className={inputClass}
                   required
                   value={form.proyecto}
-                  onChange={(e) => setForm((f) => ({ ...f, proyecto: e.target.value }))}
+                  onChange={(e) => {
+                    setErrorForm(null);
+                    setForm((f) => ({ ...f, proyecto: e.target.value }));
+                  }}
                 >
                   <option value="">Seleccione</option>
                   {opciones.proyectos.map((nombre) => (
@@ -722,7 +736,14 @@ function Contenido() {
               )}
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variante="secondary" onClick={() => setFormAbierto(false)}>
+              <Button
+                type="button"
+                variante="secondary"
+                onClick={() => {
+                  setFormAbierto(false);
+                  setErrorForm(null);
+                }}
+              >
                 Cancelar
               </Button>
               <Button type="submit" disabled={guardando || form.capacitacion_id === ""}>

@@ -9,6 +9,7 @@ use App\Repositories\AlertaRepository;
 use App\Repositories\CapacitacionRepository;
 use App\Repositories\MatrizRepository;
 use App\Repositories\PlanAnualRepository;
+use App\Repositories\SesionRepository;
 use PDOException;
 
 class PlanAnualService
@@ -156,7 +157,7 @@ class PlanAnualService
      */
     public function crearActividad(int $planId, array $datos): array
     {
-        $plan = $this->exigirBorrador($planId);
+        $plan = $this->exigirEditable($planId);
         $payload = $this->validarActividad($plan, $datos);
         $duplicado = $this->repo->buscarDetalleActividad(
             (int)$plan['plan_anual_id'],
@@ -183,7 +184,7 @@ class PlanAnualService
      */
     public function actualizarActividad(int $planId, int $detalleId, array $datos): array
     {
-        $plan = $this->exigirBorrador($planId);
+        $plan = $this->exigirEditable($planId);
         $existente = $this->repo->buscarDetallePorId($planId, $detalleId);
         if ($existente === null) {
             throw new HttpException('La actividad no pertenece a este plan.', 404);
@@ -203,8 +204,14 @@ class PlanAnualService
             throw new HttpException('Ya existe una actividad con la misma capacitación, proceso, proyecto y fecha.', 409);
         }
 
+        $fechaAnterior = substr((string)($existente['fecha_programada'] ?? ''), 0, 10);
+
         try {
             $this->repo->actualizarDetalle($detalleId, $payload);
+            $fechaNueva = substr((string)($payload['fecha_programada'] ?? ''), 0, 10);
+            if ($fechaNueva !== '' && $fechaNueva !== $fechaAnterior) {
+                (new SesionRepository())->alinearFechaProgramada($detalleId, $fechaNueva);
+            }
         } catch (PDOException $e) {
             throw new HttpException('No fue posible guardar el Plan Anual.', 500);
         }
@@ -214,19 +221,20 @@ class PlanAnualService
 
     public function eliminarActividad(int $planId, int $detalleId): array
     {
-        $this->exigirBorrador($planId);
+        $this->exigirEditable($planId);
         $existente = $this->repo->buscarDetallePorId($planId, $detalleId);
         if ($existente === null) {
             throw new HttpException('La actividad no pertenece a este plan.', 404);
         }
-        if ($this->repo->detalleTieneSesiones($detalleId)) {
+        if ($this->repo->detalleTieneEjecucion($detalleId)) {
             throw new HttpException(
-                'No es posible retirar la actividad porque tiene sesiones o historial de ejecución.',
+                'No es posible retirar la actividad porque ya tiene asistencia o ejecución registrada.',
                 409
             );
         }
 
         $this->repo->transaccion(function () use ($detalleId): int {
+            $this->repo->eliminarSesionesDeDetalle($detalleId);
             $this->repo->eliminarEnlacesDetalle($detalleId);
             $this->repo->eliminarDetalle($detalleId);
 
@@ -253,7 +261,7 @@ class PlanAnualService
      */
     public function incluirAsignaciones(int $planId, array $datos): array
     {
-        $plan = $this->exigirBorrador($planId);
+        $plan = $this->exigirEditable($planId);
         $mes = (int)($datos['mes_programado'] ?? 0);
         if ($mes < 1 || $mes > 12) {
             throw new HttpException('El mes debe estar entre 1 y 12.', 422);
@@ -341,7 +349,7 @@ class PlanAnualService
 
     public function quitarAsignacion(int $planId, int $asignacionId): array
     {
-        $this->exigirBorrador($planId);
+        $this->exigirEditable($planId);
         $enlace = $this->repo->enlacePorAsignacion($planId, $asignacionId);
         if ($enlace === null) {
             throw new HttpException('La asignación no está en este plan.', 404);
@@ -365,7 +373,7 @@ class PlanAnualService
 
     public function moverAsignacion(int $planId, int $asignacionId, int $mes): array
     {
-        $this->exigirBorrador($planId);
+        $this->exigirEditable($planId);
         if ($mes < 1 || $mes > 12) {
             throw new HttpException('El mes debe estar entre 1 y 12.', 422);
         }
@@ -541,14 +549,14 @@ class PlanAnualService
     }
 
     /** @return array<string,mixed> */
-    private function exigirBorrador(int $id): array
+    private function exigirEditable(int $id): array
     {
         $plan = $this->exigirPlan($id);
-        if ($plan['estado'] === 'APROBADO') {
-            throw new HttpException('El plan ya fue aprobado y no puede modificarse bajo el flujo actual.', 409);
+        if ($plan['estado'] === 'EN_REVISION') {
+            throw new HttpException('No se puede modificar un plan pendiente de aprobación.', 409);
         }
-        if ($plan['estado'] !== 'BORRADOR') {
-            throw new HttpException('Solo se puede modificar un plan en borrador.', 409);
+        if ($plan['estado'] !== 'BORRADOR' && $plan['estado'] !== 'APROBADO') {
+            throw new HttpException('No se puede modificar este plan.', 409);
         }
 
         return $plan;

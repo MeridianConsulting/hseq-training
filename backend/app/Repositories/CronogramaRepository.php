@@ -90,13 +90,13 @@ class CronogramaRepository
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
         $params = [$capacitacionId];
-        $ordenCargo = '0';
+        $orden = 'per.nombre_completo_nombres_primero ASC, a.asignacion_id ASC';
         if ($ids !== []) {
             $lista = array_values($ids);
             $in = implode(',', array_fill(0, count($lista), '?'));
-            $ordenCargo = "(CASE WHEN a.cargo_id_ext IN ({$in})
+            $orden = "(CASE WHEN a.cargo_id_ext IN ({$in})
                     OR (a.cargo_id_ext IS NULL AND per.cargo_id IN ({$in}))
-                 THEN 1 ELSE 0 END)";
+                 THEN 1 ELSE 0 END) DESC, {$orden}";
             $params = array_merge($params, $lista, $lista);
         }
 
@@ -114,7 +114,7 @@ class CronogramaRepository
              LEFT JOIN {$cargos} cgp ON cgp.cargo_id = per.cargo_id
              WHERE a.capacitacion_id = ?
                AND per.estado = 'Activo'
-             ORDER BY {$ordenCargo} DESC, per.nombre_completo_nombres_primero ASC, a.asignacion_id ASC",
+             ORDER BY {$orden}",
             $params
         );
     }

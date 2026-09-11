@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,6 @@ import type {
 const ESTADOS: { valor: string; etiqueta: string }[] = [
   { valor: "CONVOCADO", etiqueta: "Pendiente" },
   { valor: "ASISTIO", etiqueta: "Asistió" },
-  { valor: "TARDE", etiqueta: "Llegó tarde" },
   { valor: "AUSENTE", etiqueta: "Ausente" },
 ];
 
@@ -36,7 +35,8 @@ type FilaAsistencia = {
 function filasDesde(participantes: ParticipanteSesion[]): FilaAsistencia[] {
   return participantes.map((p) => ({
     asignacion_id: p.asignacion_id,
-    estado_asistencia: p.estado_asistencia || "CONVOCADO",
+    estado_asistencia:
+      p.estado_asistencia === "TARDE" ? "ASISTIO" : p.estado_asistencia || "CONVOCADO",
     motivo_ausencia: p.motivo_ausencia ?? "",
     observacion: p.observacion ?? "",
   }));
@@ -51,8 +51,7 @@ function resumenLocal(filas: FilaAsistencia[]): ResumenAsistencia {
     pendientes: 0,
   };
   for (const fila of filas) {
-    if (fila.estado_asistencia === "ASISTIO") r.asistieron++;
-    else if (fila.estado_asistencia === "TARDE") r.tarde++;
+    if (fila.estado_asistencia === "ASISTIO" || fila.estado_asistencia === "TARDE") r.asistieron++;
     else if (fila.estado_asistencia === "AUSENTE") r.ausentes++;
     else r.pendientes++;
   }
@@ -64,11 +63,13 @@ export function FormularioAsistencia({
   puedeEditar,
   onGuardado,
   modoOperativo = false,
+  extrasAntesDeCumplimiento = null,
 }: {
   sesion: DetalleSesion;
   puedeEditar: boolean;
   onGuardado: (sesion: DetalleSesion, mensaje: string) => void;
   modoOperativo?: boolean;
+  extrasAntesDeCumplimiento?: ReactNode;
 }) {
   const [filas, setFilas] = useState<FilaAsistencia[]>(() => filasDesde(sesion.participantes));
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,10 @@ export function FormularioAsistencia({
   useEffect(() => {
     setFilas(filasDesde(sesion.participantes));
     setFechaCump(sesion.fecha ?? "");
+    const horas = sesion.participantes.find((p) => p.horas_efectivas != null && p.horas_efectivas > 0);
+    if (horas?.horas_efectivas != null) {
+      setHorasCump(String(horas.horas_efectivas));
+    }
   }, [sesion]);
 
   const resumen = useMemo(() => resumenLocal(filas), [filas]);
@@ -249,7 +254,7 @@ export function FormularioAsistencia({
     evento.preventDefault();
     setError(null);
     if (seleccionCump.length === 0) {
-      setError("Seleccione al menos un trabajador que haya asistido o llegado tarde.");
+      setError("Seleccione al menos un trabajador que haya asistido.");
       return;
     }
     if (!fechaCump) {
@@ -379,7 +384,6 @@ export function FormularioAsistencia({
       <div className="flex flex-wrap gap-2 text-sm">
         <Badge tono="neutral">Convocados: {resumen.convocados}</Badge>
         <Badge tono="ok">Asistieron: {resumen.asistieron}</Badge>
-        <Badge tono="aviso">Llegaron tarde: {resumen.tarde}</Badge>
         <Badge tono="alto">Ausentes: {resumen.ausentes}</Badge>
         <Badge tono="neutral">Pendientes: {resumen.pendientes}</Badge>
       </div>
@@ -535,7 +539,7 @@ export function FormularioAsistencia({
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registro de evaluaciones</h3>
           <p className="mb-3 text-sm text-slate-600">
             Nota mínima aprobatoria: {(sesion.nota_minima ?? 0).toFixed(2).replace(".", ",")} (escala 0 a 5).
-            Solo asistentes y llegadas tarde.
+            Solo asistentes.
           </p>
           <form className="space-y-3" onSubmit={(e) => void guardarEvaluaciones(e)}>
             <Table
@@ -579,19 +583,20 @@ export function FormularioAsistencia({
         </div>
       ) : null}
 
-      {!modoOperativo && puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
+      {extrasAntesDeCumplimiento}
+
+      {puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
         <div className="rounded-lg border border-slate-200 p-4">
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registrar cumplimiento</h3>
           {sesion.requiere_certificado ? (
             <Alert tono="aviso">
-              Esta capacitación requiere certificado. Complete cada trabajador de forma individual
-              y adjunte su archivo en Cumplimientos. El registro masivo no está disponible.
+              Esta capacitación requiere certificado. Adjunte el archivo de cada asistente en
+              Soportes y después registre el cumplimiento.
             </Alert>
-          ) : (
-          <>
+          ) : null}
           <p className="mb-3 text-sm text-slate-600">
-            Solo trabajadores que asistieron o llegaron tarde. El vencimiento se calcula con la
-            periodicidad de la matriz y no se digita.
+            Solo trabajadores que asistieron. El vencimiento se calcula con la periodicidad de la
+            matriz y no se digita.
           </p>
           <form className="space-y-3" onSubmit={(e) => void registrarCumplimiento(e)}>
             <ul className="space-y-2">
@@ -676,8 +681,6 @@ export function FormularioAsistencia({
               {guardandoCump ? "Registrando…" : "Registrar cumplimiento"}
             </Button>
           </form>
-          </>
-          )}
         </div>
       ) : null}
     </div>

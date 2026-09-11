@@ -1,7 +1,7 @@
 -- Alinea el CASE de estado_calculado con utf8mb4_unicode_ci (PDO SET NAMES).
 -- Evita Error 1267 al filtrar asignaciones por estado.
 -- Ventana de alertas: 30 días (RF-AL-002).
--- COMPLETADA exige APROBADO + evaluación/soportes cuando la capacitación los requiere.
+-- COMPLETADA exige APROBADO, evaluación si aplica, y al menos un soporte si pide certificado o listado.
 -- Uso: mysql -u root meridian_capacitaciones < database/06_vistas_collation_estado.sql
 
 CREATE OR REPLACE VIEW vw_estado_asignaciones AS
@@ -27,14 +27,8 @@ SELECT
       THEN 'PENDIENTE'
     WHEN cap.evaluacion = 1 AND (c.nota_evaluacion IS NULL OR c.nota_evaluacion < cap.nota_minima)
       THEN 'PENDIENTE'
-    WHEN cap.certificado = 1 AND NOT EXISTS (
+    WHEN (cap.certificado = 1 OR cap.requiere_listado_asistencia = 1) AND NOT EXISTS (
            SELECT 1 FROM soportes_cumplimiento so WHERE so.cumplimiento_id = c.cumplimiento_id
-         )
-      THEN 'PENDIENTE'
-    WHEN cap.requiere_listado_asistencia = 1 AND NOT EXISTS (
-           SELECT 1 FROM soportes_cumplimiento so
-           WHERE so.cumplimiento_id = c.cumplimiento_id
-             AND so.tipo_soporte = 'LISTADO_ASISTENCIA'
          )
       THEN 'PENDIENTE'
     WHEN c.fecha_vencimiento IS NOT NULL AND c.fecha_vencimiento < CURDATE()

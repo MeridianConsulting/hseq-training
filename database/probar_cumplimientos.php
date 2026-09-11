@@ -141,8 +141,13 @@ $dashRepo = new DashboardRepository();
 $periodos = new DashboardService();
 
 $anioPrueba = 2031;
+$anioExtra = 2032;
 $personasT = Database::personalTable('personas');
 $contratosT = Database::personalTable('contratos');
+$cap12 = 0;
+$cap6 = 0;
+$capMix = 0;
+$capUna = 0;
 
 $docs12 = [];
 for ($i = 1; $i <= 12; $i++) {
@@ -150,6 +155,19 @@ for ($i = 1; $i <= 12; $i++) {
 }
 $docsExtra = ['9000880201', '9000880301', '9000880302', '9000880401', '9000880501'];
 $docs = array_merge($docs12, $docsExtra);
+
+$limpiarPrueba = static function () use ($db, $personalDb, $personasT, $contratosT, $docs, $anioPrueba, $anioExtra, &$cap12, &$cap6, &$capMix, &$capUna): void {
+    borrarPlanYSesiones($db, $anioPrueba);
+    borrarPlanYSesiones($db, $anioExtra);
+    limpiarPersonas($db, $personalDb, $personasT, $contratosT, $docs);
+    foreach ([$cap12, $cap6, $capMix, $capUna] as $cid) {
+        if ($cid > 0) {
+            $db->query('DELETE FROM matriz_aplicabilidad WHERE capacitacion_id = ?', [$cid]);
+            $db->query('DELETE FROM capacitaciones WHERE capacitacion_id = ?', [$cid]);
+        }
+    }
+};
+register_shutdown_function($limpiarPrueba);
 
 echo "== Cálculo centralizado ==\n";
 ok(
@@ -461,7 +479,6 @@ ok(
 );
 
 echo "\n== Casos extra (plan 2032) ==\n";
-$anioExtra = 2032;
 borrarPlanYSesiones($db, $anioExtra);
 
 $proyecto6 = 'HSEQ-CUMP-6';
