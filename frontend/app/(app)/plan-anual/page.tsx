@@ -6,7 +6,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "@/components/ui/field";
+import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { FiltrosActivos, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
@@ -667,8 +667,8 @@ function Contenido() {
         >
           <form className="space-y-4" onSubmit={(e) => void guardarActividad(e)}>
             {errorForm ? <Alert tono="error">{errorForm}</Alert> : null}
-            <Field etiqueta="Año">
-              <input className={inputClass} value={plan.anio} readOnly />
+            <Field etiqueta="Año" className={fieldClassAnio}>
+              <input className={inputClassAnio} value={plan.anio} readOnly />
             </Field>
             <Field etiqueta="Fecha programada">
               <input
@@ -1013,9 +1013,9 @@ function Contenido() {
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
 
       <Filters>
-        <Field etiqueta="Año">
+        <Field etiqueta="Año" className={fieldClassAnio}>
           <input
-            className={inputClass}
+            className={inputClassAnio}
             type="number"
             min={2000}
             max={2100}
@@ -1085,9 +1085,9 @@ function Contenido() {
 
       <Modal abierto={crearAbierto} titulo="Crear plan anual" onCerrar={() => setCrearAbierto(false)}>
         <form className="space-y-4" onSubmit={(e) => void crearPlan(e)}>
-          <Field etiqueta="Año">
+          <Field etiqueta="Año" className={fieldClassAnio}>
             <input
-              className={inputClass}
+              className={inputClassAnio}
               type="number"
               min={2000}
               max={2100}

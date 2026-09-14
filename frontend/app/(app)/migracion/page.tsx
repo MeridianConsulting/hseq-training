@@ -5,7 +5,7 @@ import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "@/components/ui/field";
+import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
@@ -157,9 +157,9 @@ function Contenido() {
             onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
           />
         </Field>
-        <Field etiqueta="Año del programa">
+        <Field etiqueta="Año del programa" className={fieldClassAnio}>
           <input
-            className={inputClass}
+            className={inputClassAnio}
             type="number"
             min={2000}
             max={2100}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { filtrosFilaClass } from "@/components/ui/filters";
 import { ChevronDown, X } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -24,7 +25,7 @@ export function FiltrosActivos({
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="mb-3 flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Activos:</span>
       {chips.map((chip) => (
         <button
@@ -55,8 +56,8 @@ export function FiltersBar({
   acciones?: ReactNode;
 }) {
   return (
-    <div className="mb-4 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+    <div className="mb-3 space-y-2">
+      <div className={filtrosFilaClass}>{children}</div>
       {acciones ? <div className="flex flex-wrap items-end gap-2">{acciones}</div> : null}
     </div>
   );
@@ -74,7 +75,7 @@ export function MasFiltros({
   children: ReactNode;
 }) {
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       <button
         type="button"
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-hseq-700 hover:text-hseq-800"
@@ -92,9 +93,7 @@ export function MasFiltros({
           </span>
         ) : null}
       </button>
-      {abierto ? (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
-      ) : null}
+      {abierto ? <div className={`mt-2 ${filtrosFilaClass}`}>{children}</div> : null}
     </div>
   );
 }

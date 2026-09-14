@@ -148,7 +148,7 @@ class MatrizService
     public function vista(?int $procesoId, ?string $proyecto): array
     {
         if ($procesoId === null || $procesoId < 1) {
-            throw new HttpException('El proceso es obligatorio.', 422);
+            return $this->vistaConsulta();
         }
 
         $proceso = $this->procesoDeMatriz($procesoId);
@@ -175,10 +175,41 @@ class MatrizService
             'proceso_id' => $procesoId,
             'proceso_nombre' => $proceso['nombre'],
             'proyecto' => $proyectoNorm,
+            'consulta' => false,
             'cargos' => $this->cargosDeVista($filas, $catalogo, $proceso['nombre']),
             'cargos_catalogo' => $catalogo,
             'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
             'celdas' => array_values($celdas),
+        ];
+    }
+
+    /**
+     * Catálogo completo con las capacitaciones que ya aplican a cada cargo.
+     *
+     * @return array<string,mixed>
+     */
+    private function vistaConsulta(): array
+    {
+        $catalogo = $this->personal->cargos();
+        $celdas = [];
+        foreach ($this->repo->listarMarcasActivasPorCargo() as $fila) {
+            $celdas[] = [
+                'cargo_id_ext' => (int)$fila['cargo_id_ext'],
+                'capacitacion_id' => (int)$fila['capacitacion_id'],
+                'matriz_aplicabilidad_id' => (int)$fila['matriz_aplicabilidad_id'],
+                'activa' => true,
+            ];
+        }
+
+        return [
+            'proceso_id' => null,
+            'proceso_nombre' => null,
+            'proyecto' => null,
+            'consulta' => true,
+            'cargos' => $catalogo,
+            'cargos_catalogo' => $catalogo,
+            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+            'celdas' => $celdas,
         ];
     }
 

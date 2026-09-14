@@ -104,13 +104,12 @@ foreach (['A' => 'Matriz aplica A', 'B' => 'Matriz aplica B', 'C' => 'Matriz no 
     echo "Cap {$letra}: {$creada['codigo']} ({$id})\n";
 }
 
-try {
-    echo "\n== Vista exige proceso ==\n";
-    $matriz->vista(null, null);
-    ok(false, 'Vista sin proceso debió fallar');
-} catch (HttpException $e) {
-    ok($e->getStatusCode() === 422, 'Vista sin proceso = 422');
-}
+echo "\n== Vista de consulta (todos los cargos) ==\n";
+$consulta = $matriz->vista(null, null);
+ok(($consulta['consulta'] ?? false) === true, 'Vista sin proceso es consulta');
+ok($consulta['proceso_id'] === null, 'Consulta no exige proceso');
+ok(($consulta['cargos'] ?? []) !== [], 'Consulta lista el catálogo de cargos');
+ok(isset($consulta['celdas']) && is_array($consulta['celdas']), 'Consulta trae celdas por cargo');
 
 try {
     $matriz->vista($procesoGpId, null);
@@ -204,6 +203,17 @@ ok((int)$porCap[$creadasCaps['B']][0]['activa'] === 1, 'B queda activa');
 $vistaTrasSync = $matriz->vista($procesoGpId, 'FRONTERA');
 $idsContexto = array_map(static fn (array $c): int => (int)$c['cargo_id'], $vistaTrasSync['cargos']);
 ok(in_array($cargoId, $idsContexto, true), 'Tras marcar, el cargo entra en el contexto filtrado');
+
+$consultaTrasSync = $matriz->vista(null, null);
+$celdasConsulta = [];
+foreach ($consultaTrasSync['celdas'] as $celda) {
+    if ((int)$celda['cargo_id_ext'] === $cargoId && !empty($celda['activa'])) {
+        $celdasConsulta[] = (int)$celda['capacitacion_id'];
+    }
+}
+ok(in_array($creadasCaps['A'], $celdasConsulta, true), 'Consulta chulea la cap A del cargo');
+ok(in_array($creadasCaps['B'], $celdasConsulta, true), 'Consulta chulea la cap B del cargo');
+ok(!in_array($creadasCaps['C'], $celdasConsulta, true), 'Consulta no chulea la cap C inactiva');
 
 $aplicables = $matriz->aplicables($cargoId, $procesoGpId, 'FRONTERA');
 $idsAplicables = array_map(static fn (array $i): int => (int)$i['capacitacion_id'], $aplicables['items']);

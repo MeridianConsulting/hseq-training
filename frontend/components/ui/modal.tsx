@@ -18,10 +18,14 @@ export function Modal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-hseq-950/50 p-4 sm:p-8">
-      <div className={`w-full rounded-2xl bg-white p-6 shadow-xl ${amplio ? "max-w-5xl" : "max-w-3xl"}`}>
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 className="text-lg font-semibold text-hseq-900">{titulo}</h2>
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-hseq-950/50 sm:items-start sm:p-8">
+      <div
+        className={`w-full rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl sm:p-6 ${
+          amplio ? "max-w-5xl" : "max-w-3xl"
+        } max-h-[96dvh] overflow-y-auto`}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h2 className="text-base font-semibold text-hseq-900 sm:text-lg">{titulo}</h2>
           <button
             type="button"
             onClick={onCerrar}

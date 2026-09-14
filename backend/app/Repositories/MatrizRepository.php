@@ -137,6 +137,27 @@ class MatrizRepository
     }
 
     /**
+     * Marcas activas por cargo y capacitación (cualquier proceso o proyecto).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listarMarcasActivasPorCargo(): array
+    {
+        return $this->db->fetchAll(
+            'SELECT m.cargo_id_ext,
+                    m.capacitacion_id,
+                    MIN(m.matriz_aplicabilidad_id) AS matriz_aplicabilidad_id
+             FROM matriz_aplicabilidad m
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = m.capacitacion_id
+             WHERE m.activa = 1
+               AND cap.estado = \'ACTIVA\'
+               AND m.cargo_id_ext IS NOT NULL
+             GROUP BY m.cargo_id_ext, m.capacitacion_id
+             ORDER BY m.cargo_id_ext ASC, m.capacitacion_id ASC'
+        );
+    }
+
+    /**
      * Cargos con marca activa para una capacitación en un proceso/proyecto.
      *
      * @return list<array<string,mixed>>

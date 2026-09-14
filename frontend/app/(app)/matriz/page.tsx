@@ -54,6 +54,7 @@ function Contenido() {
   const [vista, setVista] = useState<VistaMatriz | null>(null);
   const [marcas, setMarcas] = useState<Record<string, boolean>>({});
   const [inicial, setInicial] = useState<Record<string, boolean>>({});
+  const [marcasConsulta, setMarcasConsulta] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -83,7 +84,9 @@ function Contenido() {
       setVista(null);
       setMarcas({});
       setInicial({});
-      setCargando(false);
+      if (!verTodos) {
+        setCargando(false);
+      }
       return;
     }
 
@@ -119,6 +122,49 @@ function Contenido() {
       abortado.actual = true;
     };
   }, [contextoListo, procesoId, proyecto, muestraProyecto]);
+
+  useEffect(() => {
+    if (!verTodos) {
+      setMarcasConsulta({});
+      return;
+    }
+
+    const abortado = { actual: false };
+    if (!contextoListo) {
+      setCargando(true);
+    }
+    void (async () => {
+      const respuesta = await apiGet<VistaMatriz>("/api/matriz/vista");
+      if (abortado.actual) {
+        return;
+      }
+      if (!contextoListo) {
+        setCargando(false);
+      }
+      if (respuesta.cancelada) {
+        return;
+      }
+      if (!respuesta.success || !respuesta.data) {
+        if (!contextoListo) {
+          setError(respuesta.message || "No fue posible cargar las capacitaciones de cada cargo.");
+          setVista(null);
+        }
+        return;
+      }
+      const siguientes = marcasDesdeVista(respuesta.data);
+      setMarcasConsulta(siguientes);
+      if (!contextoListo) {
+        setVista(respuesta.data);
+        setMarcas(siguientes);
+        setInicial(siguientes);
+        setError(null);
+      }
+    })();
+
+    return () => {
+      abortado.actual = true;
+    };
+  }, [verTodos, contextoListo]);
 
   const catalogoCargos = vista?.cargos_catalogo ?? opciones.cargos ?? [];
   const capsFuente = vista?.capacitaciones ?? opciones.capacitaciones ?? [];
@@ -168,7 +214,7 @@ function Contenido() {
     chips.push({ clave: "buscar_cap", etiqueta: "Capacitación", valor: buscarCap.trim() });
   }
   if (verTodos) {
-    chips.push({ clave: "ver_todos", etiqueta: "Cargos", valor: "Todos los del catálogo" });
+    chips.push({ clave: "ver_todos", etiqueta: "Vista", valor: "Toda la matriz" });
   }
 
   function quitarChip(clave: string) {
@@ -298,7 +344,7 @@ function Contenido() {
         onToggle={() => setMasFiltros((abierto) => !abierto)}
         extrasActivos={verTodos ? 1 : 0}
       >
-        <Field etiqueta="Cargos del contexto">
+        <Field etiqueta="Vista de la matriz">
           <label className="flex items-center gap-2 pt-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -306,7 +352,7 @@ function Contenido() {
               checked={verTodos}
               onChange={(e) => setVerTodos(e.target.checked)}
             />
-            Ver todos los cargos
+            Ver toda la matriz
           </label>
         </Field>
       </MasFiltros>
@@ -326,19 +372,19 @@ function Contenido() {
       {!contextoListo && !verTodos ? (
         <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
           {procesoId === ""
-            ? "Seleccione un proceso para editar la matriz, o active «Ver todos los cargos» para consultar el catálogo."
-            : "Seleccione un proyecto para editar la matriz, o active «Ver todos los cargos» para consultar el catálogo."}
+            ? "Seleccione un proceso para editar la matriz, o active «Ver toda la matriz» para ver las capacitaciones de cada cargo."
+            : "Seleccione un proyecto para editar la matriz, o active «Ver toda la matriz» para ver las capacitaciones de cada cargo."}
         </p>
-      ) : cargando && contextoListo ? (
+      ) : cargando ? (
         <ListaCargando />
-      ) : (vista && contextoListo) || mostrarCatalogoSinContexto ? (
+      ) : vista && (contextoListo || verTodos) ? (
         <>
         {catalogoCargos.length !== cargosContexto.length || mostrarCatalogoSinContexto ? (
           <p className="mb-2 text-xs text-slate-500">
             {mostrarCatalogoSinContexto
-              ? `Mostrando los ${catalogoCargos.length} cargos del catálogo. Seleccione un proceso para marcar qué aplica.`
+              ? `Viendo toda la matriz: ${catalogoCargos.length} cargos con las capacitaciones que ya aplican a cada uno. Seleccione un proceso para editar.`
               : verTodos
-                ? `Mostrando los ${catalogoCargos.length} cargos del catálogo. Desactive «Ver todos» para volver a los ${cargosContexto.length} de este contexto.`
+                ? `Viendo toda la matriz (${catalogoCargos.length} cargos). Las casillas chuleadas son las capacitaciones de cada cargo; puede marcar otras para este contexto.`
                 : `Mostrando ${cargosContexto.length} cargos de este contexto (de ${catalogoCargos.length} del catálogo).`}
           </p>
         ) : null}
@@ -373,7 +419,7 @@ function Contenido() {
                     colSpan={Math.max(1, capsVisibles.length + 1)}
                   >
                     {cargosContexto.length === 0 && !verTodos && buscarCargo.trim() === ""
-                      ? "No hay cargos definidos para este proceso en la matriz. Active «Ver todos los cargos» para marcar uno del catálogo."
+                      ? "No hay cargos definidos para este proceso en la matriz. Active «Ver toda la matriz» para marcar uno del catálogo."
                       : "No hay cargos o capacitaciones que coincidan con la búsqueda."}
                   </td>
                 </tr>
@@ -385,15 +431,29 @@ function Contenido() {
                     </th>
                     {capsVisibles.map((cap) => {
                       const clave = claveCelda(cargo.cargo_id, cap.capacitacion_id);
+                      const enContexto = Boolean(marcas[clave]);
+                      const enConsulta = verTodos && Boolean(marcasConsulta[clave]);
+                      const soloConsulta = enConsulta && !enContexto;
+                      const soloLectura = !puedeGuardar || !contextoListo || soloConsulta;
                       return (
                         <td key={cap.capacitacion_id} className="border-b border-slate-100 px-2 py-2 text-center">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 accent-hseq-800"
-                            checked={Boolean(marcas[clave])}
-                            disabled={!puedeGuardar || !contextoListo}
+                            className={`h-4 w-4 accent-hseq-800 ${soloLectura ? "cursor-default" : "cursor-pointer"}`}
+                            checked={enContexto || enConsulta}
+                            aria-readonly={soloLectura}
+                            title={
+                              soloConsulta
+                                ? "Esta capacitación ya aplica a este cargo en otro proceso o proyecto"
+                                : !contextoListo
+                                  ? `${cargo.nombre_cargo} × ${cap.codigo} (solo consulta)`
+                                  : `${cargo.nombre_cargo} × ${cap.codigo}`
+                            }
                             aria-label={`${cargo.nombre_cargo} × ${cap.codigo}`}
                             onChange={(e) => {
+                              if (soloLectura) {
+                                return;
+                              }
                               const marcada = e.target.checked;
                               setMarcas((prev) => {
                                 const siguiente = { ...prev };

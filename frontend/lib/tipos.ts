@@ -841,9 +841,10 @@ export type CeldaMatriz = {
 };
 
 export type VistaMatriz = {
-  proceso_id: number;
-  proceso_nombre: string;
+  proceso_id: number | null;
+  proceso_nombre: string | null;
   proyecto: string | null;
+  consulta?: boolean;
   cargos: CargoCorporativo[];
   cargos_catalogo?: CargoCorporativo[];
   capacitaciones: {

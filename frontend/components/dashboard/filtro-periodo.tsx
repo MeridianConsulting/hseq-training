@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, inputClass } from "@/components/ui/field";
+import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type { ProcesoCronograma, TipoPeriodoDashboard } from "@/lib/tipos";
@@ -120,9 +120,9 @@ export function FiltroPeriodo({
           </select>
         </Field>
 
-        <Field etiqueta="Año">
+        <Field etiqueta="Año" className={fieldClassAnio}>
           <select
-            className={inputClass}
+            className={inputClassAnio}
             value={valor.anio}
             onChange={(evento) => onChange({ ...valor, anio: Number(evento.target.value) })}
           >

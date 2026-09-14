@@ -150,7 +150,7 @@ function Contenido() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Cobertura
             </h2>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <GraficaCumplimiento
                 titulo="Cumplimiento general"
                 descripcion="Capacitaciones ejecutadas / programadas × 100."
@@ -173,7 +173,7 @@ function Contenido() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Eficacia
             </h2>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <TarjetaEficacia
                 titulo="Eficacia general"
                 descripcion="Promedio de calificaciones válidas. Sin evaluación no cuenta como cero."
@@ -205,7 +205,7 @@ function Contenido() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Horas de capacitación
             </h2>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <TarjetaHoras titulo="Total" kpi={horas.general} />
               <TarjetaHoras titulo="Inducción y reinducción" kpi={horas.induccion} />
               <TarjetaHoras titulo="Tareas críticas" kpi={horas.critica} />
