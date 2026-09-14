@@ -37,6 +37,7 @@ USE meridian_capacitaciones;
 CREATE TABLE areas (
   area_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_areas_nombre (nombre)
@@ -69,6 +70,7 @@ CREATE TABLE vigencias (
 CREATE TABLE procesos (
   proceso_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_procesos_nombre (nombre)
@@ -97,6 +99,7 @@ CREATE TABLE proveedores_capacitadores (
 CREATE TABLE roles (
   role_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   nombre VARCHAR(120) NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_roles_nombre (nombre)
@@ -179,6 +182,24 @@ CREATE TABLE user_roles (
   KEY ix_user_roles_usuario (usuario_id),
   CONSTRAINT fk_user_roles_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(usuario_id),
   CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE permisos (
+  permiso_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  codigo VARCHAR(80) NOT NULL,
+  descripcion VARCHAR(180) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_permisos_codigo (codigo)
+) ENGINE=InnoDB;
+
+CREATE TABLE rol_permisos (
+  role_id INT UNSIGNED NOT NULL,
+  permiso_id INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (role_id, permiso_id),
+  KEY ix_rol_permisos_permiso (permiso_id),
+  CONSTRAINT fk_rol_permisos_rol FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE,
+  CONSTRAINT fk_rol_permisos_permiso FOREIGN KEY (permiso_id) REFERENCES permisos(permiso_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- =========================================================
@@ -266,7 +287,9 @@ CREATE TABLE plan_anual_detalle (
   plan_anual_id INT UNSIGNED NOT NULL,
   capacitacion_id INT UNSIGNED NOT NULL,
   mes_programado TINYINT UNSIGNED NOT NULL,
+  fecha_programada DATE NOT NULL,
   cantidad_programada INT UNSIGNED NOT NULL DEFAULT 0,
+  estado_programacion VARCHAR(20) NOT NULL DEFAULT 'PROGRAMADA',
   area_id INT UNSIGNED NULL,
   proceso_id INT UNSIGNED NULL,
   ambito ENUM('ADMINISTRACION','PROYECTO') NULL,
@@ -306,9 +329,12 @@ CREATE TABLE sesiones_capacitacion (
   enlace_virtual VARCHAR(500) NULL,
   proveedor_id INT UNSIGNED NULL,
   cupo_maximo INT UNSIGNED NULL,
+  observaciones TEXT NULL,
+  estado ENUM('PROGRAMADA','EJECUTADA','CANCELADA') NOT NULL DEFAULT 'PROGRAMADA',
   creado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY ix_sesion_fecha (fecha_hora),
   CONSTRAINT fk_sesion_plan_det FOREIGN KEY (plan_detalle_id) REFERENCES plan_anual_detalle(plan_detalle_id),
   CONSTRAINT fk_sesion_cap FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(capacitacion_id),
   CONSTRAINT fk_sesion_modalidad FOREIGN KEY (modalidad_id) REFERENCES modalidades(modalidad_id),
@@ -341,6 +367,9 @@ CREATE TABLE asignaciones_capacitacion (
   KEY ix_asig_capacitacion (capacitacion_id),
   KEY ix_asig_proyecto (proyecto),
   KEY ix_asig_fecha_limite (fecha_limite_cumplimiento),
+  KEY ix_asig_proceso (proceso_id),
+  KEY ix_asig_cargo (cargo_id_ext),
+  KEY ix_asig_fecha_asignacion (fecha_asignacion),
   CONSTRAINT fk_asig_cap FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(capacitacion_id),
   CONSTRAINT fk_asig_matriz FOREIGN KEY (matriz_aplicabilidad_id) REFERENCES matriz_aplicabilidad(matriz_aplicabilidad_id),
   CONSTRAINT fk_asig_area FOREIGN KEY (area_id) REFERENCES areas(area_id),
@@ -362,7 +391,9 @@ CREATE TABLE sesion_participantes (
   sesion_participante_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   sesion_id INT UNSIGNED NOT NULL,
   asignacion_id BIGINT UNSIGNED NOT NULL,
-  estado_asistencia ENUM('PROGRAMADO','EVALUADO') NOT NULL DEFAULT 'PROGRAMADO',
+  estado_asistencia ENUM('CONVOCADO','ASISTIO','TARDE','AUSENTE') NOT NULL DEFAULT 'CONVOCADO',
+  motivo_ausencia VARCHAR(255) NULL COMMENT 'Usar cuando estado_asistencia = AUSENTE',
+  observacion VARCHAR(500) NULL,
   registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -379,12 +410,15 @@ CREATE TABLE cumplimientos_capacitacion (
   resultado VARCHAR(60) NULL,
   horas_efectivas DECIMAL(6,2) NOT NULL,
   nota_evaluacion DECIMAL(5,2) NULL COMMENT 'La matriz Excel actual usa escala 0 a 5',
+  observaciones TEXT NULL,
   fecha_vencimiento DATE NULL COMMENT 'Vigencia materializada: fecha_realizacion + capacitaciones.vigencia_id. NULL = no vence',
   registrado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_cumplimiento_asignacion (asignacion_id),
   KEY ix_cumplimiento_vencimiento (fecha_vencimiento),
+  KEY ix_cumplimiento_realizacion (fecha_realizacion),
+  KEY ix_cumplimiento_venc_resultado (fecha_vencimiento, resultado),
   CONSTRAINT fk_cump_asignacion FOREIGN KEY (asignacion_id) REFERENCES asignaciones_capacitacion(asignacion_id),
   CONSTRAINT fk_cump_sesion FOREIGN KEY (sesion_id) REFERENCES sesiones_capacitacion(sesion_id)
 ) ENGINE=InnoDB;
@@ -392,10 +426,11 @@ CREATE TABLE cumplimientos_capacitacion (
 CREATE TABLE soportes_cumplimiento (
   soporte_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   cumplimiento_id BIGINT UNSIGNED NOT NULL,
-  tipo_soporte ENUM('CERTIFICADO','LISTADO_ASISTENCIA') NOT NULL,
+  tipo_soporte ENUM('CERTIFICADO','LISTADO_ASISTENCIA','OTRO') NOT NULL,
   nombre_archivo VARCHAR(255) NOT NULL,
   ruta_archivo VARCHAR(500) NOT NULL,
   mime_type VARCHAR(100) NULL,
+  tamano_bytes INT UNSIGNED NULL,
   cargado_por_usuario_id_ext INT UNSIGNED NULL COMMENT 'meridian_capacitaciones.usuarios.usuario_id',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY ix_soporte_cumplimiento (cumplimiento_id),
@@ -423,6 +458,37 @@ CREATE TABLE auditoria (
   KEY ix_auditoria_usuario_fecha (usuario_id_ext, created_at),
   KEY ix_auditoria_entidad (entidad, entidad_id),
   KEY ix_auditoria_accion_fecha (accion, created_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE historial_contexto_trabajador (
+  historial_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  persona_id_ext INT UNSIGNED NOT NULL COMMENT 'meridian_personal.personas.persona_id',
+  cargo_id_ext INT UNSIGNED NULL COMMENT 'Snapshot de personas.cargo_id',
+  proyecto VARCHAR(120) NULL COMMENT 'Snapshot de contratos.proyecto',
+  vigente_desde DATE NOT NULL,
+  vigente_hasta DATE NULL COMMENT 'NULL = periodo abierto (actual)',
+  origen ENUM('ALTA','EDICION') NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY ix_hist_persona_vigencia (persona_id_ext, vigente_desde),
+  KEY ix_hist_persona_abierto (persona_id_ext, vigente_hasta)
+) ENGINE=InnoDB;
+
+CREATE TABLE migraciones (
+  migracion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  usuario_id_ext INT UNSIGNED NULL,
+  usuario_nombre VARCHAR(120) NULL,
+  nombre_archivo VARCHAR(255) NOT NULL,
+  ruta_archivo VARCHAR(500) NOT NULL,
+  mime_type VARCHAR(120) NULL,
+  tamano_bytes INT UNSIGNED NULL,
+  anio_programa SMALLINT UNSIGNED NOT NULL,
+  estado ENUM('VALIDADA','CONFIRMADA','CANCELADA','FALLIDA') NOT NULL DEFAULT 'VALIDADA',
+  resumen_json LONGTEXT NULL,
+  inconsistencias_json LONGTEXT NULL,
+  conteos_json LONGTEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  confirmada_at TIMESTAMP NULL,
+  KEY ix_migraciones_estado_fecha (estado, created_at)
 ) ENGINE=InnoDB;
 
 -- =========================================================

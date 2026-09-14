@@ -1,0 +1,13 @@
+---
+description: No crear parches ni scripts de prueba en database/
+alwaysApply: true
+---
+
+# Carpeta database/
+
+En `database/` solo deben vivir:
+
+- `00_Estructura_bd_capacitaciones_hseq.sql` (esquema completo para base vacía)
+- `seed_usuario_inicial.php` (usuario admin)
+
+No crear SQL numerados (`01_`, `02_`, …), `instalar.php`, `probar_*.php`, ni datos ficticios. Si el esquema cambia, actualice el `00_`.

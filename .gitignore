@@ -1,0 +1,9 @@
+database/probar_*.php
+database/limpiar_datos_prueba.php
+database/0[1-9]_*.sql
+database/[1-9][0-9]_*.sql
+database/instalar.php
+database/asegurar_cargos_frontera.php
+database/19_nombres_unidad_anio.php
+database/20_vigencias_equivalentes.php
+database/21_tipos_excel.php
