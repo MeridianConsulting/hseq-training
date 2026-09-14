@@ -34,6 +34,7 @@ class Application
             date_default_timezone_set($zona);
         }
         $this->setupErrorHandling();
+        VistasEsquema::asegurar();
         $this->router = new Router();
         $this->loadRoutes();
     }
