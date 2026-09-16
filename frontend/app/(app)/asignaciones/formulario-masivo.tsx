@@ -9,15 +9,19 @@ import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 export type DatosAsignacionMasiva = {
   capacitacion_id: string;
   persona_ids_ext: string[];
+  fecha_asignacion: string;
   fecha_limite_cumplimiento: string;
 };
 
-export type ErroresAsignacionMasiva = Partial<Record<"capacitacion_id" | "persona_ids_ext", string>>;
+export type ErroresAsignacionMasiva = Partial<
+  Record<"capacitacion_id" | "persona_ids_ext" | "fecha_asignacion" | "fecha_limite_cumplimiento", string>
+>;
 
 function vacio(): DatosAsignacionMasiva {
   return {
     capacitacion_id: "",
     persona_ids_ext: [],
+    fecha_asignacion: "",
     fecha_limite_cumplimiento: "",
   };
 }
@@ -29,6 +33,19 @@ export function validarAsignacionMasiva(datos: DatosAsignacionMasiva): ErroresAs
   }
   if (datos.persona_ids_ext.length < 1) {
     errores.persona_ids_ext = "Seleccione al menos un trabajador.";
+  }
+  if (!datos.fecha_asignacion) {
+    errores.fecha_asignacion = "Indique la fecha desde.";
+  }
+  if (!datos.fecha_limite_cumplimiento) {
+    errores.fecha_limite_cumplimiento = "Indique la fecha hasta.";
+  }
+  if (
+    datos.fecha_asignacion &&
+    datos.fecha_limite_cumplimiento &&
+    datos.fecha_limite_cumplimiento < datos.fecha_asignacion
+  ) {
+    errores.fecha_limite_cumplimiento = "La fecha hasta no puede ser anterior a la fecha desde.";
   }
   return errores;
 }
@@ -90,6 +107,8 @@ export function FormularioAsignacionMasiva({
     void onGuardar(evento, datos);
   }
 
+  const cap = capacitaciones.find((c) => String(c.capacitacion_id) === datos.capacitacion_id);
+
   return (
     <form className="space-y-4" onSubmit={enviar}>
       <Field etiqueta="Capacitación" error={errores.capacitacion_id}>
@@ -102,13 +121,42 @@ export function FormularioAsignacionMasiva({
           }}
         >
           <option value="">Seleccione</option>
-          {capacitaciones.map((cap) => (
-            <option key={cap.capacitacion_id} value={cap.capacitacion_id}>
-              {cap.codigo} — {cap.nombre}
+          {capacitaciones.map((item) => (
+            <option key={item.capacitacion_id} value={item.capacitacion_id}>
+              {item.codigo} — {item.nombre}
             </option>
           ))}
         </select>
       </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field etiqueta="Fecha desde" error={errores.fecha_asignacion}>
+          <input
+            className={inputClass}
+            type="date"
+            required
+            value={datos.fecha_asignacion}
+            onChange={(e) =>
+              setDatos((prev) => ({ ...prev, fecha_asignacion: e.target.value }))
+            }
+          />
+        </Field>
+        <Field etiqueta="Fecha hasta" error={errores.fecha_limite_cumplimiento}>
+          <input
+            className={inputClass}
+            type="date"
+            required
+            value={datos.fecha_limite_cumplimiento}
+            onChange={(e) =>
+              setDatos((prev) => ({ ...prev, fecha_limite_cumplimiento: e.target.value }))
+            }
+          />
+        </Field>
+      </div>
+      <p className="text-xs text-slate-500">
+        El mismo período aplica a todas las personas seleccionadas. HSEQ define el plazo; no se
+        calcula desde la vigencia ni desde el Plan anual.
+      </p>
 
       <Field etiqueta="Trabajadores activos" error={errores.persona_ids_ext}>
         <input
@@ -151,23 +199,23 @@ export function FormularioAsignacionMasiva({
           })
         )}
       </div>
-      <p className="text-xs text-slate-500">
-        {datos.persona_ids_ext.length} trabajador(es) seleccionado(s).
-      </p>
 
-      <Field etiqueta="Fecha límite de cumplimiento (opcional)">
-        <input
-          className={inputClass}
-          type="date"
-          value={datos.fecha_limite_cumplimiento}
-          onChange={(e) =>
-            setDatos((prev) => ({ ...prev, fecha_limite_cumplimiento: e.target.value }))
-          }
-        />
-        <span className="mt-1 block text-xs text-slate-500">
-          Si la deja vacía, se calcula con la periodicidad de la capacitación.
-        </span>
-      </Field>
+      {datos.capacitacion_id && datos.persona_ids_ext.length > 0 && datos.fecha_asignacion && datos.fecha_limite_cumplimiento ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <p className="font-medium text-slate-900">Resumen antes de confirmar</p>
+          <p>
+            Capacitación: {cap ? `${cap.codigo} — ${cap.nombre}` : datos.capacitacion_id}
+          </p>
+          <p>
+            Período: {datos.fecha_asignacion} → {datos.fecha_limite_cumplimiento}
+          </p>
+          <p>Personas seleccionadas: {datos.persona_ids_ext.length}</p>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500">
+          {datos.persona_ids_ext.length} trabajador(es) seleccionado(s).
+        </p>
+      )}
 
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variante="secondary" onClick={onCancelar}>

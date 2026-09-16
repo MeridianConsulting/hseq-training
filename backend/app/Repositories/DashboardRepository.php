@@ -49,6 +49,33 @@ class DashboardRepository
     }
 
     /**
+     * Cumplimientos APROBADO cuya fecha real supera la fecha hasta de la asignación.
+     *
+     * @param array{anio:int,meses:list<int>,desde:string,hasta:string} $periodo
+     * @param array{modo?:string,proceso_id?:?int,proyecto?:?string} $alcance
+     */
+    public function ejecutadasFueraDeTiempo(array $periodo, array $alcance = []): int
+    {
+        $alcance = $this->normalizarAlcance($alcance);
+        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('a', $alcance);
+
+        $sql = "SELECT COUNT(*) AS total
+                FROM cumplimientos_capacitacion cump
+                INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = cump.asignacion_id
+                WHERE cump.fecha_realizacion BETWEEN ? AND ?
+                  AND cump.resultado = 'APROBADO'
+                  AND cump.fecha_realizacion > a.fecha_limite_cumplimiento
+                  {$filtroAlcance}";
+
+        $fila = $this->db->fetch(
+            $sql,
+            array_merge([$periodo['desde'], $periodo['hasta']], $paramsAlcance)
+        );
+
+        return (int)($fila['total'] ?? 0);
+    }
+
+    /**
      * @param array{anio:int,meses:list<int>,desde:string,hasta:string} $periodo
      * @param array{modo?:string,proceso_id?:?int,proyecto?:?string} $alcance
      */

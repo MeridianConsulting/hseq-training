@@ -287,12 +287,22 @@ class CumplimientoService
             ],
             'programacion' => [
                 'fecha_programada' => $fechaProgramada,
+                'fecha_desde' => $item['fecha_asignacion'] !== null
+                    ? substr((string)$item['fecha_asignacion'], 0, 10)
+                    : null,
+                'fecha_hasta' => !empty($item['fecha_limite_cumplimiento'])
+                    ? substr((string)$item['fecha_limite_cumplimiento'], 0, 10)
+                    : null,
                 'fuente' => $fuentes['fecha_programada'],
             ],
             'ejecucion' => [
                 'sesion_id' => $sesionId,
                 'fecha_sesion' => $fechaSesion,
                 'fecha_realizacion' => $item['fecha_realizacion'],
+                'fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
+                    $item['fecha_realizacion'] ?? null,
+                    $item['fecha_limite_cumplimiento'] ?? null
+                ),
                 'fuente' => $fuentes['ejecucion'],
             ],
             'asistencia' => [
@@ -321,6 +331,10 @@ class CumplimientoService
                 'fuente' => $fuentes['vigencia'],
             ],
             'estado_actual' => $item['estado_calculado'],
+            'ejecutada_fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
+                $item['fecha_realizacion'] ?? null,
+                $item['fecha_limite_cumplimiento'] ?? null
+            ),
         ];
     }
 
@@ -523,6 +537,10 @@ class CumplimientoService
                 : null,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'ejecutada_fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
+                $fila['fecha_realizacion'] ?? null,
+                $fila['fecha_limite_cumplimiento'] ?? null
+            ),
             'resultado' => $fila['resultado'] ?? null,
             'horas_efectivas' => $fila['horas_efectivas'] !== null ? (float)$fila['horas_efectivas'] : null,
             'requiere_evaluacion' => $requiereEval,
@@ -1214,6 +1232,20 @@ class CumplimientoService
     /**
      * @param array<string,mixed>|null $sesion
      */
+    private function ejecutadaFueraDeTiempo(mixed $fechaRealizacion, mixed $fechaHasta): bool
+    {
+        if ($fechaRealizacion === null || $fechaRealizacion === '' || $fechaHasta === null || $fechaHasta === '') {
+            return false;
+        }
+        $real = substr((string)$fechaRealizacion, 0, 10);
+        $hasta = substr((string)$fechaHasta, 0, 10);
+        if ($real === '' || $hasta === '') {
+            return false;
+        }
+
+        return $real > $hasta;
+    }
+
     private function fechaRealizacion(mixed $valor, ?array $sesion): string
     {
         $texto = is_string($valor) ? trim($valor) : '';

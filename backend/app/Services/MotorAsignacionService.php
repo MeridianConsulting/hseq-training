@@ -11,6 +11,8 @@ use DateTimeImmutable;
 
 /**
  * Motor RF-008: matriz (AUTOMATICA) más reglas especiales de INDUCCION / REINDUCCION.
+ * Cubre alta/cambio de contexto y brechas matriz↔personal.
+ * No renueva por vigencia vencida: eso queda en Alertas para asignación manual HSEQ.
  */
 class MotorAsignacionService
 {
@@ -237,7 +239,9 @@ class MotorAsignacionService
             return 'No había reglas aplicables para trabajadores activos.';
         }
 
-        return "{$creadas} asignaciones automáticas creadas, {$omitidas} omitida(s) porque ya existía una pendiente.";
+        return "{$creadas} asignaciones automáticas creadas, {$omitidas} omitida(s) "
+            . '(pendiente existente, ya cumplida o sin brecha de matriz). '
+            . 'La renovación por vigencia se gestiona desde Alertas.';
     }
 
     /**
@@ -335,7 +339,8 @@ class MotorAsignacionService
                     $omitidas++;
                     continue;
                 }
-                if (isset($existentes[$clave]) && $this->reinduccionSigueVigente($vencimientos[$clave] ?? null, $hoy)) {
+                // Renovación por vigencia: solo alerta; HSEQ asigna manualmente.
+                if (isset($existentes[$clave])) {
                     $omitidas++;
                     continue;
                 }
@@ -414,7 +419,8 @@ class MotorAsignacionService
                 $omitidas++;
                 continue;
             }
-            if (array_key_exists($clave, $vencimientos) && $this->reinduccionSigueVigente($vencimientos[$clave] ?? null, $hoy)) {
+            // Si ya hubo cumplimiento/ciclo, no renovar automáticamente (RF: alerta → HSEQ asigna).
+            if (array_key_exists($clave, $vencimientos)) {
                 $omitidas++;
                 continue;
             }

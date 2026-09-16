@@ -23,7 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { CalendarPlus, Eye, RefreshCw, Trash2, Users } from "lucide-react";
+import { CalendarPlus, Eye, Pencil, RefreshCw, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type {
@@ -43,6 +43,7 @@ const FILTROS_DEFAULT = {
   cargo_id: "",
   fecha_limite_desde: "",
   fecha_limite_hasta: "",
+  persona_id: "",
 };
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -109,6 +110,8 @@ export default function AsignacionesPage() {
 
 type OmitidaMasiva = {
   persona_id_ext?: number;
+  persona_nombre?: string | null;
+  numero_documento?: string | null;
   capacitacion_id?: number;
   motivo: string;
   mensaje?: string;
@@ -169,6 +172,7 @@ function Contenido() {
           page: paginaActual,
           per_page: 15,
           buscar: valores.buscar.trim() || undefined,
+          persona_id: valores.persona_id || undefined,
           capacitacion_id: valores.capacitacion_id || undefined,
           estado: valores.estado || undefined,
           origen: valores.origen || undefined,
@@ -215,8 +219,25 @@ function Contenido() {
       valores.fecha_limite_desde,
       valores.fecha_limite_hasta,
       valores.cargo_id,
+      valores.persona_id,
     ],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("accion") !== "crear") {
+      return;
+    }
+    if (!puede("asignaciones.crear")) {
+      return;
+    }
+    setEditando(null);
+    setAbierto(true);
+    setError(null);
+  }, [puede]);
 
   useEffect(() => {
     void (async () => {
@@ -296,14 +317,14 @@ function Contenido() {
     if (valores.fecha_limite_desde) {
       chips.push({
         clave: "fecha_limite_desde",
-        etiqueta: "Fecha límite desde",
+        etiqueta: "Fecha desde",
         valor: formatoFecha(valores.fecha_limite_desde),
       });
     }
     if (valores.fecha_limite_hasta) {
       chips.push({
         clave: "fecha_limite_hasta",
-        etiqueta: "Fecha límite hasta",
+        etiqueta: "Fecha hasta",
         valor: formatoFecha(valores.fecha_limite_hasta),
       });
     }
@@ -331,13 +352,14 @@ function Contenido() {
 
     if (editando) {
       const respuesta = await apiPut<Asignacion>(`/api/asignaciones/${editando.asignacion_id}`, {
+        fecha_asignacion: datos.fecha_asignacion,
         fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
       });
       if (respuesta.cancelada) {
         return;
       }
       if (!respuesta.success) {
-        setError(respuesta.message || "No se pudo actualizar la fecha.");
+        setError(respuesta.message || "No se pudo actualizar el período.");
         return;
       }
       setMensaje(respuesta.message);
@@ -346,19 +368,27 @@ function Contenido() {
         setError("Seleccione trabajador y al menos una capacitación aplicable.");
         return;
       }
+      if (!datos.fecha_asignacion || !datos.fecha_limite_cumplimiento) {
+        setError("Indique fecha desde y fecha hasta.");
+        return;
+      }
+      if (datos.fecha_limite_cumplimiento < datos.fecha_asignacion) {
+        setError("La fecha hasta no puede ser anterior a la fecha desde.");
+        return;
+      }
       const ids = datos.capacitacion_ids.map(Number);
       const respuesta = ids.length === 1
         ? await apiPost<Asignacion>("/api/asignaciones", {
             persona_id_ext: Number(datos.persona_id_ext),
             capacitacion_id: ids[0],
             fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
-            fecha_asignacion: datos.fecha_asignacion || undefined,
+            fecha_asignacion: datos.fecha_asignacion,
           })
         : await apiPost<ResultadoVarias>("/api/asignaciones", {
             persona_id_ext: Number(datos.persona_id_ext),
             capacitacion_ids: ids,
             fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
-            fecha_asignacion: datos.fecha_asignacion || undefined,
+            fecha_asignacion: datos.fecha_asignacion,
           });
       if (respuesta.cancelada) {
         return;
@@ -388,9 +418,13 @@ function Contenido() {
   async function guardarMasivo(evento: FormEvent, datos: DatosAsignacionMasiva) {
     evento.preventDefault();
     const n = datos.persona_ids_ext.length;
+    const capLabel = capacitaciones.find((c) => c.capacitacion_id === Number(datos.capacitacion_id));
+    const etiquetaCap = capLabel
+      ? `${capLabel.codigo} — ${capLabel.nombre}`
+      : `Capacitación ${datos.capacitacion_id}`;
     if (
       !confirm(
-        `¿Desea asignar esta capacitación a los ${n} trabajador${n === 1 ? "" : "es"} seleccionado${n === 1 ? "" : "s"}?`,
+        `¿Confirmar asignación masiva?\n\nCapacitación: ${etiquetaCap}\nPeríodo: ${datos.fecha_asignacion} → ${datos.fecha_limite_cumplimiento}\nPersonas: ${n}`,
       )
     ) {
       return;
@@ -399,7 +433,8 @@ function Contenido() {
     const respuesta = await apiPost<ResultadoMasivo>("/api/asignaciones/masivo", {
       capacitacion_id: Number(datos.capacitacion_id),
       persona_ids_ext: datos.persona_ids_ext.map(Number),
-      fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento || undefined,
+      fecha_asignacion: datos.fecha_asignacion,
+      fecha_limite_cumplimiento: datos.fecha_limite_cumplimiento,
     });
 
     if (respuesta.cancelada) {
@@ -419,7 +454,7 @@ function Contenido() {
   async function generarAutomaticas() {
     if (
       !confirm(
-        "¿Generar las asignaciones automáticas pendientes según la matriz para los trabajadores activos?",
+        "¿Generar asignaciones automáticas pendientes (matriz / inducción) para trabajadores activos?\n\nNo crea renovaciones por vigencia vencida; esas se asignan manualmente desde Alertas.",
       )
     ) {
       return;
@@ -490,7 +525,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Asignaciones"
-        descripcion="Defina qué capacitaciones debe cumplir cada trabajador según la matriz de aplicabilidad."
+        descripcion="Programe a cada trabajador una capacitación con fecha desde y fecha hasta. La vigencia del curso se gestiona en Capacitaciones; la ejecución, en Cronograma."
         acciones={
           puede("asignaciones.crear") ? (
             <span className="flex flex-wrap gap-2">
@@ -632,7 +667,7 @@ function Contenido() {
                   ))}
                 </select>
               </Field>
-              <Field etiqueta="Fecha límite desde">
+              <Field etiqueta="Fecha desde (filtro)">
                 <input
                   type="date"
                   className={inputClass}
@@ -640,7 +675,7 @@ function Contenido() {
                   onChange={(e) => setFiltro("fecha_limite_desde", e.target.value)}
                 />
               </Field>
-              <Field etiqueta="Fecha límite hasta">
+              <Field etiqueta="Fecha hasta (filtro)">
                 <input
                   type="date"
                   className={inputClass}
@@ -661,7 +696,7 @@ function Contenido() {
               { clave: "persona", etiqueta: "Trabajador" },
               { clave: "cap", etiqueta: "Capacitación" },
               { clave: "contexto", etiqueta: "Cargo / proyecto" },
-              { clave: "limite", etiqueta: "Fecha límite" },
+              { clave: "periodo", etiqueta: "Desde → Hasta" },
               { clave: "estado", etiqueta: "Estado" },
               { clave: "acciones", etiqueta: "", clase: "w-px whitespace-nowrap" },
             ]}
@@ -681,7 +716,9 @@ function Contenido() {
                 <span className="text-xs text-slate-500">{item.capacitacion_codigo}</span>
               </span>,
               contextoPersona(item),
-              formatoFecha(item.fecha_limite_cumplimiento),
+              <span key="per" className="whitespace-nowrap text-sm">
+                {formatoFecha(item.fecha_asignacion)} → {formatoFecha(item.fecha_limite_cumplimiento)}
+              </span>,
               <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
                 {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
               </Badge>,
@@ -696,6 +733,22 @@ function Contenido() {
                 >
                   <Eye className="h-4 w-4" aria-hidden />
                 </Button>
+                {puede("asignaciones.editar") && !item.tiene_cumplimiento ? (
+                  <Button
+                    type="button"
+                    variante="ghost"
+                    className="px-2"
+                    title="Editar período"
+                    aria-label="Editar período"
+                    onClick={() => {
+                      setEditando(item);
+                      setAbierto(true);
+                      setError(null);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </Button>
+                ) : null}
                 {puede("asignaciones.eliminar") && !item.tiene_cumplimiento ? (
                   <Button
                     type="button"
@@ -718,15 +771,27 @@ function Contenido() {
 
       <Modal
         abierto={abierto}
-        titulo={editando ? "Actualizar fecha límite" : "Asignar capacitación"}
+        titulo={editando ? "Editar período de asignación" : "Asignar capacitación"}
         onCerrar={() => {
           setAbierto(false);
           setEditando(null);
         }}
       >
         <FormularioAsignacion
-          key={editando ? String(editando.asignacion_id) : "nueva"}
+          key={
+            editando
+              ? String(editando.asignacion_id)
+              : `nueva-${valores.persona_id}-${valores.capacitacion_id}-${abierto ? "1" : "0"}`
+          }
           inicial={editando}
+          precarga={
+            editando
+              ? null
+              : {
+                  persona_id_ext: valores.persona_id || undefined,
+                  capacitacion_id: valores.capacitacion_id || undefined,
+                }
+          }
           capacitaciones={capacitaciones}
           soloFecha={Boolean(editando)}
           onSubmit={guardar}
@@ -758,7 +823,10 @@ function Contenido() {
               <ul className="list-disc space-y-1 pl-5 text-slate-700">
                 {(resultadoMasivo.omitidas_detalle ?? []).map((fila, i) => (
                   <li key={`${fila.persona_id_ext ?? "x"}-${i}`}>
-                    Trabajador {fila.persona_id_ext ?? "—"}: {etiquetaOmitida(fila)}
+                    {fila.persona_nombre
+                      ? `${fila.persona_nombre}${fila.numero_documento ? ` · ${fila.numero_documento}` : ""}`
+                      : `Trabajador ${fila.persona_id_ext ?? "—"}`}
+                    : {etiquetaOmitida(fila)}
                   </li>
                 ))}
               </ul>
@@ -824,11 +892,11 @@ function Contenido() {
               </dd>
             </div>
             <div>
-              <dt className="text-xs uppercase text-slate-500">Fecha de asignación</dt>
+              <dt className="text-xs uppercase text-slate-500">Fecha desde</dt>
               <dd>{formatoFecha(detalle.fecha_asignacion)}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase text-slate-500">Fecha límite</dt>
+              <dt className="text-xs uppercase text-slate-500">Fecha hasta</dt>
               <dd>{formatoFecha(detalle.fecha_limite_cumplimiento)}</dd>
             </div>
             <div>

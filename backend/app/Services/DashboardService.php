@@ -74,6 +74,7 @@ class DashboardService
             'eficacia' => $eficacia,
             'soportes' => $this->repo->soportes($periodo, $alcance),
             'horas' => $horas,
+            'ejecutadas_fuera_de_tiempo' => $this->repo->ejecutadasFueraDeTiempo($periodo, $alcance),
             // Compatibilidad con clientes que aún leen las claves anteriores.
             'cumplimiento_general' => $cobertura['general'],
             'cumplimiento_induccion' => $cobertura['induccion'],

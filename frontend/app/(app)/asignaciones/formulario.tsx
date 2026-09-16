@@ -22,19 +22,13 @@ export type DatosAsignacion = {
 };
 
 export function vacioAsignacion(): DatosAsignacion {
-  const hoy = new Date();
-  const iso = [
-    hoy.getFullYear(),
-    String(hoy.getMonth() + 1).padStart(2, "0"),
-    String(hoy.getDate()).padStart(2, "0"),
-  ].join("-");
   return {
     persona_id_ext: "",
     persona_etiqueta: "",
     capacitacion_id: "",
     capacitacion_ids: [],
     fecha_limite_cumplimiento: "",
-    fecha_asignacion: iso,
+    fecha_asignacion: "",
   };
 }
 
@@ -65,20 +59,33 @@ function etiquetaCap(item: CapacitacionAplicable): string {
 
 export function FormularioAsignacion({
   inicial,
+  precarga,
   capacitaciones,
   soloFecha,
   onSubmit,
   onCancelar,
 }: {
   inicial?: Asignacion | null;
+  precarga?: { persona_id_ext?: string; capacitacion_id?: string } | null;
   capacitaciones: Capacitacion[];
   soloFecha?: boolean;
   onSubmit: (evento: FormEvent, datos: DatosAsignacion) => void;
   onCancelar: () => void;
 }) {
-  const [datos, setDatos] = useState<DatosAsignacion>(
-    inicial ? desdeAsignacion(inicial) : vacioAsignacion(),
-  );
+  const [datos, setDatos] = useState<DatosAsignacion>(() => {
+    if (inicial) {
+      return desdeAsignacion(inicial);
+    }
+    const base = vacioAsignacion();
+    if (precarga?.persona_id_ext) {
+      base.persona_id_ext = String(precarga.persona_id_ext);
+    }
+    if (precarga?.capacitacion_id) {
+      base.capacitacion_id = String(precarga.capacitacion_id);
+      base.capacitacion_ids = [String(precarga.capacitacion_id)];
+    }
+    return base;
+  });
   const [buscarPersona, setBuscarPersona] = useState("");
   const [personas, setPersonas] = useState<PersonaCorporativa[]>([]);
   const [ficha, setFicha] = useState<PersonaCorporativa | null>(null);
@@ -156,11 +163,22 @@ export function FormularioAsignacion({
   return (
     <form className="space-y-4" onSubmit={(evento) => onSubmit(evento, datos)}>
       {soloFecha ? (
-        <p className="text-sm text-slate-600">
-          {datos.persona_etiqueta} ·{" "}
-          {capacitaciones.find((c) => String(c.capacitacion_id) === datos.capacitacion_id)?.nombre
-            ?? inicial?.capacitacion_nombre}
-        </p>
+        <>
+          <p className="text-sm text-slate-600">
+            {datos.persona_etiqueta} ·{" "}
+            {capacitaciones.find((c) => String(c.capacitacion_id) === datos.capacitacion_id)?.nombre
+              ?? inicial?.capacitacion_nombre}
+          </p>
+          <Field etiqueta="Fecha desde">
+            <input
+              className={inputClass}
+              type="date"
+              required
+              value={datos.fecha_asignacion}
+              onChange={(e) => set("fecha_asignacion", e.target.value)}
+            />
+          </Field>
+        </>
       ) : (
         <>
           <Field etiqueta="Trabajador">
@@ -248,7 +266,7 @@ export function FormularioAsignacion({
             )}
           </Field>
 
-          <Field etiqueta="Fecha de asignación">
+          <Field etiqueta="Fecha desde">
             <input
               className={inputClass}
               type="date"
@@ -256,11 +274,14 @@ export function FormularioAsignacion({
               value={datos.fecha_asignacion}
               onChange={(e) => set("fecha_asignacion", e.target.value)}
             />
+            <span className="mt-1 block text-xs text-slate-500">
+              Inicio del período en que el trabajador debe realizar la capacitación.
+            </span>
           </Field>
         </>
       )}
 
-      <Field etiqueta="Fecha límite de cumplimiento">
+      <Field etiqueta="Fecha hasta">
         <input
           className={inputClass}
           type="date"
@@ -269,8 +290,7 @@ export function FormularioAsignacion({
           onChange={(e) => set("fecha_limite_cumplimiento", e.target.value)}
         />
         <span className="mt-1 block text-xs text-slate-500">
-          Plazo de la persona para realizar el curso. La fecha de la capacitación se define en el
-          Plan anual.
+          Último día del plazo. No es la vigencia del curso (esa sale de Capacitaciones / ejecución).
         </span>
       </Field>
 
@@ -278,7 +298,7 @@ export function FormularioAsignacion({
         <Button type="button" variante="secondary" onClick={onCancelar}>
           Cancelar
         </Button>
-        <Button type="submit">{soloFecha ? "Guardar fecha" : "Asignar capacitación"}</Button>
+        <Button type="submit">{soloFecha ? "Guardar período" : "Asignar capacitación"}</Button>
       </div>
     </form>
   );

@@ -98,6 +98,7 @@ export type ResumenDashboard = {
     induccion: KpiHoras;
     critica: KpiHoras;
   };
+  ejecutadas_fuera_de_tiempo: number;
   cumplimiento_general: KpiCumplimiento;
   cumplimiento_induccion: KpiCumplimiento;
   cumplimiento_tareas_criticas: KpiCumplimiento;
@@ -447,6 +448,7 @@ export type ConsultaCumplimiento = {
   sesion_id: number | null;
   fecha_realizacion: string | null;
   fecha_vencimiento: string | null;
+  ejecutada_fuera_de_tiempo?: boolean;
   resultado: string | null;
   horas_efectivas: number | null;
   requiere_evaluacion: boolean;
@@ -499,11 +501,17 @@ export type DetalleConsultaCumplimiento = {
     fecha_limite_cumplimiento: string | null;
     fuente: string;
   };
-  programacion: { fecha_programada: string | null; fuente: string };
+  programacion: {
+    fecha_programada: string | null;
+    fecha_desde?: string | null;
+    fecha_hasta?: string | null;
+    fuente: string;
+  };
   ejecucion: {
     sesion_id: number | null;
     fecha_sesion: string | null;
     fecha_realizacion: string | null;
+    fuera_de_tiempo?: boolean;
     fuente: string;
   };
   asistencia: { estado: string | null; valida: boolean; fuente: string };
@@ -528,6 +536,7 @@ export type DetalleConsultaCumplimiento = {
     fuente: string;
   };
   estado_actual: string;
+  ejecutada_fuera_de_tiempo?: boolean;
 };
 
 export type OpcionesConsultaCumplimientos = {

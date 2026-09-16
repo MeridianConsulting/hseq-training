@@ -167,6 +167,17 @@ function Contenido() {
                 kpi={cobertura.tareas_criticas}
               />
             </div>
+            <Card className="mt-4 max-w-md py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Ejecutadas fuera de tiempo
+              </p>
+              <p className="mt-1 text-3xl font-semibold text-hseq-900">
+                {resumen.ejecutadas_fuera_de_tiempo ?? 0}
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                Cumplimientos aprobados cuya fecha real supera la fecha hasta de la asignación.
+              </p>
+            </Card>
           </section>
 
           <section className="mb-8">

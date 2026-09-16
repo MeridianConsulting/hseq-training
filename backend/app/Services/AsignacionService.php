@@ -37,6 +37,7 @@ class AsignacionService
     {
         if ($esActualizacion) {
             return [
+                'fecha_asignacion' => 'required|date',
                 'fecha_limite_cumplimiento' => 'required|date',
             ];
         }
@@ -45,8 +46,8 @@ class AsignacionService
             'persona_id_ext' => 'required|integer|min:1',
             'capacitacion_id' => 'nullable|integer|min:1',
             'capacitacion_ids' => 'nullable|array',
+            'fecha_asignacion' => 'required|date',
             'fecha_limite_cumplimiento' => 'required|date',
-            'fecha_asignacion' => 'nullable|date',
         ];
     }
 
@@ -55,7 +56,8 @@ class AsignacionService
         return [
             'persona_ids_ext' => 'required|array',
             'capacitacion_id' => 'required|integer|min:1',
-            'fecha_limite_cumplimiento' => 'nullable|date',
+            'fecha_asignacion' => 'required|date',
+            'fecha_limite_cumplimiento' => 'required|date',
         ];
     }
 
@@ -191,12 +193,9 @@ class AsignacionService
                 throw new HttpException(self::MENSAJE_DUPLICADO, 409);
             }
 
-            $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null) ?? date('Y-m-d');
+            $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null);
             $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
-
-            if ($fechaLimite === null) {
-                throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
-            }
+            $this->exigirPeriodoAsignacion($fechaAsignacion, $fechaLimite);
 
             return $this->persistirManual(
                 $persona,
@@ -227,11 +226,9 @@ class AsignacionService
         $persona = $this->personal->ver($personaId);
         $this->exigirPersonaActiva($persona);
 
-        $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null) ?? date('Y-m-d');
+        $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null);
         $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
-        if ($fechaLimite === null) {
-            throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
-        }
+        $this->exigirPeriodoAsignacion($fechaAsignacion, $fechaLimite);
 
         $items = [];
         $omitidasDetalle = [];
@@ -372,13 +369,9 @@ class AsignacionService
             throw new HttpException('Solo se puede asignar una capacitación activa.', 422);
         }
 
+        $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null);
         $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
-        if ($fechaLimite === null) {
-            $fechaLimite = (new MotorAsignacionService())->fechaLimiteDesdePeriodicidad(
-                isset($cap['periodicidad_cantidad']) ? (int)$cap['periodicidad_cantidad'] : 0,
-                isset($cap['periodicidad_unidad']) ? (string)$cap['periodicidad_unidad'] : ''
-            );
-        }
+        $this->exigirPeriodoAsignacion($fechaAsignacion, $fechaLimite);
 
         $personas = [];
         $errores = 0;
@@ -404,7 +397,6 @@ class AsignacionService
             throw new HttpException('Ninguno de los trabajadores seleccionados existe.', 422);
         }
 
-        $hoy = date('Y-m-d');
         $creadasIds = [];
         $omitidas = 0;
 
@@ -412,7 +404,7 @@ class AsignacionService
             $personas,
             $capacitacionId,
             $fechaLimite,
-            $hoy,
+            $fechaAsignacion,
             $usuarioId,
             $actor,
             $ids,
@@ -424,31 +416,35 @@ class AsignacionService
         ): int {
             foreach ($personas as $persona) {
                 $personaId = (int)$persona['persona_id'];
+                $etiquetaPersona = [
+                    'persona_nombre' => $persona['nombre_completo'] ?? null,
+                    'numero_documento' => $persona['numero_documento'] ?? null,
+                ];
                 if (($persona['estado'] ?? '') !== 'Activo') {
                     $omitidas++;
-                    $omitidasDetalle[] = [
+                    $omitidasDetalle[] = array_merge([
                         'persona_id_ext' => $personaId,
                         'motivo' => 'inactivo',
                         'mensaje' => 'No es posible asignar a un trabajador inactivo.',
-                    ];
+                    ], $etiquetaPersona);
                     continue;
                 }
                 if (!$this->esAplicable($persona, $capacitacionId)) {
                     $omitidas++;
-                    $omitidasDetalle[] = [
+                    $omitidasDetalle[] = array_merge([
                         'persona_id_ext' => $personaId,
                         'motivo' => 'no_aplicable',
                         'mensaje' => self::MENSAJE_NO_APLICABLE,
-                    ];
+                    ], $etiquetaPersona);
                     continue;
                 }
                 if ($this->repo->pendienteDuplicada($personaId, $capacitacionId)) {
                     $omitidas++;
-                    $omitidasDetalle[] = [
+                    $omitidasDetalle[] = array_merge([
                         'persona_id_ext' => $personaId,
                         'motivo' => 'duplicado',
                         'mensaje' => self::MENSAJE_DUPLICADO,
-                    ];
+                    ], $etiquetaPersona);
                     continue;
                 }
 
@@ -457,7 +453,7 @@ class AsignacionService
                     'contrato_id_ext' => $persona['contrato_id'],
                     'capacitacion_id' => $capacitacionId,
                     'matriz_aplicabilidad_id' => null,
-                    'fecha_asignacion' => $hoy,
+                    'fecha_asignacion' => $fechaAsignacion,
                     'fecha_limite_cumplimiento' => $fechaLimite,
                     'origen' => 'MANUAL',
                     'cargo_id_ext' => $persona['cargo_id'],
@@ -582,19 +578,34 @@ class AsignacionService
     public function actualizar(int $id, array $datos, ?array $actor = null): array
     {
         $antes = $this->ver($id);
-        $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
-
-        if ($fechaLimite === null) {
-            throw new HttpException('La fecha límite de cumplimiento es obligatoria', 422);
+        if (!empty($antes['tiene_cumplimiento'])) {
+            throw new HttpException(
+                'No es posible modificar el período porque la asignación ya tiene ejecución registrada.',
+                409
+            );
+        }
+        if ($this->repo->tieneParticipacionSesion($id)) {
+            throw new HttpException(
+                'No es posible modificar el período porque la asignación está vinculada a una sesión.',
+                409
+            );
         }
 
-        return $this->repo->transaccion(function () use ($id, $fechaLimite, $antes, $actor): array {
+        $fechaAsignacion = $this->fechaONulo($datos['fecha_asignacion'] ?? null);
+        $fechaLimite = $this->fechaONulo($datos['fecha_limite_cumplimiento'] ?? null);
+        $this->exigirPeriodoAsignacion($fechaAsignacion, $fechaLimite);
+
+        return $this->repo->transaccion(function () use ($id, $fechaAsignacion, $fechaLimite, $antes, $actor): array {
             $this->repo->actualizar($id, [
+                'fecha_asignacion' => $fechaAsignacion,
                 'fecha_limite_cumplimiento' => $fechaLimite,
             ]);
             $despues = $this->ver($id);
             if ($actor !== null) {
-                $campos = ['fecha_limite_cumplimiento' => 'Fecha límite'];
+                $campos = [
+                    'fecha_asignacion' => 'Fecha desde',
+                    'fecha_limite_cumplimiento' => 'Fecha hasta',
+                ];
                 $cambios = $this->auditoria->diff($antes, $despues, $campos);
                 if ($cambios !== []) {
                     $this->auditoria->deActor(
@@ -603,7 +614,10 @@ class AsignacionService
                         'asignaciones_capacitacion',
                         $id,
                         $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
-                        ['fecha_limite_cumplimiento' => $antes['fecha_limite_cumplimiento'] ?? null]
+                        [
+                            'fecha_asignacion' => $antes['fecha_asignacion'] ?? null,
+                            'fecha_limite_cumplimiento' => $antes['fecha_limite_cumplimiento'] ?? null,
+                        ]
                     );
                 }
             }
@@ -673,8 +687,18 @@ class AsignacionService
             'capacitacion_id' => (int)$fila['capacitacion_id'],
             'capacitacion_codigo' => (string)$fila['capacitacion_codigo'],
             'capacitacion_nombre' => (string)$fila['capacitacion_nombre'],
-            'fecha_asignacion' => $fila['fecha_asignacion'],
-            'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'],
+            'fecha_asignacion' => $fila['fecha_asignacion'] !== null
+                ? substr((string)$fila['fecha_asignacion'], 0, 10)
+                : null,
+            'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'] !== null
+                ? substr((string)$fila['fecha_limite_cumplimiento'], 0, 10)
+                : null,
+            'fecha_desde' => $fila['fecha_asignacion'] !== null
+                ? substr((string)$fila['fecha_asignacion'], 0, 10)
+                : null,
+            'fecha_hasta' => $fila['fecha_limite_cumplimiento'] !== null
+                ? substr((string)$fila['fecha_limite_cumplimiento'], 0, 10)
+                : null,
             'origen' => (string)$fila['origen'],
             'periodicidad_nombre' => isset($fila['periodicidad_nombre']) && $fila['periodicidad_nombre'] !== ''
                 ? humanizar_nombre_unidad((string)$fila['periodicidad_nombre'])
@@ -789,6 +813,19 @@ class AsignacionService
         }
 
         return array_values($ids);
+    }
+
+    private function exigirPeriodoAsignacion(?string $fechaDesde, ?string $fechaHasta): void
+    {
+        if ($fechaDesde === null || $fechaDesde === '') {
+            throw new HttpException('La fecha desde es obligatoria.', 422);
+        }
+        if ($fechaHasta === null || $fechaHasta === '') {
+            throw new HttpException('La fecha hasta es obligatoria.', 422);
+        }
+        if ($fechaHasta < $fechaDesde) {
+            throw new HttpException('La fecha hasta no puede ser anterior a la fecha desde.', 422);
+        }
     }
 
     private function fechaONulo(mixed $valor): ?string

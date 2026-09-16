@@ -527,7 +527,12 @@ function Contenido() {
                 <span>{item.capacitacion_nombre}</span>
                 <span className="text-xs text-slate-500">{item.capacitacion_codigo}</span>
               </span>,
-              formatoFecha(item.fecha_realizacion),
+              <span key="r" className="flex flex-col">
+                <span>{formatoFecha(item.fecha_realizacion)}</span>
+                {item.ejecutada_fuera_de_tiempo ? (
+                  <span className="text-xs font-medium text-amber-700">Fuera de tiempo</span>
+                ) : null}
+              </span>,
               formatoFecha(item.fecha_vencimiento),
               <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
                 {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
@@ -588,11 +593,19 @@ function Contenido() {
               />
               <Dato
                 etiqueta="Plazo / programación"
-                valor={`${detalle.programacion.fecha_programada ?? "—"} · ${detalle.programacion.fuente}`}
+                valor={`${formatoFecha(detalle.programacion.fecha_desde)} → ${formatoFecha(detalle.programacion.fecha_hasta ?? detalle.programacion.fecha_programada)} · ${detalle.programacion.fuente}`}
               />
               <Dato
                 etiqueta="Fecha ejecutada"
                 valor={`${formatoFecha(detalle.ejecucion.fecha_sesion ?? detalle.ejecucion.fecha_realizacion)} · ${detalle.ejecucion.fuente}`}
+              />
+              <Dato
+                etiqueta="Ejecutada fuera de tiempo"
+                valor={
+                  detalle.ejecutada_fuera_de_tiempo || detalle.ejecucion.fuera_de_tiempo
+                    ? "Sí (realización posterior a fecha hasta)"
+                    : "No"
+                }
               />
               <Dato
                 etiqueta="Asistencia"

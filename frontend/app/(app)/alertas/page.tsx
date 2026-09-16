@@ -79,8 +79,16 @@ function etiquetaColumnaFecha(tipo?: string | null): string {
 function rutaHistorial(item: AlertaProximaVencer): string {
   return withQuery("/asignaciones", {
     persona_id: item.persona_id_ext ?? undefined,
-    nombre: item.trabajador,
-    documento: item.documento,
+    buscar: item.documento || item.trabajador || undefined,
+  });
+}
+
+function rutaAsignar(item: AlertaProximaVencer): string {
+  return withQuery("/asignaciones", {
+    persona_id: item.persona_id_ext ?? undefined,
+    capacitacion_id: item.capacitacion_id ?? undefined,
+    accion: "crear",
+    buscar: item.documento || item.trabajador || undefined,
   });
 }
 
@@ -489,13 +497,22 @@ function Contenido() {
                   Ver detalle
                 </button>
                 {item.persona_id_ext ? (
-                  <Link
-                    href={rutaHistorial(item)}
-                    prefetch={false}
-                    className="font-medium text-slate-600 underline-offset-2 hover:underline"
-                  >
-                    Ver trabajador
-                  </Link>
+                  <>
+                    <Link
+                      href={rutaAsignar(item)}
+                      prefetch={false}
+                      className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                    >
+                      Asignar
+                    </Link>
+                    <Link
+                      href={rutaHistorial(item)}
+                      prefetch={false}
+                      className="font-medium text-slate-600 underline-offset-2 hover:underline"
+                    >
+                      Ver historial
+                    </Link>
+                  </>
                 ) : null}
               </div>,
             ];
@@ -606,13 +623,22 @@ function Contenido() {
             </dl>
 
             {detalle.persona_id_ext ? (
-              <Link
-                href={rutaHistorial(detalle)}
-                prefetch={false}
-                className="inline-flex font-medium text-hseq-800 underline-offset-2 hover:underline"
-              >
-                Ir al historial del trabajador
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href={rutaAsignar(detalle)}
+                  prefetch={false}
+                  className="inline-flex font-medium text-hseq-800 underline-offset-2 hover:underline"
+                >
+                  Asignar (definir desde/hasta)
+                </Link>
+                <Link
+                  href={rutaHistorial(detalle)}
+                  prefetch={false}
+                  className="inline-flex font-medium text-slate-600 underline-offset-2 hover:underline"
+                >
+                  Ir al historial del trabajador
+                </Link>
+              </div>
             ) : null}
           </div>
         ) : null}
