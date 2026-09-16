@@ -25,7 +25,7 @@ import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { CalendarPlus, Eye, Pencil, RefreshCw, Trash2, Users } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import { humanizarNombreUnidad } from "@/lib/catalogos";
+import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
   Asignacion,
   Capacitacion,
@@ -154,6 +154,7 @@ function Contenido() {
   const [abierto, setAbierto] = useState(false);
   const [masivoAbierto, setMasivoAbierto] = useState(false);
   const [editando, setEditando] = useState<Asignacion | null>(null);
+  const muestraProyecto = procesoRequiereProyecto(valores.proceso_id, procesos);
   const [masFiltros, setMasFiltros] = useState(() =>
     Boolean(
       valores.proceso_id ||
@@ -177,7 +178,7 @@ function Contenido() {
           estado: valores.estado || undefined,
           origen: valores.origen || undefined,
           proceso_id: valores.proceso_id || undefined,
-          proyecto: valores.proyecto || undefined,
+          proyecto: muestraProyecto ? valores.proyecto || undefined : undefined,
           fecha_limite_desde: valores.fecha_limite_desde || undefined,
           fecha_limite_hasta: valores.fecha_limite_hasta || undefined,
           cargo_id: valores.cargo_id || undefined,
@@ -220,8 +221,15 @@ function Contenido() {
       valores.fecha_limite_hasta,
       valores.cargo_id,
       valores.persona_id,
+      muestraProyecto,
     ],
   );
+
+  useEffect(() => {
+    if (!muestraProyecto && valores.proyecto) {
+      setFiltro("proyecto", "");
+    }
+  }, [muestraProyecto, valores.proyecto, setFiltro]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -303,7 +311,7 @@ function Contenido() {
         valor: proc?.nombre ?? valores.proceso_id,
       });
     }
-    if (valores.proyecto) {
+    if (muestraProyecto && valores.proyecto) {
       chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
     }
     if (valores.cargo_id) {
@@ -329,12 +337,12 @@ function Contenido() {
       });
     }
     return chips;
-  }, [valores, capacitaciones, procesos, cargos]);
+  }, [valores, capacitaciones, procesos, cargos, muestraProyecto]);
 
   const extrasActivos = [
     valores.proceso_id,
     valores.cargo_id,
-    valores.proyecto,
+    muestraProyecto ? valores.proyecto : "",
     valores.fecha_limite_desde,
     valores.fecha_limite_hasta,
   ].filter(Boolean).length;
@@ -629,7 +637,13 @@ function Contenido() {
                 <select
                   className={inputClass}
                   value={valores.proceso_id}
-                  onChange={(e) => setFiltro("proceso_id", e.target.value)}
+                  onChange={(e) => {
+                    const valor = e.target.value;
+                    setFiltro("proceso_id", valor);
+                    if (!procesoRequiereProyecto(valor, procesos)) {
+                      setFiltro("proyecto", "");
+                    }
+                  }}
                 >
                   <option value="">Todos</option>
                   {procesos.map((p) => (
@@ -653,20 +667,22 @@ function Contenido() {
                   ))}
                 </select>
               </Field>
-              <Field etiqueta="Proyecto">
-                <select
-                  className={inputClass}
-                  value={valores.proyecto}
-                  onChange={(e) => setFiltro("proyecto", e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {proyectos.map((nombre) => (
-                    <option key={nombre} value={nombre}>
-                      {nombre}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {muestraProyecto ? (
+                <Field etiqueta="Proyecto">
+                  <select
+                    className={inputClass}
+                    value={valores.proyecto}
+                    onChange={(e) => setFiltro("proyecto", e.target.value)}
+                  >
+                    <option value="">Todos los proyectos</option>
+                    {proyectos.map((nombre) => (
+                      <option key={nombre} value={nombre}>
+                        {nombre}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
               <Field etiqueta="Fecha desde (filtro)">
                 <input
                   type="date"
