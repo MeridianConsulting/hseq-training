@@ -39,6 +39,7 @@ class AlertaRepository
                     {$procesoSql} AS proceso_id,
                     {$cargoSql} AS cargo_id_ext,
                     v.proyecto,
+                    a.fecha_asignacion,
                     v.fecha_limite_cumplimiento,
                     v.fecha_realizacion,
                     v.fecha_vencimiento,
@@ -46,10 +47,12 @@ class AlertaRepository
                     v.tipo_alerta,
                     v.fecha_alerta,
                     v.cumplimiento_id,
-                    DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) AS dias_restantes,
+                    DATEDIFF(v.fecha_alerta, CURDATE()) AS dias_restantes,
                     cap.codigo AS capacitacion_codigo,
                     cap.nombre AS capacitacion_nombre,
                     cap.certificado AS capacitacion_certificado,
+                    cap.es_tarea_critica,
+                    per_cat.nombre AS periodicidad_nombre,
                     cump.nota_evaluacion,
                     cump.resultado AS cumplimiento_resultado,
                     (SELECT COUNT(*) FROM soportes_cumplimiento s WHERE s.cumplimiento_id = v.cumplimiento_id) AS soportes_count,
@@ -62,18 +65,19 @@ class AlertaRepository
              INNER JOIN {$personas} per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
              LEFT JOIN cumplimientos_capacitacion cump ON cump.cumplimiento_id = v.cumplimiento_id
              LEFT JOIN capacitaciones cap ON cap.capacitacion_id = v.capacitacion_id
+             LEFT JOIN periodicidades per_cat ON per_cat.periodicidad_id = cap.periodicidad_default_id
              LEFT JOIN procesos proc ON proc.proceso_id = {$procesoSql}
              LEFT JOIN {$cargos} car ON car.cargo_id = {$cargoSql}
              {$where}
              ORDER BY
                CASE
-                 WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) < 0 THEN 1
-                 WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) = 0 THEN 2
-                 WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) BETWEEN 1 AND 7 THEN 3
-                 WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) BETWEEN 8 AND 15 THEN 4
+                 WHEN DATEDIFF(v.fecha_alerta, CURDATE()) < 0 THEN 1
+                 WHEN DATEDIFF(v.fecha_alerta, CURDATE()) = 0 THEN 2
+                 WHEN DATEDIFF(v.fecha_alerta, CURDATE()) BETWEEN 1 AND 7 THEN 3
+                 WHEN DATEDIFF(v.fecha_alerta, CURDATE()) BETWEEN 8 AND 15 THEN 4
                  ELSE 5
                END ASC,
-               COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento) ASC,
+               v.fecha_alerta ASC,
                v.asignacion_id ASC
              LIMIT {$limite} OFFSET {$offset}",
             $params
@@ -117,11 +121,11 @@ class AlertaRepository
         $fila = $this->db->fetch(
             "SELECT
                 COALESCE(SUM(CASE
-                    WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) < 0 THEN 1
+                    WHEN DATEDIFF(v.fecha_alerta, CURDATE()) < 0 THEN 1
                     ELSE 0
                 END), 0) AS vencidas,
                 COALESCE(SUM(CASE
-                    WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) BETWEEN 0 AND 30 THEN 1
+                    WHEN DATEDIFF(v.fecha_alerta, CURDATE()) BETWEEN 0 AND 30 THEN 1
                     ELSE 0
                 END), 0) AS proximas_30,
                 COALESCE(SUM(CASE
@@ -353,13 +357,13 @@ class AlertaRepository
 
         $desde = $filtros['vencimiento_desde'] ?? null;
         if (is_string($desde) && $desde !== '') {
-            $condiciones[] = 'COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento) >= ?';
+            $condiciones[] = 'v.fecha_alerta >= ?';
             $params[] = $desde;
         }
 
         $hasta = $filtros['vencimiento_hasta'] ?? null;
         if (is_string($hasta) && $hasta !== '') {
-            $condiciones[] = 'COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento) <= ?';
+            $condiciones[] = 'v.fecha_alerta <= ?';
             $params[] = $hasta;
         }
 

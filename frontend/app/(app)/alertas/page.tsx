@@ -33,12 +33,14 @@ function formatoFecha(valor: string | null | undefined): string {
 function etiquetaDias(dias: number): string {
   if (dias < 0) {
     const abs = Math.abs(dias);
-    if (abs > 30) return "Más de 30 días";
-    return abs === 1 ? "Venció hace 1 día" : `Venció hace ${abs} días`;
+    return abs === 1 ? "1 día" : `${abs} días`;
   }
   if (dias === 0) return "Vence hoy";
-  if (dias > 30) return "Más de 30 días";
-  return dias === 1 ? "1 día" : `${dias} días`;
+  return dias === 1 ? "Falta 1 día" : `Faltan ${dias} días`;
+}
+
+function etiquetaColumnaDias(dias: number): string {
+  return dias < 0 ? "Días vencida" : "Días restantes";
 }
 
 function badgeEstadoAlerta(estado: string, tipo?: string | null): {
@@ -71,9 +73,13 @@ function etiquetaTipoAlerta(tipo?: string | null): string {
 }
 
 function etiquetaColumnaFecha(tipo?: string | null): string {
-  if (tipo === "LIMITE_CUMPLIMIENTO") return "Fecha límite";
+  if (tipo === "LIMITE_CUMPLIMIENTO") return "Fecha hasta";
   if (tipo === "VIGENCIA_CUMPLIMIENTO") return "Vencimiento";
   return "Fecha alerta";
+}
+
+function esAlertaPlazo(item: AlertaProximaVencer): boolean {
+  return item.tipo_alerta === "LIMITE_CUMPLIMIENTO";
 }
 
 function rutaHistorial(item: AlertaProximaVencer): string {
@@ -465,7 +471,7 @@ function Contenido() {
             { clave: "tipo", etiqueta: "Tipo" },
             { clave: "realizacion", etiqueta: "Última ejecución" },
             { clave: "vence", etiqueta: "Fecha alerta" },
-            { clave: "dias", etiqueta: "Días restantes" },
+            { clave: "dias", etiqueta: "Días" },
             { clave: "estado", etiqueta: "Estado" },
             { clave: "acciones", etiqueta: "" },
           ]}
@@ -478,13 +484,21 @@ function Contenido() {
               item.cargo ?? "—",
               item.proceso ?? "—",
               item.proyecto ?? "—",
-              etiquetaCapacitacion(item),
+              <span key={`c-${claveFila}`} className="flex flex-col">
+                <span>{etiquetaCapacitacion(item)}</span>
+                {item.es_tarea_critica ? (
+                  <span className="text-xs font-medium text-amber-700">Tarea crítica</span>
+                ) : null}
+              </span>,
               item.etiqueta_tipo ?? etiquetaTipoAlerta(item.tipo_alerta),
               formatoFecha(item.fecha_realizacion),
               <span key={`f-${claveFila}`} title={etiquetaColumnaFecha(item.tipo_alerta)}>
-                {formatoFecha(item.fecha_alerta ?? item.fecha_vencimiento)}
+                {formatoFecha(item.fecha_alerta ?? (esAlertaPlazo(item) ? item.fecha_limite_cumplimiento : item.fecha_vencimiento))}
               </span>,
-              etiquetaDias(item.dias_restantes),
+              <span key={`d-${claveFila}`} className="flex flex-col">
+                <span className="text-xs uppercase text-slate-500">{etiquetaColumnaDias(item.dias_restantes)}</span>
+                <span>{etiquetaDias(item.dias_restantes)}</span>
+              </span>,
               <Badge key={`e-${claveFila}`} tono={badge.tono}>
                 {badge.etiqueta}
               </Badge>,
@@ -559,17 +573,65 @@ function Contenido() {
                 <dd>{detalle.etiqueta_tipo ?? etiquetaTipoAlerta(detalle.tipo_alerta)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Última ejecución</dt>
-                <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
+                <dt className="text-xs uppercase text-slate-500">Origen</dt>
+                <dd>{detalle.origen_alerta ?? "—"}</dd>
               </div>
+              {detalle.es_tarea_critica ? (
+                <div>
+                  <dt className="text-xs uppercase text-slate-500">Priorización</dt>
+                  <dd>
+                    <Badge tono="aviso">Tarea crítica</Badge>
+                  </dd>
+                </div>
+              ) : null}
+              {esAlertaPlazo(detalle) ? (
+                <>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Fecha desde</dt>
+                    <dd>{formatoFecha(detalle.fecha_desde ?? detalle.fecha_asignacion)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Fecha hasta</dt>
+                    <dd>{formatoFecha(detalle.fecha_hasta ?? detalle.fecha_limite_cumplimiento)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Fecha real de ejecución</dt>
+                    <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Última ejecución</dt>
+                    <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Vigencia</dt>
+                    <dd>{detalle.vigencia_nombre ?? "Sin renovación periódica"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase text-slate-500">Fecha de vencimiento</dt>
+                    <dd>{formatoFecha(detalle.fecha_vencimiento)}</dd>
+                  </div>
+                </>
+              )}
               <div>
                 <dt className="text-xs uppercase text-slate-500">
                   {detalle.etiqueta_fecha ?? etiquetaColumnaFecha(detalle.tipo_alerta)}
                 </dt>
-                <dd>{formatoFecha(detalle.fecha_alerta ?? detalle.fecha_vencimiento)}</dd>
+                <dd>
+                  {formatoFecha(
+                    detalle.fecha_alerta
+                      ?? (esAlertaPlazo(detalle)
+                        ? detalle.fecha_limite_cumplimiento
+                        : detalle.fecha_vencimiento),
+                  )}
+                </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Días restantes</dt>
+                <dt className="text-xs uppercase text-slate-500">
+                  {etiquetaColumnaDias(detalle.dias_restantes)}
+                </dt>
                 <dd>{etiquetaDias(detalle.dias_restantes)}</dd>
               </div>
               <div>

@@ -83,7 +83,7 @@ class ReporteService
         }
 
         if ($tipo === 'proximas') {
-            $resultado = $this->alertas->listar($pagina, $porPagina, $limpios);
+            $resultado = $this->alertas->listar($pagina, $porPagina, $this->filtrosAlertasProximas($limpios));
             $totales = $this->repo->empaquetarTotales((int)$resultado['total'], 0, 0, 0, (int)$resultado['total'], 0.0);
 
             return [
@@ -128,7 +128,7 @@ class ReporteService
         }
 
         if ($tipo === 'proximas') {
-            $todo = $this->alertas->listarTodos($limpios);
+            $todo = $this->alertas->listarTodos($this->filtrosAlertasProximas($limpios));
             $items = $todo['items'];
             $totales = $this->repo->empaquetarTotales((int)$todo['total'], 0, 0, 0, (int)$todo['total'], 0.0);
             $total = (int)$todo['total'];
@@ -425,6 +425,28 @@ class ReporteService
     }
 
     /**
+     * Mapea filtros de reportes al contrato de AlertaService (solo próximas).
+     *
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
+     */
+    private function filtrosAlertasProximas(array $filtros): array
+    {
+        return [
+            'proceso_id' => $filtros['proceso_id'] ?? null,
+            'proyecto' => $filtros['proyecto'] ?? null,
+            'cargo_id_ext' => $filtros['cargo_id_ext'] ?? null,
+            'persona_id' => $filtros['persona_id'] ?? null,
+            'capacitacion_id' => $filtros['capacitacion_id'] ?? null,
+            'q' => $filtros['buscar'] ?? null,
+            'vencimiento_desde' => $filtros['desde'] ?? null,
+            'vencimiento_hasta' => $filtros['hasta'] ?? null,
+            'estado_alerta' => 'proximas',
+            'tipo_alerta' => 'todos',
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $filtros
      * @return array<string,string>
      */
@@ -690,8 +712,9 @@ class ReporteService
                 ['clave' => 'proceso', 'etiqueta' => 'Proceso'],
                 ['clave' => 'proyecto', 'etiqueta' => 'Proyecto'],
                 ['clave' => 'capacitacion_nombre', 'etiqueta' => 'Capacitación'],
+                ['clave' => 'etiqueta_tipo', 'etiqueta' => 'Tipo de alerta'],
                 ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha de realización', 'tipo' => 'fecha'],
-                ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
+                ['clave' => 'fecha_alerta', 'etiqueta' => 'Fecha alerta', 'tipo' => 'fecha'],
                 ['clave' => 'dias_restantes', 'etiqueta' => 'Días restantes', 'tipo' => 'numero'],
             ];
         }

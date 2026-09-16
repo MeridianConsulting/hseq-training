@@ -186,12 +186,15 @@ class AlertaService
         $esPlazo = $tipo === 'LIMITE_CUMPLIMIENTO';
         $soportes = (int)($fila['soportes_count'] ?? 0);
         $requiereSoporte = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
+        $fechaDesde = $fila['fecha_asignacion'] ?? null;
         $fechaLimite = $fila['fecha_limite_cumplimiento'] ?? null;
         $fechaVigencia = $fila['fecha_vencimiento'] ?? null;
         $fechaAlerta = $fila['fecha_alerta']
             ?? ($esPlazo ? $fechaLimite : $fechaVigencia)
             ?? $fechaLimite
             ?? $fechaVigencia;
+        $dias = (int)($fila['dias_restantes'] ?? 0);
+        $vigenciaNombre = humanizar_nombre_unidad($fila['periodicidad_nombre'] ?? null);
 
         return [
             'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
@@ -213,15 +216,22 @@ class AlertaService
             'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
             'capacitacion_codigo' => $codigo,
             'capacitacion_nombre' => $nombre,
+            'es_tarea_critica' => (int)($fila['es_tarea_critica'] ?? 0) === 1,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
+            'fecha_asignacion' => $fechaDesde,
+            'fecha_desde' => $fechaDesde,
             'fecha_limite_cumplimiento' => $fechaLimite,
-            'fecha_vencimiento' => $fechaAlerta,
+            'fecha_hasta' => $fechaLimite,
+            'fecha_vencimiento' => $fechaVigencia,
             'fecha_alerta' => $fechaAlerta,
-            'dias_restantes' => (int)($fila['dias_restantes'] ?? 0),
+            'vigencia_nombre' => $vigenciaNombre,
+            'dias_restantes' => $dias,
+            'dias_vencida' => $dias < 0 ? abs($dias) : null,
             'estado' => $estado,
             'tipo_alerta' => $tipo !== '' ? $tipo : null,
             'etiqueta_tipo' => $esPlazo ? 'Plazo de asignación' : ($tipo === 'VIGENCIA_CUMPLIMIENTO' ? 'Vigencia' : null),
-            'etiqueta_fecha' => $esPlazo ? 'Fecha límite' : 'Vencimiento (vigencia)',
+            'etiqueta_fecha' => $esPlazo ? 'Fecha hasta (plazo)' : 'Vencimiento (vigencia)',
+            'origen_alerta' => $esPlazo ? 'Asignación' : 'Historial + vigencia de capacitación',
             'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
                 ? (float)$fila['nota_evaluacion']
                 : null,

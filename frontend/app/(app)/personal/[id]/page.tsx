@@ -38,6 +38,15 @@ function etiquetaCapacitacion(item: {
   return item.capacitacion_nombre ?? item.capacitacion_codigo ?? "—";
 }
 
+function etiquetaDiasAlerta(dias: number): string {
+  if (dias < 0) {
+    const abs = Math.abs(dias);
+    return abs === 1 ? "1 día vencida" : `${abs} días vencida`;
+  }
+  if (dias === 0) return "Vence hoy";
+  return dias === 1 ? "Falta 1 día" : `Faltan ${dias} días`;
+}
+
 function etiquetaAsistencia(valor: string): string {
   if (valor === "ASISTIO") return "Asistió";
   if (valor === "TARDE") return "Tarde";
@@ -311,8 +320,10 @@ function Contenido() {
                 : item.tipo_alerta === "VIGENCIA_CUMPLIMIENTO"
                   ? "Vigencia"
                   : "—"),
-            formatoFecha(item.fecha_alerta ?? item.fecha_vencimiento),
-            String(item.dias_restantes),
+            formatoFecha(item.fecha_alerta ?? (item.tipo_alerta === "LIMITE_CUMPLIMIENTO"
+              ? item.fecha_limite_cumplimiento
+              : item.fecha_vencimiento)),
+            etiquetaDiasAlerta(item.dias_restantes),
             <Badge key="a" tono={tonoEstado(item.estado)}>
               {item.estado === "PENDIENTE_VENCIDA"
                 ? "Plazo vencido"
