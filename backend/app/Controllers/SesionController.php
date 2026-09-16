@@ -36,34 +36,50 @@ class SesionController extends Controller
     public function convocables(Request $request): void
     {
         $detalleId = (int)$request->query('plan_detalle_id', 0);
-        if ($detalleId < 1) {
-            $this->error('Debe indicar el detalle del plan anual.', 422);
+        $capacitacionId = (int)$request->query('capacitacion_id', 0);
+        $buscar = nullable_trimmed_string($request->query('buscar'));
+
+        if ($detalleId > 0) {
+            $this->success(
+                $this->service->contexto($detalleId, null, $buscar),
+                'Trabajadores convocables'
+            );
             return;
         }
 
-        $this->success(
-            $this->service->contexto(
-                $detalleId,
-                null,
-                nullable_trimmed_string($request->query('buscar'))
-            ),
-            'Trabajadores convocables'
-        );
+        if ($capacitacionId > 0) {
+            $this->success(
+                $this->service->contextoPorCapacitacion($capacitacionId, null, $buscar),
+                'Trabajadores convocables'
+            );
+            return;
+        }
+
+        $this->error('Debe indicar el detalle del plan o la capacitación.', 422);
     }
 
     public function convocablesDeSesion(Request $request, string $id): void
     {
         $sesion = $this->service->ver((int)$id);
-        if ($sesion['plan_detalle_id'] === null) {
-            $this->error('La sesión no está asociada a un detalle del plan anual.', 422);
+        $buscar = nullable_trimmed_string($request->query('buscar'));
+
+        if ($sesion['plan_detalle_id'] !== null) {
+            $this->success(
+                $this->service->contexto(
+                    (int)$sesion['plan_detalle_id'],
+                    (int)$id,
+                    $buscar
+                ),
+                'Trabajadores convocables'
+            );
             return;
         }
 
         $this->success(
-            $this->service->contexto(
-                (int)$sesion['plan_detalle_id'],
+            $this->service->contextoPorCapacitacion(
+                (int)$sesion['capacitacion_id'],
                 (int)$id,
-                nullable_trimmed_string($request->query('buscar'))
+                $buscar
             ),
             'Trabajadores convocables'
         );

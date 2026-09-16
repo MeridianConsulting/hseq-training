@@ -28,7 +28,7 @@ class SesionService
     public function reglasCrear(): array
     {
         return [
-            'plan_detalle_id' => 'required|integer|min:1',
+            'plan_detalle_id' => 'nullable|integer|min:1',
             'capacitacion_id' => 'nullable|integer|min:1',
             'fecha' => 'required|date',
             'hora' => 'required|string|max:8',
@@ -67,7 +67,7 @@ class SesionService
             'cupo_maximo.required' => 'El cupo máximo es obligatorio.',
             'cupo_maximo.integer' => 'El cupo máximo debe ser un número entero.',
             'cupo_maximo.min' => 'El cupo máximo debe ser mayor que cero.',
-            'plan_detalle_id.required' => 'Debe seleccionar una capacitación del plan anual.',
+            'plan_detalle_id.required' => 'Debe seleccionar una capacitación del plan anual o indicar la capacitación.',
         ];
     }
 
@@ -85,29 +85,86 @@ class SesionService
     {
         $detalle = $this->exigirDetalle($planDetalleId);
 
+        return $this->armarContexto(
+            (int)$detalle['capacitacion_id'],
+            (string)$detalle['capacitacion_codigo'],
+            (string)$detalle['capacitacion_nombre'],
+            $detalle['modalidad_default_id'] !== null ? (int)$detalle['modalidad_default_id'] : null,
+            $detalle['proveedor_default_id'] !== null ? (int)$detalle['proveedor_default_id'] : null,
+            (int)$detalle['plan_detalle_id'],
+            (int)$detalle['plan_anual_id'],
+            (int)$detalle['anio'],
+            (string)$detalle['plan_estado'],
+            $detalle['mes_programado'] !== null ? (int)$detalle['mes_programado'] : null,
+            $sesionId,
+            $buscar
+        );
+    }
+
+    /**
+     * Contexto de sesión sin exigir detalle del plan (fuente Asignaciones).
+     *
+     * @return array<string,mixed>
+     */
+    public function contextoPorCapacitacion(int $capacitacionId, ?int $sesionId = null, ?string $buscar = null): array
+    {
+        $cap = (new \App\Repositories\CapacitacionRepository())->buscarPorId($capacitacionId);
+        if ($cap === null) {
+            throw new HttpException('La capacitación no existe.', 404);
+        }
+
+        return $this->armarContexto(
+            $capacitacionId,
+            (string)$cap['codigo'],
+            (string)$cap['nombre'],
+            $cap['modalidad_default_id'] !== null ? (int)$cap['modalidad_default_id'] : null,
+            $cap['proveedor_default_id'] !== null ? (int)$cap['proveedor_default_id'] : null,
+            null,
+            null,
+            (int)date('Y'),
+            null,
+            null,
+            $sesionId,
+            $buscar
+        );
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function armarContexto(
+        int $capacitacionId,
+        string $codigo,
+        string $nombre,
+        ?int $modalidadDefaultId,
+        ?int $proveedorDefaultId,
+        ?int $planDetalleId,
+        ?int $planAnualId,
+        ?int $anio,
+        ?string $planEstado,
+        ?int $mesProgramado,
+        ?int $sesionId,
+        ?string $buscar
+    ): array {
         return [
-            'plan_detalle_id' => (int)$detalle['plan_detalle_id'],
-            'plan_anual_id' => (int)$detalle['plan_anual_id'],
-            'anio' => (int)$detalle['anio'],
-            'plan_estado' => (string)$detalle['plan_estado'],
-            'mes_programado' => (int)$detalle['mes_programado'],
-            'capacitacion_id' => (int)$detalle['capacitacion_id'],
-            'capacitacion_codigo' => (string)$detalle['capacitacion_codigo'],
-            'capacitacion_nombre' => (string)$detalle['capacitacion_nombre'],
-            'modalidad_default_id' => $detalle['modalidad_default_id'] !== null
-                ? (int)$detalle['modalidad_default_id']
-                : null,
-            'proveedor_default_id' => $detalle['proveedor_default_id'] !== null
-                ? (int)$detalle['proveedor_default_id']
-                : null,
+            'plan_detalle_id' => $planDetalleId,
+            'plan_anual_id' => $planAnualId,
+            'anio' => $anio,
+            'plan_estado' => $planEstado,
+            'mes_programado' => $mesProgramado,
+            'capacitacion_id' => $capacitacionId,
+            'capacitacion_codigo' => $codigo,
+            'capacitacion_nombre' => $nombre,
+            'modalidad_default_id' => $modalidadDefaultId,
+            'proveedor_default_id' => $proveedorDefaultId,
             'modalidades' => $this->repo->catalogoListar('modalidades', 'modalidad_id'),
             'ubicaciones' => $this->repo->catalogoListar('ubicaciones', 'ubicacion_id'),
             'proveedores' => $this->repo->catalogoListar('proveedores_capacitadores', 'proveedor_id'),
             'items' => array_map(
                 [$this, 'normalizarConvocable'],
                 $this->repo->convocables(
-                    (int)$detalle['capacitacion_id'],
-                    $planDetalleId,
+                    $capacitacionId,
+                    $planDetalleId ?? 0,
                     $sesionId,
                     $buscar
                 )
@@ -137,16 +194,36 @@ class SesionService
      */
     public function crear(array $datos, int $usuarioId): array
     {
-        $detalle = $this->exigirDetalle((int)$datos['plan_detalle_id']);
-        $this->exigirPlanAprobado($detalle);
-        if (strtoupper((string)($detalle['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
-            throw new HttpException('No es posible crear una sesión sobre una programación cancelada.', 409);
+        $detalleId = isset($datos['plan_detalle_id']) ? (int)$datos['plan_detalle_id'] : 0;
+        $detalle = null;
+        if ($detalleId > 0) {
+            $detalle = $this->exigirDetalle($detalleId);
+            $this->exigirPlanAprobado($detalle);
+            if (strtoupper((string)($detalle['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
+                throw new HttpException('No es posible crear una sesión sobre una programación cancelada.', 409);
+            }
+            $this->exigirCapacitacionDelDetalle($datos, $detalle);
+            $capacitacionId = (int)$detalle['capacitacion_id'];
+        } else {
+            $capacitacionId = (int)($datos['capacitacion_id'] ?? 0);
+            if ($capacitacionId < 1) {
+                throw new HttpException('Debe indicar la capacitación de la sesión.', 422);
+            }
+            $cap = (new \App\Repositories\CapacitacionRepository())->buscarPorId($capacitacionId);
+            if ($cap === null || strtoupper((string)($cap['estado'] ?? '')) !== 'ACTIVA') {
+                throw new HttpException('La capacitación seleccionada no existe o no se encuentra disponible.', 422);
+            }
+            $detalle = [
+                'plan_detalle_id' => null,
+                'anio' => (int)substr((string)($datos['fecha'] ?? date('Y')), 0, 4),
+                'fecha_programada' => null,
+                'capacitacion_id' => $capacitacionId,
+            ];
         }
-        $this->exigirCapacitacionDelDetalle($datos, $detalle);
 
         $campos = $this->prepararCampos($datos, $detalle);
-        $campos['plan_detalle_id'] = (int)$detalle['plan_detalle_id'];
-        $campos['capacitacion_id'] = (int)$detalle['capacitacion_id'];
+        $campos['plan_detalle_id'] = $detalleId > 0 ? $detalleId : null;
+        $campos['capacitacion_id'] = $capacitacionId;
         $campos['creado_por_usuario_id_ext'] = $usuarioId > 0 ? $usuarioId : null;
         $campos['estado'] = 'PROGRAMADA';
 
@@ -159,12 +236,12 @@ class SesionService
         }
 
         try {
-            $sesionId = (int)$this->repo->transaccion(function () use ($campos, $ids, $detalle, $usuarioId) {
+            $sesionId = (int)$this->repo->transaccion(function () use ($campos, $ids, $capacitacionId, $usuarioId) {
                 $nuevoId = $this->repo->crear($campos);
                 if ($ids !== []) {
                     $this->insertarConvocadosAtomico(
                         $nuevoId,
-                        (int)$detalle['capacitacion_id'],
+                        $capacitacionId,
                         (int)$campos['cupo_maximo'],
                         $ids,
                         $usuarioId > 0 ? $usuarioId : null,
@@ -192,11 +269,16 @@ class SesionService
         $this->exigirSesionOperable($actual, 'No es posible editar una capacitación finalizada.', 'No es posible editar una sesión cancelada.');
 
         if ($actual['plan_detalle_id'] === null) {
-            throw new HttpException('La sesión no está asociada a un detalle del plan anual.', 422);
+            $detalle = [
+                'plan_detalle_id' => null,
+                'anio' => (int)substr((string)($datos['fecha'] ?? date('Y-m-d')), 0, 4),
+                'fecha_programada' => null,
+                'capacitacion_id' => (int)$actual['capacitacion_id'],
+            ];
+        } else {
+            $detalle = $this->exigirDetalle((int)$actual['plan_detalle_id']);
+            $this->exigirPlanAprobado($detalle);
         }
-
-        $detalle = $this->exigirDetalle((int)$actual['plan_detalle_id']);
-        $this->exigirPlanAprobado($detalle);
 
         $campos = $this->prepararCampos($datos, $detalle);
         $nuevoCupo = (int)$campos['cupo_maximo'];
@@ -656,20 +738,26 @@ class SesionService
      */
     private function prepararCampos(array $datos, array $detalle): array
     {
-        $fechaPlan = $detalle['fecha_programada'] !== null && $detalle['fecha_programada'] !== ''
-            ? substr((string)$detalle['fecha_programada'], 0, 10)
-            : null;
-        $fechaHora = $this->combinarFechaHora(
-            $fechaPlan !== null && $fechaPlan !== '' ? $fechaPlan : ($datos['fecha'] ?? null),
-            $datos['hora'] ?? null
-        );
-        $anioFecha = (int)substr($fechaHora, 0, 4);
-        $anioPlan = (int)$detalle['anio'];
-        if ($anioFecha !== $anioPlan) {
-            throw new HttpException(
-                "La fecha de la sesión debe corresponder al año del plan ({$anioPlan}).",
-                422
-            );
+        // La fecha operativa de la sesión es la enviada; la del plan es solo respaldo legado.
+        $fechaOperativa = trim((string)($datos['fecha'] ?? ''));
+        if ($fechaOperativa === ''
+            && $detalle['fecha_programada'] !== null
+            && $detalle['fecha_programada'] !== ''
+        ) {
+            $fechaOperativa = substr((string)$detalle['fecha_programada'], 0, 10);
+        }
+        $fechaHora = $this->combinarFechaHora($fechaOperativa !== '' ? $fechaOperativa : null, $datos['hora'] ?? null);
+
+        $anioPlan = isset($detalle['anio']) ? (int)$detalle['anio'] : 0;
+        $tieneDetallePlan = isset($detalle['plan_detalle_id']) && (int)$detalle['plan_detalle_id'] > 0;
+        if ($tieneDetallePlan && $anioPlan > 0) {
+            $anioFecha = (int)substr($fechaHora, 0, 4);
+            if ($anioFecha !== $anioPlan) {
+                throw new HttpException(
+                    "La fecha de la sesión debe corresponder al año del plan ({$anioPlan}).",
+                    422
+                );
+            }
         }
 
         $modalidadId = (int)($datos['modalidad_id'] ?? 0);

@@ -223,15 +223,23 @@ class CumplimientoService
         }
 
         $fechaProgramada = null;
-        if (is_array($programacion) && isset($programacion['anio'], $programacion['mes_programado'])) {
+        $fuenteProgramacion = 'Asignaciones';
+        if (!empty($item['fecha_limite_cumplimiento'])) {
+            $fechaProgramada = substr((string)$item['fecha_limite_cumplimiento'], 0, 10);
+        } elseif (is_array($programacion)
+            && isset($programacion['anio'], $programacion['mes_programado'])
+            && $programacion['mes_programado'] !== null
+            && $programacion['mes_programado'] !== ''
+        ) {
             $mes = str_pad((string)(int)$programacion['mes_programado'], 2, '0', STR_PAD_LEFT);
             $fechaProgramada = (int)$programacion['anio'] . '-' . $mes;
+            $fuenteProgramacion = 'Plan anual (informativo)';
         }
 
         $fuentes = [
             'aplicabilidad' => 'Matriz',
             'obligacion' => 'Asignaciones',
-            'fecha_programada' => 'Plan anual / Cronograma',
+            'fecha_programada' => $fuenteProgramacion,
             'ejecucion' => 'Sesión',
             'asistencia' => 'Sesiones y asistencia',
             'evaluacion' => 'Evaluación',

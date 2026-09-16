@@ -7,7 +7,7 @@ namespace App\Repositories;
 use App\Core\Database;
 
 /**
- * Agregados del dashboard. Programado = plan anual APROBADO; ejecutado = cumplimientos APROBADO.
+ * Agregados del dashboard. Programado = asignaciones con plazo en el periodo; ejecutado = cumplimientos APROBADO.
  * No une sesion_participantes (evitar duplicar personas).
  * Los KPIs no filtran por estado actual del trabajador (histórico ≠ población actual).
  */
@@ -27,18 +27,16 @@ class DashboardRepository
     public function programado(array $periodo, string $recorte, array $alcance = []): int
     {
         $alcance = $this->normalizarAlcance($alcance);
-        [$extraJoin, $extraWhere, $extraParams] = $this->recortePlan($recorte);
-        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('d', $alcance);
+        [$extraJoin, $extraWhere, $extraParams] = $this->recorteCumplimiento($recorte);
+        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('a', $alcance);
         [$inMeses, $paramsMeses] = $this->inMeses($periodo['meses']);
 
-        $sql = "SELECT COALESCE(SUM(d.cantidad_programada), 0) AS total
-                FROM plan_anual_detalle d
-                INNER JOIN planes_anuales p ON p.plan_anual_id = d.plan_anual_id
-                INNER JOIN capacitaciones cap ON cap.capacitacion_id = d.capacitacion_id
+        $sql = "SELECT COUNT(*) AS total
+                FROM asignaciones_capacitacion a
+                INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 {$extraJoin}
-                WHERE p.anio = ?
-                  AND p.estado = 'APROBADO'
-                  AND d.mes_programado IN ({$inMeses})
+                WHERE YEAR(a.fecha_limite_cumplimiento) = ?
+                  AND MONTH(a.fecha_limite_cumplimiento) IN ({$inMeses})
                   {$filtroAlcance}
                   {$extraWhere}";
 
@@ -273,18 +271,16 @@ class DashboardRepository
      */
     private function horasProgramadas(array $periodo, string $recorte, array $alcance): float
     {
-        [$extraJoin, $extraWhere, $extraParams] = $this->recortePlan($recorte);
-        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('d', $alcance);
+        [$extraJoin, $extraWhere, $extraParams] = $this->recorteCumplimiento($recorte);
+        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('a', $alcance);
         [$inMeses, $paramsMeses] = $this->inMeses($periodo['meses']);
 
-        $sql = "SELECT COALESCE(SUM(cap.duracion_estimada_horas * d.cantidad_programada), 0) AS total
-                FROM plan_anual_detalle d
-                INNER JOIN planes_anuales p ON p.plan_anual_id = d.plan_anual_id
-                INNER JOIN capacitaciones cap ON cap.capacitacion_id = d.capacitacion_id
+        $sql = "SELECT COALESCE(SUM(cap.duracion_estimada_horas), 0) AS total
+                FROM asignaciones_capacitacion a
+                INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 {$extraJoin}
-                WHERE p.anio = ?
-                  AND p.estado = 'APROBADO'
-                  AND d.mes_programado IN ({$inMeses})
+                WHERE YEAR(a.fecha_limite_cumplimiento) = ?
+                  AND MONTH(a.fecha_limite_cumplimiento) IN ({$inMeses})
                   {$filtroAlcance}
                   {$extraWhere}";
 

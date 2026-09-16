@@ -100,7 +100,7 @@ class PlanAnualRepository
              LEFT JOIN modalidades md ON md.modalidad_id = c.modalidad_default_id
              LEFT JOIN procesos pr ON pr.proceso_id = d.proceso_id
              WHERE d.plan_anual_id = ?
-             ORDER BY d.fecha_programada ASC, c.nombre ASC',
+             ORDER BY c.nombre ASC, d.fecha_programada IS NULL ASC, d.fecha_programada ASC',
             [$planId]
         );
     }
@@ -113,6 +113,24 @@ class PlanAnualRepository
              LIMIT 1',
             [$planId, $capacitacionId, $mes]
         );
+    }
+
+    public function buscarDetallePorCapacitacion(
+        int $planId,
+        int $capacitacionId,
+        ?int $exceptoDetalleId = null
+    ): ?array {
+        $sql = 'SELECT * FROM plan_anual_detalle
+                WHERE plan_anual_id = ?
+                  AND capacitacion_id = ?';
+        $params = [$planId, $capacitacionId];
+        if ($exceptoDetalleId !== null && $exceptoDetalleId > 0) {
+            $sql .= ' AND plan_detalle_id <> ?';
+            $params[] = $exceptoDetalleId;
+        }
+        $sql .= ' ORDER BY fecha_programada IS NULL DESC, plan_detalle_id ASC LIMIT 1';
+
+        return $this->db->fetch($sql, $params);
     }
 
     public function buscarDetallePorId(int $planId, int $detalleId): ?array

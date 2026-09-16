@@ -7,8 +7,8 @@ namespace App\Repositories;
 use App\Core\Database;
 
 /**
- * Consulta del cronograma: una fila de plan_anual_detalle = una capacitación programada.
- * No une matriz ni participantes (evitar duplicados). Las sesiones se cargan aparte.
+ * Cronograma operativo: fuente = asignaciones (plazo) y, si existe, vínculo al plan aprobado.
+ * No exige fecha en plan_anual_detalle.
  */
 class CronogramaRepository
 {
@@ -35,12 +35,16 @@ class CronogramaRepository
         }
 
         $inMeses = implode(',', array_fill(0, count($meses), '?'));
-        $params = array_merge([$periodo['anio']], $meses);
+        $params = [$periodo['anio'], $periodo['anio']];
+        foreach ($meses as $mes) {
+            $params[] = $mes;
+        }
+        $params[] = $periodo['anio'];
         $extras = '';
 
         if ($procesoId !== null) {
             $extras .= ' AND (
-                d.proceso_id = ?
+                g.proceso_id = ?
                 OR EXISTS (
                     SELECT 1 FROM plan_detalle_alcances a
                     WHERE a.plan_detalle_id = d.plan_detalle_id AND a.proceso_id = ?
@@ -52,7 +56,7 @@ class CronogramaRepository
 
         if ($proyecto !== null && $proyecto !== '') {
             $extras .= ' AND (
-                d.proyecto COLLATE utf8mb4_unicode_ci = ?
+                g.proyecto COLLATE utf8mb4_unicode_ci = ?
                 OR EXISTS (
                     SELECT 1 FROM plan_detalle_alcances a
                     WHERE a.plan_detalle_id = d.plan_detalle_id
@@ -70,12 +74,58 @@ class CronogramaRepository
         }
 
         return $this->db->fetchAll(
-            $this->selectBase() . "
-             WHERE p.anio = ?
-               AND p.estado = 'APROBADO'
-               AND d.mes_programado IN ({$inMeses})
+            "SELECT d.plan_detalle_id,
+                    d.plan_anual_id,
+                    COALESCE(d.mes_programado, g.mes_programado) AS mes_programado,
+                    COALESCE(d.fecha_programada, g.fecha_programada) AS fecha_programada,
+                    g.cantidad_programada,
+                    COALESCE(d.estado_programacion, 'PROGRAMADA') AS estado_programacion,
+                    COALESCE(d.ambito, g.ambito) AS ambito,
+                    COALESCE(d.proyecto, g.proyecto) AS proyecto,
+                    ? AS anio,
+                    COALESCE(p.estado, 'APROBADO') AS plan_estado,
+                    c.capacitacion_id,
+                    c.codigo,
+                    c.nombre,
+                    c.objetivo,
+                    c.duracion_estimada_horas,
+                    c.modalidad_default_id,
+                    c.proveedor_default_id,
+                    c.evaluacion,
+                    c.certificado,
+                    c.vigencia_id,
+                    vig.nombre AS vigencia_nombre,
+                    vig.cantidad AS vigencia_cantidad,
+                    vig.unidad AS vigencia_unidad,
+                    mo.nombre AS metodologia,
+                    COALESCE(d.proceso_id, g.proceso_id, pr.proceso_id) AS proceso_id,
+                    pr.nombre AS proceso_nombre
+             FROM (
+                SELECT a.capacitacion_id,
+                       MONTH(a.fecha_limite_cumplimiento) AS mes_programado,
+                       MIN(a.fecha_limite_cumplimiento) AS fecha_programada,
+                       COUNT(*) AS cantidad_programada,
+                       MIN(a.proceso_id) AS proceso_id,
+                       MIN(a.ambito) AS ambito,
+                       MIN(a.proyecto) AS proyecto
+                FROM asignaciones_capacitacion a
+                WHERE YEAR(a.fecha_limite_cumplimiento) = ?
+                  AND MONTH(a.fecha_limite_cumplimiento) IN ({$inMeses})
+                GROUP BY a.capacitacion_id, MONTH(a.fecha_limite_cumplimiento)
+             ) g
+             INNER JOIN capacitaciones c ON c.capacitacion_id = g.capacitacion_id
+             LEFT JOIN planes_anuales p
+               ON p.anio = ?
+              AND p.estado = 'APROBADO'
+             LEFT JOIN plan_anual_detalle d
+               ON d.plan_anual_id = p.plan_anual_id
+              AND d.capacitacion_id = g.capacitacion_id
+             LEFT JOIN vigencias vig ON vig.vigencia_id = c.vigencia_id
+             LEFT JOIN modalidades mo ON mo.modalidad_id = c.modalidad_default_id
+             LEFT JOIN procesos pr ON pr.proceso_id = COALESCE(d.proceso_id, g.proceso_id)
+             WHERE 1 = 1
                {$extras}
-             ORDER BY d.fecha_programada ASC, c.codigo ASC",
+             ORDER BY COALESCE(d.fecha_programada, g.fecha_programada) ASC, c.codigo ASC",
             $params
         );
     }
@@ -130,6 +180,39 @@ class CronogramaRepository
              WHERE a.capacitacion_id = ?
                AND per.estado = 'Activo'
              ORDER BY {$orden}",
+            $params
+        );
+    }
+
+    /**
+     * Trabajadores con plazo en un mes/año concretos (fuente operativa del cronograma).
+     *
+     * @param list<int> $cargoIds
+     * @return list<array<string,mixed>>
+     */
+    public function trabajadoresPorPlazo(int $capacitacionId, int $anio, int $mes, array $cargoIds = []): array
+    {
+        $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
+        $params = [$capacitacionId, $anio, $mes];
+
+        return $this->db->fetchAll(
+            "SELECT a.asignacion_id,
+                    a.persona_id_ext,
+                    per.numero_documento,
+                    per.nombre_completo_nombres_primero AS persona_nombre,
+                    COALESCE(cg.nombre_cargo, cgp.nombre_cargo) AS nombre_cargo,
+                    e.estado_calculado
+             FROM asignaciones_capacitacion a
+             INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+             INNER JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext
+             LEFT JOIN {$cargos} cgp ON cgp.cargo_id = per.cargo_id
+             WHERE a.capacitacion_id = ?
+               AND YEAR(a.fecha_limite_cumplimiento) = ?
+               AND MONTH(a.fecha_limite_cumplimiento) = ?
+               AND per.estado = 'Activo'
+             ORDER BY per.nombre_completo_nombres_primero ASC, a.asignacion_id ASC",
             $params
         );
     }

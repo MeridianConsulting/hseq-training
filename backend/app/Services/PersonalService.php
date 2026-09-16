@@ -404,14 +404,20 @@ class PersonalService
             $this->repo->transaccion(function () use ($personaId, $persona, $actor): int {
                 $this->repo->actualizarEstado($personaId, 'Inactivo');
                 $despues = $this->ver($personaId);
-                $cambios = $this->auditoria->diff($persona, $despues, ['estado' => 'Estado laboral']);
+                $cambios = $this->auditoria->diff($persona, $despues, [
+                    'estado' => 'Estado laboral',
+                    'fecha_inactivacion' => 'Fecha de inactivación',
+                ]);
                 $this->auditoria->deActor(
                     $actor,
                     'inactivar',
                     'personal',
                     $personaId,
                     $this->auditoria->payloadNuevo($cambios, AuditoriaService::ORIGEN_USUARIO),
-                    ['estado' => $persona['estado'] ?? null]
+                    [
+                        'estado' => $persona['estado'] ?? null,
+                        'fecha_inactivacion' => $persona['fecha_inactivacion'] ?? null,
+                    ]
                 );
 
                 return $personaId;
@@ -1005,6 +1011,7 @@ class PersonalService
             'tipo_documento_abreviatura' => $fila['tipo_documento_abreviatura'] ?? null,
             'nombre_completo' => $fila['nombre_completo'],
             'estado' => $fila['estado'],
+            'fecha_inactivacion' => $fila['fecha_inactivacion'] ?? null,
             'cargo_id' => $fila['cargo_id'] !== null ? (int)$fila['cargo_id'] : null,
             'cargo' => $fila['cargo'],
             'correo_corporativo' => $fila['correo_corporativo'],

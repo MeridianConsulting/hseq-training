@@ -27,7 +27,14 @@ class AlertaService
      *   total:int,
      *   page:int,
      *   per_page:int,
-     *   resumen:array{vencidas:int,proximas_30:int}
+     *   resumen:array{
+     *     vencidas:int,
+     *     proximas_30:int,
+     *     plazo_vencidas:int,
+     *     plazo_proximas:int,
+     *     vigencia_vencidas:int,
+     *     vigencia_proximas:int
+     *   }
      * }
      */
     public function listar(int $pagina, int $porPagina, array $filtros): array
@@ -126,6 +133,10 @@ class AlertaService
         if (!in_array($estado, ['todas', 'proximas', 'vencidas'], true)) {
             $estado = 'todas';
         }
+        $tipo = strtoupper(trim((string)($filtros['tipo_alerta'] ?? 'todos')));
+        if (!in_array($tipo, ['TODOS', 'LIMITE_CUMPLIMIENTO', 'VIGENCIA_CUMPLIMIENTO'], true)) {
+            $tipo = 'TODOS';
+        }
         $q = isset($filtros['q']) ? trim((string)$filtros['q']) : '';
         $desde = isset($filtros['vencimiento_desde']) ? trim((string)$filtros['vencimiento_desde']) : '';
         $hasta = isset($filtros['vencimiento_hasta']) ? trim((string)$filtros['vencimiento_hasta']) : '';
@@ -142,6 +153,7 @@ class AlertaService
             'proyecto' => $proyectoFinal,
             'cargo_id_ext' => $cargoId > 0 ? $cargoId : null,
             'estado_alerta' => $estado,
+            'tipo_alerta' => $tipo === 'TODOS' ? 'todos' : $tipo,
             'q' => $q !== '' ? $q : null,
             'capacitacion_id' => $capId > 0 ? $capId : null,
             'vencimiento_desde' => $this->fechaONula($desde),
@@ -170,8 +182,16 @@ class AlertaService
         $codigo = $fila['capacitacion_codigo'] ?? null;
         $nombre = $fila['capacitacion_nombre'] ?? null;
         $estado = (string)($fila['estado_calculado'] ?? $fila['tipo_alerta'] ?? 'PROXIMA_A_VENCER');
+        $tipo = strtoupper(trim((string)($fila['tipo_alerta'] ?? '')));
+        $esPlazo = $tipo === 'LIMITE_CUMPLIMIENTO';
         $soportes = (int)($fila['soportes_count'] ?? 0);
         $requiereSoporte = (int)($fila['capacitacion_certificado'] ?? 0) === 1;
+        $fechaLimite = $fila['fecha_limite_cumplimiento'] ?? null;
+        $fechaVigencia = $fila['fecha_vencimiento'] ?? null;
+        $fechaAlerta = $fila['fecha_alerta']
+            ?? ($esPlazo ? $fechaLimite : $fechaVigencia)
+            ?? $fechaLimite
+            ?? $fechaVigencia;
 
         return [
             'cumplimiento_id' => isset($fila['cumplimiento_id']) && $fila['cumplimiento_id'] !== null
@@ -194,10 +214,14 @@ class AlertaService
             'capacitacion_codigo' => $codigo,
             'capacitacion_nombre' => $nombre,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
-            'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? $fila['fecha_limite_cumplimiento'] ?? null,
+            'fecha_limite_cumplimiento' => $fechaLimite,
+            'fecha_vencimiento' => $fechaAlerta,
+            'fecha_alerta' => $fechaAlerta,
             'dias_restantes' => (int)($fila['dias_restantes'] ?? 0),
             'estado' => $estado,
-            'tipo_alerta' => $fila['tipo_alerta'] ?? null,
+            'tipo_alerta' => $tipo !== '' ? $tipo : null,
+            'etiqueta_tipo' => $esPlazo ? 'Plazo de asignación' : ($tipo === 'VIGENCIA_CUMPLIMIENTO' ? 'Vigencia' : null),
+            'etiqueta_fecha' => $esPlazo ? 'Fecha límite' : 'Vencimiento (vigencia)',
             'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
                 ? (float)$fila['nota_evaluacion']
                 : null,

@@ -228,8 +228,8 @@ export type DetalleSesion = SesionCronograma & {
 };
 
 export type ItemCronograma = {
-  plan_detalle_id: number;
-  plan_anual_id?: number;
+  plan_detalle_id: number | null;
+  plan_anual_id?: number | null;
   capacitacion_id: number;
   codigo: string;
   tema: string;
@@ -315,10 +315,14 @@ export type AlertaProximaVencer = {
   capacitacion_codigo: string | null;
   capacitacion_nombre: string | null;
   fecha_realizacion: string | null;
+  fecha_limite_cumplimiento?: string | null;
   fecha_vencimiento: string | null;
+  fecha_alerta?: string | null;
   dias_restantes: number;
   estado: string;
   tipo_alerta?: string | null;
+  etiqueta_tipo?: string | null;
+  etiqueta_fecha?: string | null;
   nota_evaluacion?: number | null;
   resultado?: string | null;
   requiere_soporte?: boolean;
@@ -329,6 +333,10 @@ export type AlertaProximaVencer = {
 export type ResumenAlertas = {
   vencidas: number;
   proximas_30: number;
+  plazo_vencidas?: number;
+  plazo_proximas?: number;
+  vigencia_vencidas?: number;
+  vigencia_proximas?: number;
 };
 
 export type ListaAlertas = {
@@ -644,6 +652,7 @@ export type FichaTrabajadorReporte = {
   proyecto: string | null;
   fecha_ingreso: string | null;
   estado: string | null;
+  fecha_inactivacion?: string | null;
 };
 
 export type PeriodoHistorial = {
@@ -698,6 +707,7 @@ export type PersonaCorporativa = {
   tipo_documento_abreviatura?: string | null;
   nombre_completo: string;
   estado: string;
+  fecha_inactivacion?: string | null;
   cargo_id: number | null;
   cargo: string | null;
   correo_corporativo: string | null;
@@ -924,9 +934,9 @@ export type DetallePlanAnual = {
   vigencia_nombre: string | null;
   modalidad_nombre: string | null;
   fecha_programada: string | null;
-  mes_programado: number;
-  mes_nombre: string;
-  trimestre: number;
+  mes_programado: number | null;
+  mes_nombre: string | null;
+  trimestre: number | null;
   cantidad_programada: number;
   proceso_id: number | null;
   proceso_ids?: number[];

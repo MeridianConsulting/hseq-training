@@ -587,7 +587,7 @@ function Contenido() {
                 valor={`Asignación ${detalle.obligacion.asignacion_id} · ${detalle.obligacion.origen ?? "—"} · ${detalle.obligacion.fuente}`}
               />
               <Dato
-                etiqueta="Fecha programada"
+                etiqueta="Plazo / programación"
                 valor={`${detalle.programacion.fecha_programada ?? "—"} · ${detalle.programacion.fuente}`}
               />
               <Dato

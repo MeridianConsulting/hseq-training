@@ -145,6 +145,10 @@ function Contenido() {
   }
 
   async function abrirTrabajadores(item: ItemCronograma) {
+    if (!item.plan_detalle_id) {
+      setError("Esta programación proviene de Asignaciones. Consulte los trabajadores en el módulo de Asignaciones.");
+      return;
+    }
     setTrabajadoresDe(item);
     setTrabajadores([]);
     const respuesta = await apiGet<{ items: TrabajadorCronograma[] }>(
@@ -161,6 +165,10 @@ function Contenido() {
   }
 
   async function cancelarProgramacion(item: ItemCronograma) {
+    if (!item.plan_detalle_id) {
+      setError("No es posible cancelar desde Cronograma una fila sin vínculo al plan. Ajuste el plazo en Asignaciones.");
+      return;
+    }
     if (!window.confirm("¿Cancelar esta programación? El Plan Anual, la capacitación y la matriz no se eliminan.")) {
       return;
     }
@@ -178,7 +186,10 @@ function Contenido() {
   }
 
   async function confirmarInicio() {
-    if (!iniciarDe) return;
+    if (!iniciarDe?.plan_detalle_id) {
+      setError("Para iniciar se requiere vínculo con el plan aprobado o cree la sesión desde Asignaciones.");
+      return;
+    }
     setGuardando(true);
     const respuesta = await apiPost<ItemCronograma>(`/api/cronograma/${iniciarDe.plan_detalle_id}/iniciar`, {});
     setGuardando(false);
@@ -206,7 +217,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Tablero de Cronograma"
-        descripcion="Programación operativa del plan anual aprobado: qué se ejecutará, cuándo, a quién aplica y en qué estado está. Las capacitaciones se planifican en el Plan Anual."
+        descripcion="Programación operativa según plazos de Asignaciones (y vínculo opcional al plan aprobado). El Plan Anual define qué capacitaciones se contemplan en el año."
       />
 
       <FiltroCronograma
@@ -260,10 +271,10 @@ function Contenido() {
                 ? item.cargos_aplicables.map((c) => c.nombre_cargo).join(", ")
                 : "—",
               `${item.cantidad_programada} trabajador${item.cantidad_programada === 1 ? "" : "es"}`,
-              <Badge key={`e-${item.plan_detalle_id}`} tono={tonoEstado(item.estado_operativo)}>
+              <Badge key={`e-${item.capacitacion_id}-${item.mes}`} tono={tonoEstado(item.estado_operativo)}>
                 {etiquetaEstado(item.estado_operativo)}
               </Badge>,
-              <span key={`a-${item.plan_detalle_id}`} className="flex flex-wrap gap-1">
+              <span key={`a-${item.capacitacion_id}-${item.mes}`} className="flex flex-wrap gap-1">
                 <Button type="button" variante="ghost" onClick={() => setDetalle(item)}>
                   <Eye className="h-4 w-4" aria-hidden />
                 </Button>

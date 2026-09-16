@@ -403,10 +403,16 @@ class PersonalRepository
     public function actualizarEstado(int $personaId, string $estado): void
     {
         $tabla = Database::personalTable('personas');
+        $campos = ['estado' => $estado];
+        if ($estado === 'Inactivo') {
+            $campos['fecha_inactivacion'] = date('Y-m-d H:i:s');
+        } elseif ($estado === 'Activo') {
+            $campos['fecha_inactivacion'] = null;
+        }
 
         $this->db->update(
             $tabla,
-            ['estado' => $estado],
+            $campos,
             'persona_id = ?',
             [$personaId]
         );
@@ -505,6 +511,7 @@ class PersonalRepository
                     p.primer_nombre,
                     p.primer_apellido,
                     p.estado,
+                    p.fecha_inactivacion,
                     p.cargo_id,
                     c.nombre_cargo AS cargo,
                     p.correo_corporativo,

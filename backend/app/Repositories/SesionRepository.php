@@ -87,6 +87,29 @@ class SesionRepository
         return $this->listarPorDetalles([$planDetalleId]);
     }
 
+    /**
+     * @param list<int> $capacitacionIds
+     * @return list<array<string,mixed>>
+     */
+    public function listarPorCapacitacionesAnio(array $capacitacionIds, int $anio): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $capacitacionIds))));
+        if ($ids === [] || $anio < 2000) {
+            return [];
+        }
+
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $params = array_merge($ids, [$anio]);
+
+        return $this->db->fetchAll(
+            $this->selectSesion() . "
+             WHERE s.capacitacion_id IN ({$in})
+               AND YEAR(s.fecha_hora) = ?
+             ORDER BY s.fecha_hora ASC, s.sesion_id ASC",
+            $params
+        );
+    }
+
     public function crear(array $datos): int
     {
         return (int)$this->db->insert('sesiones_capacitacion', $datos);
@@ -187,7 +210,7 @@ class SesionRepository
     public function convocables(int $capacitacionId, int $planDetalleId, ?int $sesionId, ?string $buscar): array
     {
         $personas = Database::personalTable('personas');
-        $params = [$planDetalleId, $capacitacionId];
+        $params = [$planDetalleId > 0 ? $planDetalleId : 0, $capacitacionId];
         $filtroSesion = '';
         if ($sesionId !== null && $sesionId > 0) {
             $filtroSesion = 'AND NOT EXISTS (

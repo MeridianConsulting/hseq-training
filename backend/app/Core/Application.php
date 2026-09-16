@@ -35,6 +35,8 @@ class Application
         }
         $this->setupErrorHandling();
         VistasEsquema::asegurar();
+        PersonalEsquema::asegurar();
+        PlanEsquema::asegurar();
         $this->router = new Router();
         $this->loadRoutes();
     }

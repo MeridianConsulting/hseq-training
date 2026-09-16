@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
-import { ArrowLeft, CalendarClock, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Eye, Pencil, Plus, RotateCcw, Send, Trash2 } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
 import type {
@@ -23,11 +23,6 @@ import type {
   OpcionesPlanAnual,
   PlanAnual,
 } from "@/lib/tipos";
-
-const MESES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
 
 function etiquetaEstado(estado: string): string {
   if (estado === "BORRADOR") return "Borrador";
@@ -61,7 +56,6 @@ type LineaAlcance = {
 
 type FormularioActividad = {
   capacitacion_id: string;
-  fecha_programada: string;
   lineas: LineaAlcance[];
 };
 
@@ -69,7 +63,6 @@ const LINEA_VACIA: LineaAlcance = { proceso_id: "", cargo_id: "", proyecto: "" }
 
 const FORM_VACIO: FormularioActividad = {
   capacitacion_id: "",
-  fecha_programada: "",
   lineas: [{ ...LINEA_VACIA }],
 };
 
@@ -97,6 +90,7 @@ function Contenido() {
   const [plan, setPlan] = useState<PlanAnual | null>(null);
   const [filtroProceso, setFiltroProceso] = useState("");
   const [filtroProyecto, setFiltroProyecto] = useState("");
+  const [filtroCargo, setFiltroCargo] = useState("");
   const [buscarDetalle, setBuscarDetalle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [errorForm, setErrorForm] = useState<string | null>(null);
@@ -110,8 +104,6 @@ function Contenido() {
   const [detalleVer, setDetalleVer] = useState<DetallePlanAnual | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [buscarCap, setBuscarCap] = useState("");
-  const [fechaDe, setFechaDe] = useState<DetallePlanAnual | null>(null);
-  const [fechaNueva, setFechaNueva] = useState("");
 
   const muestraProyectoFiltro = procesoRequiereProyecto(filtroProceso, opciones.procesos);
 
@@ -228,24 +220,30 @@ function Contenido() {
       if (muestraProyectoFiltro && filtroProyecto !== "" && (d.proyecto ?? "") !== filtroProyecto) {
         return false;
       }
+      if (filtroCargo !== "") {
+        const cargoId = Number(filtroCargo);
+        if (!d.cargos_aplicables.some((c) => c.cargo_id === cargoId)) return false;
+      }
       if (q === "") return true;
       return (
         d.capacitacion_codigo.toLowerCase().includes(q)
         || d.capacitacion_nombre.toLowerCase().includes(q)
       );
     });
-  }, [plan, filtroProceso, filtroProyecto, buscarDetalle, muestraProyectoFiltro]);
+  }, [plan, filtroProceso, filtroProyecto, filtroCargo, buscarDetalle, muestraProyectoFiltro]);
 
-  const porMes = useMemo(() => {
-    const grupos: { mes: number; nombre: string; items: DetallePlanAnual[] }[] = [];
-    for (let m = 1; m <= 12; m++) {
-      const itemsMes = actividadesFiltradas.filter((d) => d.mes_programado === m);
-      if (itemsMes.length > 0) {
-        grupos.push({ mes: m, nombre: MESES[m - 1], items: itemsMes });
+  const cargosFiltro = useMemo(() => {
+    if (!plan?.detalles) return [];
+    const mapa = new Map<number, string>();
+    for (const d of plan.detalles) {
+      for (const c of d.cargos_aplicables) {
+        mapa.set(c.cargo_id, c.nombre_cargo);
       }
     }
-    return grupos;
-  }, [actividadesFiltradas]);
+    return [...mapa.entries()]
+      .map(([cargo_id, nombre_cargo]) => ({ cargo_id, nombre_cargo }))
+      .sort((a, b) => a.nombre_cargo.localeCompare(b.nombre_cargo, "es"));
+  }, [plan]);
 
   const chips: ChipFiltro[] = [];
   if (anioFiltro) chips.push({ clave: "anio", etiqueta: "Año", valor: anioFiltro });
@@ -312,17 +310,12 @@ function Contenido() {
             ];
       setForm({
         capacitacion_id: String(detalle.capacitacion_id),
-        fecha_programada: detalle.fecha_programada ?? "",
-        lineas,
+        lineas: lineas.length > 0 ? lineas : [{ ...LINEA_VACIA }],
       });
       setBuscarCap(`${detalle.capacitacion_codigo} — ${detalle.capacitacion_nombre}`);
     } else {
       setEditandoId(null);
-      setForm({
-        ...FORM_VACIO,
-        fecha_programada: plan ? `${plan.anio}-01-15` : "",
-        lineas: [{ ...LINEA_VACIA }],
-      });
+      setForm({ ...FORM_VACIO, lineas: [{ ...LINEA_VACIA }] });
       setBuscarCap("");
     }
     setErrorForm(null);
@@ -332,6 +325,10 @@ function Contenido() {
   async function guardarActividad(e: FormEvent) {
     e.preventDefault();
     if (!plan) return;
+    if (form.capacitacion_id === "") {
+      setErrorForm("Seleccione una capacitación del catálogo.");
+      return;
+    }
     const alcances = form.lineas
       .filter((l) => l.proceso_id !== "" && l.cargo_id !== "")
       .map((l) => ({
@@ -339,18 +336,15 @@ function Contenido() {
         cargo_id: Number(l.cargo_id),
         proyecto: procesoRequiereProyecto(l.proceso_id, opciones.procesos) ? l.proyecto || null : null,
       }));
-    if (alcances.length === 0) {
-      setErrorForm("Agregue al menos un cargo y proceso aplicables a esta capacitación.");
-      return;
-    }
     setGuardando(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       capacitacion_id: Number(form.capacitacion_id),
-      proceso_id: alcances[0].proceso_id,
-      proyecto: alcances[0].proyecto,
-      fecha_programada: form.fecha_programada,
       alcances,
     };
+    if (alcances.length > 0) {
+      payload.proceso_id = alcances[0].proceso_id;
+      payload.proyecto = alcances[0].proyecto;
+    }
     const respuesta = editandoId
       ? await apiPut<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/actividades/${editandoId}`, payload)
       : await apiPost<PlanAnual>(`/api/planes-anuales/${plan.plan_anual_id}/actividades`, payload);
@@ -365,13 +359,13 @@ function Contenido() {
     setPlan(respuesta.data);
     setFormAbierto(false);
     setErrorForm(null);
-    setMensaje(respuesta.message || "Actividad agregada correctamente al Plan Anual.");
+    setMensaje(respuesta.message || "Capacitación contemplada en el Plan Anual.");
     setError(null);
   }
 
   async function eliminarActividad(detalleId: number) {
     if (!plan) return;
-    if (!window.confirm("¿Retirar esta actividad del Plan Anual? Las sesiones programadas sin asistencia también se eliminan. La capacitación del catálogo no se borra.")) {
+    if (!window.confirm("¿Retirar esta capacitación del Plan Anual? La capacitación del catálogo no se borra.")) {
       return;
     }
     const respuesta = await apiDelete<PlanAnual>(
@@ -381,33 +375,12 @@ function Contenido() {
       return;
     }
     if (!respuesta.success || !respuesta.data) {
-      setError(respuesta.message || "No fue posible retirar la actividad.");
+      setError(respuesta.message || "No fue posible retirar la capacitación del plan.");
       return;
     }
     setPlan(respuesta.data);
-    setMensaje(respuesta.message || "Actividad retirada del Plan Anual.");
+    setMensaje(respuesta.message || "Capacitación retirada del Plan Anual.");
     setError(null);
-  }
-
-  async function guardarFecha(e: FormEvent) {
-    e.preventDefault();
-    if (!plan || !fechaDe) return;
-    setGuardando(true);
-    const respuesta = await apiPut(`/api/cronograma/${fechaDe.plan_detalle_id}/reprogramar`, {
-      fecha_programada: fechaNueva,
-    });
-    setGuardando(false);
-    if (respuesta.cancelada) {
-      return;
-    }
-    if (!respuesta.success) {
-      setError(respuesta.message || "No fue posible guardar la fecha.");
-      return;
-    }
-    setFechaDe(null);
-    setMensaje("Fecha programada actualizada. El cronograma usa esta misma fecha.");
-    setError(null);
-    await abrirPlan(plan.plan_anual_id);
   }
 
   async function enviarAprobacion() {
@@ -460,14 +433,13 @@ function Contenido() {
 
   const editable =
     (plan?.estado === "BORRADOR" || plan?.estado === "APROBADO") && puede("planes.editar");
-  const puedeFecha = Boolean(plan) && puede("planes.editar") && plan?.estado !== "EN_REVISION";
 
   if (plan) {
     return (
       <>
         <PageHeader
           titulo={`Plan anual ${plan.anio}`}
-          descripcion="Capacitaciones planificadas para el año: dónde aplican (matriz) y cuándo se programan."
+          descripcion="Capacitaciones contempladas para el año. La programación individual (quién y desde/hasta) se gestiona en Asignaciones."
           acciones={
             <div className="flex flex-wrap gap-2">
               <Button
@@ -484,7 +456,7 @@ function Contenido() {
               {editable ? (
                 <Button type="button" onClick={() => abrirFormulario()}>
                   <Plus className="h-4 w-4" aria-hidden />
-                  Agregar actividad
+                  Agregar capacitación
                 </Button>
               ) : null}
               {plan.estado === "BORRADOR" && puede("planes.editar") ? (
@@ -516,14 +488,14 @@ function Contenido() {
           <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
             PLAN ANUAL {plan.anio} · Estado: APROBADO
             <span className="ml-2 font-normal">
-              {actividadesFiltradas.length} actividad(es) · {plan.total_horas ?? 0} horas programadas
+              {actividadesFiltradas.length} capacitación(es) contemplada(s) · {plan.total_horas ?? 0} horas estimadas
             </span>
           </p>
         ) : (
           <p className="mb-4 text-sm text-slate-600">
             <Badge tono={tonoEstado(plan.estado)}>{etiquetaEstado(plan.estado)}</Badge>
             <span className="ml-2">
-              {actividadesFiltradas.length} actividad(es) · {plan.total_horas ?? 0} horas programadas
+              {actividadesFiltradas.length} capacitación(es) contemplada(s) · {plan.total_horas ?? 0} horas estimadas
             </span>
           </p>
         )}
@@ -564,6 +536,20 @@ function Contenido() {
               </select>
             </Field>
           ) : null}
+          <Field etiqueta="Cargo">
+            <select
+              className={inputClass}
+              value={filtroCargo}
+              onChange={(e) => setFiltroCargo(e.target.value)}
+            >
+              <option value="">Todos</option>
+              {cargosFiltro.map((c) => (
+                <option key={c.cargo_id} value={c.cargo_id}>
+                  {c.nombre_cargo}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field etiqueta="Buscar">
             <input
               className={inputClass}
@@ -574,92 +560,67 @@ function Contenido() {
           </Field>
         </Filters>
 
-        {porMes.length === 0 ? (
+        {actividadesFiltradas.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
             {plan.detalles?.length
-              ? "No hay actividades que coincidan con los filtros."
-              : "No hay actividades en este plan. Agregue una capacitación del catálogo."}
+              ? "No hay capacitaciones que coincidan con los filtros."
+              : "No hay capacitaciones contempladas. Agregue del catálogo las que aplican este año."}
           </p>
         ) : (
-          <div className="space-y-6">
-            {porMes.map((bloque) => (
-              <section key={bloque.mes}>
-                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  {bloque.nombre}
-                </h2>
-                <Table
-                  columnas={[
-                    { clave: "fecha", etiqueta: "Fecha" },
-                    { clave: "cap", etiqueta: "Capacitación" },
-                    { clave: "proceso", etiqueta: "Proceso" },
-                    { clave: "proyecto", etiqueta: "Proyecto" },
-                    { clave: "cargos", etiqueta: "Cargos / alcance" },
-                    { clave: "horas", etiqueta: "Duración" },
-                    { clave: "estado", etiqueta: "Estado" },
-                    { clave: "acciones", etiqueta: "" },
-                  ]}
-                  filas={bloque.items.map((d) => [
-                    formatearFecha(d.fecha_programada),
-                    <span key={`c-${d.plan_detalle_id}`}>
-                      <span className="font-medium text-slate-800">
-                        {d.capacitacion_codigo} — {d.capacitacion_nombre}
-                      </span>
-                      {d.es_tarea_critica ? (
-                        <span className="ml-2">
-                          <Badge tono="alto">Tarea crítica</Badge>
-                        </span>
-                      ) : null}
-                    </span>,
-                    d.proceso_nombre ?? "—",
-                    d.proyecto ?? "—",
-                    d.cargos_aplicables.length
-                      ? d.cargos_aplicables.map((c) => c.nombre_cargo).join(", ")
-                      : "—",
-                    d.duracion_estimada_horas != null ? `${d.duracion_estimada_horas} h` : "—",
-                    etiquetaEstado(plan.estado),
-                    <span key={`a-${d.plan_detalle_id}`} className="flex flex-wrap gap-1">
-                      <Button type="button" variante="ghost" onClick={() => setDetalleVer(d)}>
-                        <Eye className="h-4 w-4" aria-hidden />
-                      </Button>
-                      {puedeFecha && plan.estado === "APROBADO" ? (
-                        <Button
-                          type="button"
-                          variante="ghost"
-                          title="Cambiar fecha programada"
-                          aria-label="Cambiar fecha programada"
-                          onClick={() => {
-                            setFechaDe(d);
-                            setFechaNueva(d.fecha_programada ?? "");
-                          }}
-                        >
-                          <CalendarClock className="h-4 w-4" aria-hidden />
-                        </Button>
-                      ) : null}
-                      {editable ? (
-                        <>
-                          <Button type="button" variante="ghost" onClick={() => abrirFormulario(d)}>
-                            <Pencil className="h-4 w-4" aria-hidden />
-                          </Button>
-                          <Button
-                            type="button"
-                            variante="ghost"
-                            onClick={() => void eliminarActividad(d.plan_detalle_id)}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden />
-                          </Button>
-                        </>
-                      ) : null}
-                    </span>,
-                  ])}
-                />
-              </section>
-            ))}
-          </div>
+          <Table
+            columnas={[
+              { clave: "cap", etiqueta: "Capacitación" },
+              { clave: "tipo", etiqueta: "Tipo" },
+              { clave: "proceso", etiqueta: "Proceso" },
+              { clave: "proyecto", etiqueta: "Proyecto" },
+              { clave: "cargos", etiqueta: "Cargos / alcance" },
+              { clave: "horas", etiqueta: "Duración" },
+              { clave: "acciones", etiqueta: "" },
+            ]}
+            filas={actividadesFiltradas.map((d) => [
+              <span key={`c-${d.plan_detalle_id}`}>
+                <span className="font-medium text-slate-800">
+                  {d.capacitacion_codigo} — {d.capacitacion_nombre}
+                </span>
+                {d.es_tarea_critica ? (
+                  <span className="ml-2">
+                    <Badge tono="alto">Tarea crítica</Badge>
+                  </span>
+                ) : null}
+              </span>,
+              d.tipo_nombre ?? "—",
+              d.proceso_nombre ?? "—",
+              d.proyecto ?? "—",
+              d.cargos_aplicables.length
+                ? d.cargos_aplicables.map((c) => c.nombre_cargo).join(", ")
+                : "—",
+              d.duracion_estimada_horas != null ? `${d.duracion_estimada_horas} h` : "—",
+              <span key={`a-${d.plan_detalle_id}`} className="flex flex-wrap gap-1">
+                <Button type="button" variante="ghost" onClick={() => setDetalleVer(d)}>
+                  <Eye className="h-4 w-4" aria-hidden />
+                </Button>
+                {editable ? (
+                  <>
+                    <Button type="button" variante="ghost" onClick={() => abrirFormulario(d)}>
+                      <Pencil className="h-4 w-4" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      variante="ghost"
+                      onClick={() => void eliminarActividad(d.plan_detalle_id)}
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                    </Button>
+                  </>
+                ) : null}
+              </span>,
+            ])}
+          />
         )}
 
         <Modal
           abierto={formAbierto}
-          titulo={editandoId ? "Editar actividad" : "Agregar actividad"}
+          titulo={editandoId ? "Editar capacitación contemplada" : "Agregar capacitación al plan"}
           onCerrar={() => {
             setFormAbierto(false);
             setErrorForm(null);
@@ -667,19 +628,12 @@ function Contenido() {
         >
           <form className="space-y-4" onSubmit={(e) => void guardarActividad(e)}>
             {errorForm ? <Alert tono="error">{errorForm}</Alert> : null}
+            <p className="text-sm text-slate-600">
+              Contempla la capacitación en el año {plan.anio}. No se crea una capacitación nueva en el
+              catálogo. Las fechas y personas se definen en Asignaciones.
+            </p>
             <Field etiqueta="Año" className={fieldClassAnio}>
               <input className={inputClassAnio} value={plan.anio} readOnly />
-            </Field>
-            <Field etiqueta="Fecha programada">
-              <input
-                className={inputClass}
-                type="date"
-                required
-                min={`${plan.anio}-01-01`}
-                max={`${plan.anio}-12-31`}
-                value={form.fecha_programada}
-                onChange={(e) => setForm((f) => ({ ...f, fecha_programada: e.target.value }))}
-              />
             </Field>
             <Field etiqueta="Capacitación">
               <input
@@ -698,7 +652,7 @@ function Contenido() {
               <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50">
                 {buscarCap.trim() === "" ? (
                   <p className="px-3 py-3 text-sm text-slate-500">
-                    Escriba para ver las capacitaciones que puede programar en el mes.
+                    Escriba para ver las capacitaciones activas del catálogo.
                   </p>
                 ) : capsSugeridas.length === 0 ? (
                   <p className="px-3 py-3 text-sm text-slate-500">No hay capacitaciones que coincidan.</p>
@@ -735,10 +689,9 @@ function Contenido() {
               </p>
             )}
             <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-              <p className="text-sm font-medium text-hseq-900">Cargos y procesos (matriz)</p>
+              <p className="text-sm font-medium text-hseq-900">Alcance opcional (matriz)</p>
               <p className="text-xs text-slate-500">
-                Solo aparecen combinaciones habilitadas para esta capacitación. Puede agregar otro
-                cargo de otro proceso.
+                Puede indicar proceso, proyecto y cargo para consulta. No asigna trabajadores.
               </p>
               {form.capacitacion_id === "" ? (
                 <p className="text-sm text-slate-500">Seleccione primero la capacitación.</p>
@@ -758,7 +711,6 @@ function Contenido() {
                       <Field etiqueta="Proceso">
                         <select
                           className={inputClass}
-                          required
                           value={linea.proceso_id}
                           onChange={(e) => {
                             const valor = e.target.value;
@@ -788,7 +740,6 @@ function Contenido() {
                         <Field etiqueta="Proyecto">
                           <select
                             className={inputClass}
-                            required
                             value={linea.proyecto}
                             onChange={(e) => {
                               setErrorForm(null);
@@ -811,7 +762,6 @@ function Contenido() {
                       <Field etiqueta="Cargo">
                         <select
                           className={inputClass}
-                          required
                           value={linea.cargo_id}
                           disabled={linea.proceso_id === "" || (gp && linea.proyecto === "")}
                           onChange={(e) => {
@@ -889,42 +839,8 @@ function Contenido() {
         </Modal>
 
         <Modal
-          abierto={fechaDe !== null}
-          titulo="Cambiar fecha programada"
-          onCerrar={() => setFechaDe(null)}
-        >
-          {fechaDe ? (
-            <form className="space-y-4" onSubmit={(e) => void guardarFecha(e)}>
-              <p className="text-sm text-slate-600">
-                {fechaDe.capacitacion_codigo} — {fechaDe.capacitacion_nombre}. Esta es la única fecha
-                que se puede editar; el cronograma y la sesión la toman de aquí.
-              </p>
-              <Field etiqueta="Fecha programada">
-                <input
-                  className={inputClass}
-                  type="date"
-                  required
-                  min={`${plan.anio}-01-01`}
-                  max={`${plan.anio}-12-31`}
-                  value={fechaNueva}
-                  onChange={(e) => setFechaNueva(e.target.value)}
-                />
-              </Field>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variante="secondary" onClick={() => setFechaDe(null)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={guardando}>
-                  {guardando ? "Guardando…" : "Guardar fecha"}
-                </Button>
-              </div>
-            </form>
-          ) : null}
-        </Modal>
-
-        <Modal
           abierto={detalleVer !== null}
-          titulo="Detalle de la actividad"
+          titulo="Detalle de la capacitación contemplada"
           onCerrar={() => setDetalleVer(null)}
         >
           {detalleVer ? (
@@ -972,10 +888,6 @@ function Contenido() {
                 <dd>{detalleVer.proyecto ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Fecha programada</dt>
-                <dd>{formatearFecha(detalleVer.fecha_programada)}</dd>
-              </div>
-              <div>
                 <dt className="text-xs uppercase text-slate-500">Estado del plan</dt>
                 <dd>{etiquetaEstado(plan.estado)}</dd>
               </div>
@@ -998,7 +910,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Plan anual"
-        descripcion="Programe las capacitaciones del año según la matriz de aplicabilidad. Las personas se asignan en el módulo de asignaciones."
+        descripcion="Defina qué capacitaciones del catálogo se contemplan cada año. Quién y desde/hasta se gestiona en Asignaciones; la ejecución en Cronograma."
         acciones={
           puede("planes.crear") ? (
             <Button type="button" onClick={() => setCrearAbierto(true)}>
@@ -1063,7 +975,7 @@ function Contenido() {
         columnas={[
           { clave: "anio", etiqueta: "Año" },
           { clave: "estado", etiqueta: "Estado" },
-          { clave: "total", etiqueta: "Programadas" },
+          { clave: "total", etiqueta: "Contempladas" },
           { clave: "aprobacion", etiqueta: "Aprobación" },
           { clave: "acciones", etiqueta: "" },
         ]}

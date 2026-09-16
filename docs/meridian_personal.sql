@@ -989,6 +989,7 @@ CREATE TABLE `personas` (
   `certificado_residencia_vigencia` date DEFAULT NULL,
   `observaciones_alivios` text DEFAULT NULL,
   `estado` enum('Activo','Inactivo') NOT NULL DEFAULT 'Activo',
+  `fecha_inactivacion` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ;

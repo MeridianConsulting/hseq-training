@@ -61,6 +61,7 @@ export function FichaTrabajador({ trabajador }: { trabajador: FichaTrabajadorRep
     ["Proyecto actual", trabajador.proyecto],
     ["Fecha de ingreso", fecha(trabajador.fecha_ingreso)],
     ["Estado actual", trabajador.estado],
+    ["Fecha de inactivación", fecha(trabajador.fecha_inactivacion)],
   ];
 
   return (

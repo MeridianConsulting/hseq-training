@@ -31,6 +31,7 @@ class AlertaController extends Controller
                 'proyecto' => nullable_trimmed_string($request->query('proyecto')),
                 'cargo_id_ext' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
                 'estado_alerta' => nullable_trimmed_string($request->query('estado_alerta')) ?? 'todas',
+                'tipo_alerta' => nullable_trimmed_string($request->query('tipo_alerta')) ?? 'todos',
                 'q' => nullable_trimmed_string($request->query('q')),
                 'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
                 'vencimiento_desde' => nullable_trimmed_string($request->query('vencimiento_desde')),

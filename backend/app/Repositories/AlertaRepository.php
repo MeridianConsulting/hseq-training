@@ -100,7 +100,14 @@ class AlertaRepository
 
     /**
      * @param array<string,mixed> $filtros
-     * @return array{vencidas:int,proximas_30:int}
+     * @return array{
+     *   vencidas:int,
+     *   proximas_30:int,
+     *   plazo_vencidas:int,
+     *   plazo_proximas:int,
+     *   vigencia_vencidas:int,
+     *   vigencia_proximas:int
+     * }
      */
     public function resumen(array $filtros): array
     {
@@ -116,7 +123,27 @@ class AlertaRepository
                 COALESCE(SUM(CASE
                     WHEN DATEDIFF(COALESCE(v.fecha_vencimiento, v.fecha_limite_cumplimiento), CURDATE()) BETWEEN 0 AND 30 THEN 1
                     ELSE 0
-                END), 0) AS proximas_30
+                END), 0) AS proximas_30,
+                COALESCE(SUM(CASE
+                    WHEN v.tipo_alerta = 'LIMITE_CUMPLIMIENTO'
+                     AND DATEDIFF(v.fecha_limite_cumplimiento, CURDATE()) < 0 THEN 1
+                    ELSE 0
+                END), 0) AS plazo_vencidas,
+                COALESCE(SUM(CASE
+                    WHEN v.tipo_alerta = 'LIMITE_CUMPLIMIENTO'
+                     AND DATEDIFF(v.fecha_limite_cumplimiento, CURDATE()) BETWEEN 0 AND 30 THEN 1
+                    ELSE 0
+                END), 0) AS plazo_proximas,
+                COALESCE(SUM(CASE
+                    WHEN v.tipo_alerta = 'VIGENCIA_CUMPLIMIENTO'
+                     AND DATEDIFF(v.fecha_vencimiento, CURDATE()) < 0 THEN 1
+                    ELSE 0
+                END), 0) AS vigencia_vencidas,
+                COALESCE(SUM(CASE
+                    WHEN v.tipo_alerta = 'VIGENCIA_CUMPLIMIENTO'
+                     AND DATEDIFF(v.fecha_vencimiento, CURDATE()) BETWEEN 0 AND 30 THEN 1
+                    ELSE 0
+                END), 0) AS vigencia_proximas
              FROM vw_alertas_vencimiento v
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = v.asignacion_id
              INNER JOIN {$personas} per ON per.persona_id = v.persona_id_ext AND per.estado = 'Activo'
@@ -127,6 +154,10 @@ class AlertaRepository
         return [
             'vencidas' => (int)($fila['vencidas'] ?? 0),
             'proximas_30' => (int)($fila['proximas_30'] ?? 0),
+            'plazo_vencidas' => (int)($fila['plazo_vencidas'] ?? 0),
+            'plazo_proximas' => (int)($fila['plazo_proximas'] ?? 0),
+            'vigencia_vencidas' => (int)($fila['vigencia_vencidas'] ?? 0),
+            'vigencia_proximas' => (int)($fila['vigencia_proximas'] ?? 0),
         ];
     }
 
@@ -298,6 +329,12 @@ class AlertaRepository
             $condiciones[] = "v.estado_calculado IN ('VENCIDA', 'PENDIENTE_VENCIDA')";
         } elseif ($estado === 'proximas') {
             $condiciones[] = "v.estado_calculado IN ('PROXIMA_A_VENCER', 'PENDIENTE_PROXIMA_A_VENCER')";
+        }
+
+        $tipo = strtoupper(trim((string)($filtros['tipo_alerta'] ?? 'todos')));
+        if ($tipo === 'LIMITE_CUMPLIMIENTO' || $tipo === 'VIGENCIA_CUMPLIMIENTO') {
+            $condiciones[] = 'v.tipo_alerta COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $tipo;
         }
 
         $q = trim((string)($filtros['q'] ?? ''));

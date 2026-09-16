@@ -195,6 +195,12 @@ function Contenido() {
           <Dato etiqueta="Proyecto" valor={ficha.proyecto ?? "—"} />
           <Dato etiqueta="Estado laboral" valor={ficha.estado} />
           <Dato etiqueta="Fecha de ingreso" valor={formatoFecha(ficha.contrato_fecha_inicio)} />
+          {ficha.estado === "Inactivo" ? (
+            <Dato
+              etiqueta="Fecha de inactivación"
+              valor={formatoFecha(ficha.fecha_inactivacion)}
+            />
+          ) : null}
           <Dato etiqueta="Celular" valor={ficha.celular ?? "—"} />
           <Dato etiqueta="Correo corporativo" valor={ficha.correo_corporativo ?? "—"} />
           <Dato etiqueta="Correo personal" valor={ficha.correo_personal ?? "—"} />
@@ -287,21 +293,36 @@ function Contenido() {
         />
       </Bloque>
 
-      <Bloque titulo="Alertas y vencimientos">
+      <Bloque titulo="Alertas (plazo y vigencia)">
         <Table
           vacio="No hay alertas vigentes para este trabajador."
           columnas={[
             { clave: "cap", etiqueta: "Capacitación" },
-            { clave: "vence", etiqueta: "Vencimiento" },
+            { clave: "tipo", etiqueta: "Tipo" },
+            { clave: "vence", etiqueta: "Fecha alerta" },
             { clave: "dias", etiqueta: "Días" },
             { clave: "estado", etiqueta: "Estado" },
           ]}
           filas={perfil.alertas.map((item) => [
             etiquetaCapacitacion(item),
-            formatoFecha(item.fecha_vencimiento),
+            item.etiqueta_tipo
+              ?? (item.tipo_alerta === "LIMITE_CUMPLIMIENTO"
+                ? "Plazo de asignación"
+                : item.tipo_alerta === "VIGENCIA_CUMPLIMIENTO"
+                  ? "Vigencia"
+                  : "—"),
+            formatoFecha(item.fecha_alerta ?? item.fecha_vencimiento),
             String(item.dias_restantes),
             <Badge key="a" tono={tonoEstado(item.estado)}>
-              {item.estado}
+              {item.estado === "PENDIENTE_VENCIDA"
+                ? "Plazo vencido"
+                : item.estado === "PENDIENTE_PROXIMA_A_VENCER"
+                  ? "Plazo próximo"
+                  : item.estado === "VENCIDA"
+                    ? "Vigencia vencida"
+                    : item.estado === "PROXIMA_A_VENCER"
+                      ? "Vigencia próxima"
+                      : item.estado}
             </Badge>,
           ])}
         />

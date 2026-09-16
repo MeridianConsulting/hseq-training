@@ -37,7 +37,7 @@ class PlanAnualService
             'capacitacion_id' => 'required|integer',
             'proceso_id' => 'nullable|integer',
             'proyecto' => 'nullable|string|max:120',
-            'fecha_programada' => 'required|string|max:10',
+            'fecha_programada' => 'nullable|string|max:10',
             'alcances' => 'nullable|array',
         ];
     }
@@ -176,13 +176,12 @@ class PlanAnualService
     {
         $plan = $this->exigirEditable($planId);
         [$payload, $alcances] = $this->validarActividad($plan, $datos);
-        $duplicado = $this->repo->buscarDetallePorCapFecha(
+        $duplicado = $this->repo->buscarDetallePorCapacitacion(
             (int)$plan['plan_anual_id'],
-            $payload['capacitacion_id'],
-            $payload['fecha_programada']
+            $payload['capacitacion_id']
         );
         if ($duplicado !== null) {
-            throw new HttpException('Ya existe una actividad con la misma capacitación y fecha.', 409);
+            throw new HttpException('Esta capacitación ya está contemplada en el plan anual.', 409);
         }
 
         try {
@@ -212,23 +211,26 @@ class PlanAnualService
 
         [$payload, $alcances] = $this->validarActividad($plan, $datos);
         unset($payload['plan_anual_id']);
-        $duplicado = $this->repo->buscarDetallePorCapFecha(
+        $duplicado = $this->repo->buscarDetallePorCapacitacion(
             $planId,
             $payload['capacitacion_id'],
-            $payload['fecha_programada'],
             $detalleId
         );
         if ($duplicado !== null) {
-            throw new HttpException('Ya existe una actividad con la misma capacitación y fecha.', 409);
+            throw new HttpException('Esta capacitación ya está contemplada en el plan anual.', 409);
         }
 
-        $fechaAnterior = substr((string)($existente['fecha_programada'] ?? ''), 0, 10);
+        $fechaAnterior = $existente['fecha_programada'] !== null && $existente['fecha_programada'] !== ''
+            ? substr((string)$existente['fecha_programada'], 0, 10)
+            : '';
 
         try {
             $this->repo->transaccion(function () use ($detalleId, $payload, $alcances, $fechaAnterior): int {
                 $this->repo->actualizarDetalle($detalleId, $payload);
                 $this->repo->reemplazarAlcances($detalleId, $alcances);
-                $fechaNueva = substr((string)($payload['fecha_programada'] ?? ''), 0, 10);
+                $fechaNueva = $payload['fecha_programada'] !== null && $payload['fecha_programada'] !== ''
+                    ? substr((string)$payload['fecha_programada'], 0, 10)
+                    : '';
                 if ($fechaNueva !== '' && $fechaNueva !== $fechaAnterior) {
                     (new SesionRepository())->alinearFechaProgramada($detalleId, $fechaNueva);
                 }
@@ -315,15 +317,13 @@ class PlanAnualService
                 }
 
                 $capacitacionId = (int)$asig['capacitacion_id'];
-                $detalle = $this->repo->buscarDetalle((int)$plan['plan_anual_id'], $capacitacionId, $mes);
+                $detalle = $this->repo->buscarDetallePorCapacitacion((int)$plan['plan_anual_id'], $capacitacionId);
                 if ($detalle === null) {
-                    $anio = (int)$plan['anio'];
-                    $fecha = sprintf('%04d-%02d-01', $anio, $mes);
                     $detalleId = $this->repo->crearDetalle([
                         'plan_anual_id' => (int)$plan['plan_anual_id'],
                         'capacitacion_id' => $capacitacionId,
                         'mes_programado' => $mes,
-                        'fecha_programada' => $fecha,
+                        'fecha_programada' => sprintf('%04d-%02d-01', (int)$plan['anio'], $mes),
                         'cantidad_programada' => 0,
                         'area_id' => $asig['area_id'] !== null ? (int)$asig['area_id'] : null,
                         'proceso_id' => $asig['proceso_id'] !== null ? (int)$asig['proceso_id'] : null,
@@ -407,51 +407,7 @@ class PlanAnualService
             throw new HttpException('La asignación no está en este plan.', 404);
         }
 
-        if ((int)$enlace['mes_programado'] === $mes) {
-            return $this->ver($planId);
-        }
-
-        $asig = $this->repo->buscarAsignacion($asignacionId);
-        if ($asig === null) {
-            throw new HttpException('La asignación no existe.', 422);
-        }
-
-        $this->repo->transaccion(function () use ($planId, $enlace, $asig, $asignacionId, $mes): int {
-            $origenId = (int)$enlace['plan_detalle_id'];
-            $this->repo->desenlazar($origenId, $asignacionId);
-            $restantes = $this->repo->contarEnlacesDetalle($origenId);
-            if ($restantes === 0 && !$this->repo->detalleTieneSesiones($origenId)) {
-                $this->repo->eliminarDetalle($origenId);
-            } else {
-                $this->repo->actualizarCantidad($origenId, $restantes);
-            }
-
-            $capacitacionId = (int)$asig['capacitacion_id'];
-            $destino = $this->repo->buscarDetalle($planId, $capacitacionId, $mes);
-            if ($destino === null) {
-                $anioPlan = $this->exigirPlan($planId);
-                $fecha = sprintf('%04d-%02d-01', (int)$anioPlan['anio'], $mes);
-                $destinoId = $this->repo->crearDetalle([
-                    'plan_anual_id' => $planId,
-                    'capacitacion_id' => $capacitacionId,
-                    'mes_programado' => $mes,
-                    'fecha_programada' => $fecha,
-                    'cantidad_programada' => 0,
-                    'area_id' => $asig['area_id'] !== null ? (int)$asig['area_id'] : null,
-                    'proceso_id' => $asig['proceso_id'] !== null ? (int)$asig['proceso_id'] : null,
-                    'ambito' => $asig['ambito'] !== null && $asig['ambito'] !== '' ? $asig['ambito'] : null,
-                    'proyecto' => $asig['proyecto'] !== null && $asig['proyecto'] !== '' ? $asig['proyecto'] : null,
-                ]);
-            } else {
-                $destinoId = (int)$destino['plan_detalle_id'];
-            }
-
-            $this->repo->enlazar($destinoId, $asignacionId);
-            $this->repo->actualizarCantidad($destinoId, $this->repo->contarEnlacesDetalle($destinoId));
-
-            return $destinoId;
-        });
-
+        // Una capacitación contemplada una sola vez: el mes ya no fragmenta el detalle.
         return $this->ver($planId);
     }
 
@@ -595,17 +551,36 @@ class PlanAnualService
     {
         $capacitacionId = (int)($datos['capacitacion_id'] ?? 0);
         $this->exigirCapacitacionActiva($capacitacionId);
-        $fecha = $this->fechaEnAnio((string)($datos['fecha_programada'] ?? ''), (int)$plan['anio']);
-        $alcances = $this->alcancesDeEntrada($capacitacionId, $datos);
-        $primero = $alcances[0];
-        $procesoId = $primero['proceso_id'];
-        $proyecto = $primero['proyecto'] !== '' ? $primero['proyecto'] : null;
-        $cargosIds = [];
-        foreach ($alcances as $fila) {
-            $cargosIds[(int)$fila['cargo_id']] = (int)$fila['cargo_id'];
+
+        $fechaBruta = trim((string)($datos['fecha_programada'] ?? ''));
+        $fecha = null;
+        $mes = null;
+        if ($fechaBruta !== '') {
+            $fecha = $this->fechaEnAnio($fechaBruta, (int)$plan['anio']);
+            $mes = (int)substr($fecha, 5, 2);
         }
-        $cantidad = $this->personal->repositorio()->contarActivosPorCargos(array_values($cargosIds));
-        $mes = (int)substr($fecha, 5, 2);
+
+        $alcances = $this->alcancesDeEntrada($capacitacionId, $datos);
+        $procesoId = null;
+        $proyecto = null;
+        $cantidad = 0;
+        $ambito = null;
+        if ($alcances !== []) {
+            $primero = $alcances[0];
+            $procesoId = $primero['proceso_id'];
+            $proyecto = $primero['proyecto'] !== '' ? $primero['proyecto'] : null;
+            $cargosIds = [];
+            foreach ($alcances as $fila) {
+                $cargosIds[(int)$fila['cargo_id']] = (int)$fila['cargo_id'];
+            }
+            $cantidad = $this->personal->repositorio()->contarActivosPorCargos(array_values($cargosIds));
+            $ambito = $this->alertas->procesoEsGestionProyectos($procesoId) ? 'PROYECTO' : 'ADMINISTRACION';
+        } elseif (isset($datos['proceso_id']) && (int)$datos['proceso_id'] > 0) {
+            $procesoId = (int)$datos['proceso_id'];
+            $this->procesoDePlan($procesoId);
+            $proyecto = $this->proyectoSegunProceso($procesoId, $datos['proyecto'] ?? null, true);
+            $ambito = $this->alertas->procesoEsGestionProyectos($procesoId) ? 'PROYECTO' : 'ADMINISTRACION';
+        }
 
         $payload = [
             'plan_anual_id' => (int)$plan['plan_anual_id'],
@@ -615,7 +590,7 @@ class PlanAnualService
             'cantidad_programada' => $cantidad,
             'area_id' => null,
             'proceso_id' => $procesoId,
-            'ambito' => $this->alertas->procesoEsGestionProyectos($procesoId) ? 'PROYECTO' : 'ADMINISTRACION',
+            'ambito' => $ambito,
             'proyecto' => $proyecto,
         ];
 
@@ -629,69 +604,69 @@ class PlanAnualService
     private function alcancesDeEntrada(int $capacitacionId, array $datos): array
     {
         $crudos = $datos['alcances'] ?? null;
-        if (is_array($crudos) && $crudos !== []) {
+        if (!is_array($crudos) || $crudos === []) {
+            $procesoId = (int)($datos['proceso_id'] ?? 0);
+            if ($procesoId < 1) {
+                return [];
+            }
+            $this->procesoDePlan($procesoId);
+            $proyecto = $this->proyectoSegunProceso($procesoId, $datos['proyecto'] ?? null, true);
+            $cargos = $this->cargosAplicables($capacitacionId, $procesoId, $proyecto);
+            if ($cargos === []) {
+                return [];
+            }
             $salida = [];
-            $vistos = [];
-            foreach ($crudos as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-                $procesoId = (int)($item['proceso_id'] ?? 0);
-                $cargoId = (int)($item['cargo_id'] ?? $item['cargo_id_ext'] ?? 0);
-                $this->procesoDePlan($procesoId);
-                $proyecto = $this->proyectoSegunProceso($procesoId, $item['proyecto'] ?? null, true);
-                $proyectoKey = $proyecto ?? '';
-                if ($cargoId < 1) {
-                    throw new HttpException('Debe indicar el cargo de cada alcance.', 422);
-                }
-                $clave = $procesoId . ':' . $cargoId . ':' . $proyectoKey;
-                if (isset($vistos[$clave])) {
-                    continue;
-                }
-                $permitidos = $this->cargosAplicables($capacitacionId, $procesoId, $proyecto);
-                $ok = false;
-                foreach ($permitidos as $cargo) {
-                    if ((int)$cargo['cargo_id'] === $cargoId) {
-                        $ok = true;
-                        break;
-                    }
-                }
-                if (!$ok) {
-                    throw new HttpException(
-                        'La capacitación seleccionada no está definida como aplicable al cargo seleccionado.',
-                        422
-                    );
-                }
-                $vistos[$clave] = true;
+            foreach ($cargos as $cargo) {
                 $salida[] = [
                     'proceso_id' => $procesoId,
-                    'cargo_id' => $cargoId,
-                    'proyecto' => $proyectoKey,
+                    'cargo_id' => (int)$cargo['cargo_id'],
+                    'proyecto' => $proyecto ?? '',
                 ];
-            }
-            if ($salida === []) {
-                throw new HttpException('Debe indicar al menos un cargo y proceso aplicables.', 422);
             }
 
             return $salida;
         }
 
-        $procesoId = (int)($datos['proceso_id'] ?? 0);
-        $this->procesoDePlan($procesoId);
-        $proyecto = $this->proyectoSegunProceso($procesoId, $datos['proyecto'] ?? null, true);
-        $cargos = $this->cargosAplicables($capacitacionId, $procesoId, $proyecto);
-        if ($cargos === []) {
-            throw new HttpException(
-                'La capacitación seleccionada no está definida como aplicable al cargo seleccionado.',
-                422
-            );
-        }
         $salida = [];
-        foreach ($cargos as $cargo) {
+        $vistos = [];
+        foreach ($crudos as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $procesoId = (int)($item['proceso_id'] ?? 0);
+            $cargoId = (int)($item['cargo_id'] ?? $item['cargo_id_ext'] ?? 0);
+            if ($procesoId < 1 && $cargoId < 1) {
+                continue;
+            }
+            $this->procesoDePlan($procesoId);
+            $proyecto = $this->proyectoSegunProceso($procesoId, $item['proyecto'] ?? null, true);
+            $proyectoKey = $proyecto ?? '';
+            if ($cargoId < 1) {
+                throw new HttpException('Debe indicar el cargo de cada alcance.', 422);
+            }
+            $clave = $procesoId . ':' . $cargoId . ':' . $proyectoKey;
+            if (isset($vistos[$clave])) {
+                continue;
+            }
+            $permitidos = $this->cargosAplicables($capacitacionId, $procesoId, $proyecto);
+            $ok = false;
+            foreach ($permitidos as $cargo) {
+                if ((int)$cargo['cargo_id'] === $cargoId) {
+                    $ok = true;
+                    break;
+                }
+            }
+            if (!$ok) {
+                throw new HttpException(
+                    'La capacitación seleccionada no está definida como aplicable al cargo seleccionado.',
+                    422
+                );
+            }
+            $vistos[$clave] = true;
             $salida[] = [
                 'proceso_id' => $procesoId,
-                'cargo_id' => (int)$cargo['cargo_id'],
-                'proyecto' => $proyecto ?? '',
+                'cargo_id' => $cargoId,
+                'proyecto' => $proyectoKey,
             ];
         }
 
@@ -891,7 +866,9 @@ class PlanAnualService
      */
     private function normalizarDetalle(array $fila, array $alcances = []): array
     {
-        $mes = (int)$fila['mes_programado'];
+        $mes = $fila['mes_programado'] !== null && $fila['mes_programado'] !== ''
+            ? (int)$fila['mes_programado']
+            : null;
         $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null;
         $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
         $alcancesNorm = $this->normalizarAlcances($alcances);
@@ -949,8 +926,8 @@ class PlanAnualService
                 ? substr((string)$fila['fecha_programada'], 0, 10)
                 : null,
             'mes_programado' => $mes,
-            'mes_nombre' => $this->nombreMes($mes),
-            'trimestre' => (int)ceil($mes / 3),
+            'mes_nombre' => $mes !== null ? $this->nombreMes($mes) : null,
+            'trimestre' => $mes !== null ? (int)ceil($mes / 3) : null,
             'cantidad_programada' => (int)$fila['cantidad_programada'],
             'proceso_id' => $procesoId,
             'proceso_ids' => array_values($procesoIds),

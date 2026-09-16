@@ -41,14 +41,39 @@ function etiquetaDias(dias: number): string {
   return dias === 1 ? "1 día" : `${dias} días`;
 }
 
-function badgeEstadoAlerta(estado: string): { tono: "alto" | "aviso" | "neutral"; etiqueta: string } {
-  if (estado === "PENDIENTE_VENCIDA" || estado === "VENCIDA") {
-    return { tono: "alto", etiqueta: "Vencida" };
+function badgeEstadoAlerta(estado: string, tipo?: string | null): {
+  tono: "alto" | "aviso" | "neutral";
+  etiqueta: string;
+} {
+  const esPlazo = tipo === "LIMITE_CUMPLIMIENTO";
+  if (estado === "PENDIENTE_VENCIDA") {
+    return { tono: "alto", etiqueta: "Plazo vencido" };
   }
-  if (estado === "PENDIENTE_PROXIMA_A_VENCER" || estado === "PROXIMA_A_VENCER") {
-    return { tono: "aviso", etiqueta: "Próxima a vencer" };
+  if (estado === "VENCIDA") {
+    return { tono: "alto", etiqueta: "Vigencia vencida" };
+  }
+  if (estado === "PENDIENTE_PROXIMA_A_VENCER") {
+    return { tono: "aviso", etiqueta: "Plazo próximo" };
+  }
+  if (estado === "PROXIMA_A_VENCER") {
+    return { tono: "aviso", etiqueta: "Vigencia próxima" };
+  }
+  if (esPlazo) {
+    return { tono: "aviso", etiqueta: "Plazo de asignación" };
   }
   return { tono: "aviso", etiqueta: estado || "Alerta" };
+}
+
+function etiquetaTipoAlerta(tipo?: string | null): string {
+  if (tipo === "LIMITE_CUMPLIMIENTO") return "Plazo de asignación";
+  if (tipo === "VIGENCIA_CUMPLIMIENTO") return "Vigencia";
+  return "—";
+}
+
+function etiquetaColumnaFecha(tipo?: string | null): string {
+  if (tipo === "LIMITE_CUMPLIMIENTO") return "Fecha límite";
+  if (tipo === "VIGENCIA_CUMPLIMIENTO") return "Vencimiento";
+  return "Fecha alerta";
 }
 
 function rutaHistorial(item: AlertaProximaVencer): string {
@@ -79,10 +104,18 @@ function Contenido() {
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
-  const [resumen, setResumen] = useState<ResumenAlertas>({ vencidas: 0, proximas_30: 0 });
+  const [resumen, setResumen] = useState<ResumenAlertas>({
+    vencidas: 0,
+    proximas_30: 0,
+    plazo_vencidas: 0,
+    plazo_proximas: 0,
+    vigencia_vencidas: 0,
+    vigencia_proximas: 0,
+  });
   const [procesoId, setProcesoId] = useState("");
   const [proyecto, setProyecto] = useState("");
   const [estadoAlerta, setEstadoAlerta] = useState("todas");
+  const [tipoAlerta, setTipoAlerta] = useState("todos");
   const [q, setQ] = useState("");
   const [qAplicado, setQAplicado] = useState("");
   const [capacitacionId, setCapacitacionId] = useState("");
@@ -112,6 +145,7 @@ function Contenido() {
         proceso_id: procesoId || undefined,
         proyecto: muestraProyecto && proyecto ? proyecto : undefined,
         estado_alerta: estadoAlerta !== "todas" ? estadoAlerta : undefined,
+        tipo_alerta: tipoAlerta !== "todos" ? tipoAlerta : undefined,
         q: qAplicado || undefined,
         capacitacion_id: capacitacionId || undefined,
         vencimiento_desde: desde || undefined,
@@ -130,7 +164,16 @@ function Contenido() {
     setTotal(respuesta.data.pagination.total);
     setPagina(respuesta.data.pagination.current_page);
     setUltima(respuesta.data.pagination.last_page);
-    setResumen(respuesta.data.resumen ?? { vencidas: 0, proximas_30: 0 });
+    setResumen(
+      respuesta.data.resumen ?? {
+        vencidas: 0,
+        proximas_30: 0,
+        plazo_vencidas: 0,
+        plazo_proximas: 0,
+        vigencia_vencidas: 0,
+        vigencia_proximas: 0,
+      },
+    );
     setError(null);
   }
 
@@ -138,6 +181,7 @@ function Contenido() {
     setProcesoId("");
     setProyecto("");
     setEstadoAlerta("todas");
+    setTipoAlerta("todos");
     setQ("");
     setQAplicado("");
     setCapacitacionId("");
@@ -182,7 +226,7 @@ function Contenido() {
     }
     void cargar(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [procesoId, proyecto, estadoAlerta, qAplicado, capacitacionId, desde, hasta, muestraProyecto]);
+  }, [procesoId, proyecto, estadoAlerta, tipoAlerta, qAplicado, capacitacionId, desde, hasta, muestraProyecto]);
 
   const chips: ChipFiltro[] = [];
   if (procesoId) {
@@ -191,6 +235,13 @@ function Contenido() {
   }
   if (muestraProyecto && proyecto) {
     chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: proyecto });
+  }
+  if (tipoAlerta !== "todos") {
+    chips.push({
+      clave: "tipo",
+      etiqueta: "Tipo",
+      valor: etiquetaTipoAlerta(tipoAlerta),
+    });
   }
   if (estadoAlerta !== "todas") {
     chips.push({
@@ -218,6 +269,7 @@ function Contenido() {
   function quitarChip(clave: string) {
     if (clave === "proceso_id") setProcesoId("");
     if (clave === "proyecto") setProyecto("");
+    if (clave === "tipo") setTipoAlerta("todos");
     if (clave === "estado") setEstadoAlerta("todas");
     if (clave === "q") {
       setQ("");
@@ -232,18 +284,40 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Alertas"
-        descripcion="Capacitaciones vencidas o próximas a vencer que requieren atención."
+        descripcion="Plazo para completar una asignación y vigencia de capacitaciones ya realizadas (ventana de 30 días)."
         acciones={
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Card className="min-w-[8.5rem] py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vencidas</p>
-              <p className="mt-1 text-2xl font-semibold text-rose-700">{resumen.vencidas}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Plazo vencido
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-rose-700">
+                {resumen.plazo_vencidas ?? 0}
+              </p>
             </Card>
             <Card className="min-w-[8.5rem] py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                ≤ 30 días
+                Plazo ≤ 30 días
               </p>
-              <p className="mt-1 text-2xl font-semibold text-amber-700">{resumen.proximas_30}</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-700">
+                {resumen.plazo_proximas ?? 0}
+              </p>
+            </Card>
+            <Card className="min-w-[8.5rem] py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Vigencia vencida
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-rose-700">
+                {resumen.vigencia_vencidas ?? 0}
+              </p>
+            </Card>
+            <Card className="min-w-[8.5rem] py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Vigencia ≤ 30 días
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-amber-700">
+                {resumen.vigencia_proximas ?? 0}
+              </p>
             </Card>
           </div>
         }
@@ -300,6 +374,17 @@ function Contenido() {
             </select>
           </Field>
         ) : null}
+        <Field etiqueta="Tipo de alerta">
+          <select
+            className={inputClass}
+            value={tipoAlerta}
+            onChange={(e) => setTipoAlerta(e.target.value)}
+          >
+            <option value="todos">Todas</option>
+            <option value="LIMITE_CUMPLIMIENTO">Plazo de asignación</option>
+            <option value="VIGENCIA_CUMPLIMIENTO">Vigencia</option>
+          </select>
+        </Field>
         <Field etiqueta="Estado">
           <select
             className={inputClass}
@@ -332,7 +417,7 @@ function Contenido() {
         onToggle={() => setMasFiltros((abierto) => !abierto)}
         extrasActivos={[desde, hasta].filter(Boolean).length}
       >
-        <Field etiqueta="Vencimiento desde">
+        <Field etiqueta="Fecha alerta desde">
           <input
             type="date"
             className={inputClass}
@@ -341,7 +426,7 @@ function Contenido() {
           />
         </Field>
 
-        <Field etiqueta="Vencimiento hasta">
+        <Field etiqueta="Fecha alerta hasta">
           <input
             type="date"
             className={inputClass}
@@ -369,14 +454,15 @@ function Contenido() {
             { clave: "proceso", etiqueta: "Proceso" },
             { clave: "proyecto", etiqueta: "Proyecto" },
             { clave: "cap", etiqueta: "Capacitación" },
+            { clave: "tipo", etiqueta: "Tipo" },
             { clave: "realizacion", etiqueta: "Última ejecución" },
-            { clave: "vence", etiqueta: "Vencimiento" },
+            { clave: "vence", etiqueta: "Fecha alerta" },
             { clave: "dias", etiqueta: "Días restantes" },
             { clave: "estado", etiqueta: "Estado" },
             { clave: "acciones", etiqueta: "" },
           ]}
           filas={items.map((item) => {
-            const badge = badgeEstadoAlerta(item.estado);
+            const badge = badgeEstadoAlerta(item.estado, item.tipo_alerta);
             const claveFila = item.cumplimiento_id ?? item.asignacion_id;
             return [
               item.trabajador ?? (item.persona_id_ext ? `Persona ${item.persona_id_ext}` : "—"),
@@ -385,8 +471,11 @@ function Contenido() {
               item.proceso ?? "—",
               item.proyecto ?? "—",
               etiquetaCapacitacion(item),
+              item.etiqueta_tipo ?? etiquetaTipoAlerta(item.tipo_alerta),
               formatoFecha(item.fecha_realizacion),
-              formatoFecha(item.fecha_vencimiento),
+              <span key={`f-${claveFila}`} title={etiquetaColumnaFecha(item.tipo_alerta)}>
+                {formatoFecha(item.fecha_alerta ?? item.fecha_vencimiento)}
+              </span>,
               etiquetaDias(item.dias_restantes),
               <Badge key={`e-${claveFila}`} tono={badge.tono}>
                 {badge.etiqueta}
@@ -411,7 +500,7 @@ function Contenido() {
               </div>,
             ];
           })}
-          vacio="No hay alertas de vencimiento para los filtros seleccionados."
+          vacio="No hay alertas para los filtros seleccionados."
         />
       )}
       <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
@@ -449,12 +538,18 @@ function Contenido() {
                 <dd>{etiquetaCapacitacion(detalle)}</dd>
               </div>
               <div>
+                <dt className="text-xs uppercase text-slate-500">Tipo de alerta</dt>
+                <dd>{detalle.etiqueta_tipo ?? etiquetaTipoAlerta(detalle.tipo_alerta)}</dd>
+              </div>
+              <div>
                 <dt className="text-xs uppercase text-slate-500">Última ejecución</dt>
                 <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Vencimiento</dt>
-                <dd>{formatoFecha(detalle.fecha_vencimiento)}</dd>
+                <dt className="text-xs uppercase text-slate-500">
+                  {detalle.etiqueta_fecha ?? etiquetaColumnaFecha(detalle.tipo_alerta)}
+                </dt>
+                <dd>{formatoFecha(detalle.fecha_alerta ?? detalle.fecha_vencimiento)}</dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-slate-500">Días restantes</dt>
@@ -463,8 +558,8 @@ function Contenido() {
               <div>
                 <dt className="text-xs uppercase text-slate-500">Estado</dt>
                 <dd>
-                  <Badge tono={badgeEstadoAlerta(detalle.estado).tono}>
-                    {badgeEstadoAlerta(detalle.estado).etiqueta}
+                  <Badge tono={badgeEstadoAlerta(detalle.estado, detalle.tipo_alerta).tono}>
+                    {badgeEstadoAlerta(detalle.estado, detalle.tipo_alerta).etiqueta}
                   </Badge>
                 </dd>
               </div>

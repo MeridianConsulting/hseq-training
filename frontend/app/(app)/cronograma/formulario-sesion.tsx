@@ -50,7 +50,7 @@ function mesPadded(mes: number): string {
 
 function vacio(item: ItemCronograma): DatosSesion {
   return {
-    fecha: `${item.anio}-${mesPadded(item.mes)}-01`,
+    fecha: item.fecha_programada ?? `${item.anio}-${mesPadded(item.mes)}-01`,
     hora: "08:00",
     modalidad_id: "",
     ubicacion_id: "",
@@ -147,7 +147,8 @@ export function FormularioSesion({
       const ruta = sesion
         ? withQuery(`/api/sesiones/${sesion.sesion_id}/convocables`, { buscar: buscar.trim() || undefined })
         : withQuery("/api/sesiones/convocables", {
-            plan_detalle_id: item.plan_detalle_id,
+            plan_detalle_id: item.plan_detalle_id || undefined,
+            capacitacion_id: item.capacitacion_id,
             buscar: buscar.trim() || undefined,
           });
       const r = await apiGet<ContextoSesion>(ruta);
@@ -170,7 +171,7 @@ export function FormularioSesion({
     return () => {
       abortado.actual = true;
     };
-  }, [item.plan_detalle_id, sesion, buscar]);
+  }, [item.plan_detalle_id, item.capacitacion_id, sesion, buscar]);
 
   const tipo = useMemo(() => {
     const modalidad = (contexto?.modalidades ?? []).find(
@@ -213,9 +214,9 @@ export function FormularioSesion({
     setErrorGeneral(null);
 
     const cuerpo = {
-      plan_detalle_id: item.plan_detalle_id,
+      plan_detalle_id: item.plan_detalle_id ?? undefined,
       capacitacion_id: item.capacitacion_id,
-      fecha: item.fecha_programada ?? datos.fecha,
+      fecha: datos.fecha || item.fecha_programada,
       hora: datos.hora,
       modalidad_id: Number(datos.modalidad_id),
       ubicacion_id: datos.ubicacion_id ? Number(datos.ubicacion_id) : null,
@@ -265,11 +266,11 @@ export function FormularioSesion({
             className={inputClass}
             type="date"
             required
-            readOnly
-            value={item.fecha_programada ?? datos.fecha}
+            value={datos.fecha}
+            onChange={(e) => set("fecha", e.target.value)}
           />
           <span className="mt-1 block text-xs text-slate-500">
-            Viene del Plan anual. Para cambiarla, edite la actividad en el Plan anual.
+            Fecha operativa de la sesión (Asignaciones / Cronograma). No depende del Plan anual.
           </span>
         </Field>
         <Field etiqueta="Hora" error={errores.hora}>

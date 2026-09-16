@@ -286,8 +286,8 @@ CREATE TABLE plan_anual_detalle (
   plan_detalle_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   plan_anual_id INT UNSIGNED NOT NULL,
   capacitacion_id INT UNSIGNED NOT NULL,
-  mes_programado TINYINT UNSIGNED NOT NULL,
-  fecha_programada DATE NOT NULL,
+  mes_programado TINYINT UNSIGNED NULL COMMENT 'Opcional; la programacion operativa vive en asignaciones',
+  fecha_programada DATE NULL COMMENT 'Opcional; el Plan contempla capacitaciones del año sin exigir fecha',
   cantidad_programada INT UNSIGNED NOT NULL DEFAULT 0,
   estado_programacion VARCHAR(20) NOT NULL DEFAULT 'PROGRAMADA',
   area_id INT UNSIGNED NULL,
@@ -302,7 +302,7 @@ CREATE TABLE plan_anual_detalle (
   CONSTRAINT fk_plan_det_cap FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(capacitacion_id),
   CONSTRAINT fk_plan_det_area FOREIGN KEY (area_id) REFERENCES areas(area_id),
   CONSTRAINT fk_plan_det_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id),
-  CONSTRAINT chk_plan_mes CHECK (mes_programado BETWEEN 1 AND 12)
+  CONSTRAINT chk_plan_mes CHECK (mes_programado IS NULL OR mes_programado BETWEEN 1 AND 12)
 ) ENGINE=InnoDB;
 
 CREATE TABLE plan_detalle_alcances (

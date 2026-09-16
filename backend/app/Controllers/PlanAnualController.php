@@ -91,13 +91,12 @@ class PlanAnualController extends Controller
             [
                 'plan_anual_id' => (int)$id,
                 'capacitacion_id' => (int)($datos['capacitacion_id'] ?? 0),
-                'proceso_id' => (int)($datos['proceso_id'] ?? 0),
+                'proceso_id' => isset($datos['proceso_id']) ? (int)$datos['proceso_id'] : null,
                 'proyecto' => $datos['proyecto'] ?? null,
-                'fecha_programada' => $datos['fecha_programada'] ?? null,
             ]
         );
 
-        $this->success($plan, 'Actividad agregada correctamente al Plan Anual.');
+        $this->success($plan, 'Capacitación contemplada en el Plan Anual.');
     }
 
     public function verActividad(Request $request, string $id, string $detalleId): void
@@ -156,7 +155,7 @@ class PlanAnualController extends Controller
             ]
         );
 
-        $this->success($plan, 'Actividad retirada del Plan Anual.');
+        $this->success($plan, 'Capacitación retirada del Plan Anual.');
     }
 
     public function disponibles(Request $request, string $id): void

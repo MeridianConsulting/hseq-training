@@ -52,16 +52,36 @@ class CronogramaService
 
         $filas = $this->repo->programadas($periodo, $procesoId, $proyecto, $buscar);
         $procesos = $this->alertas->procesosActivos();
-        $detalleIds = array_map(static fn (array $fila): int => (int)$fila['plan_detalle_id'], $filas);
+        $detalleIds = [];
+        foreach ($filas as $fila) {
+            $id = isset($fila['plan_detalle_id']) ? (int)$fila['plan_detalle_id'] : 0;
+            if ($id > 0) {
+                $detalleIds[] = $id;
+            }
+        }
         $sesionesPorDetalle = $this->sesionesPorDetalle($detalleIds);
+        $sesionesPorCapMes = $this->sesionesPorCapacitacionMes(
+            array_map(static fn (array $f): int => (int)$f['capacitacion_id'], $filas),
+            (int)$periodo['anio']
+        );
         $alcancesPor = $this->planes->alcancesPorDetalles($detalleIds);
         $porMes = [];
         $items = [];
         foreach ($filas as $fila) {
-            $detalleId = (int)$fila['plan_detalle_id'];
-            $item = $this->item($fila, $sesionesPorDetalle, $alcancesPor[$detalleId] ?? []);
+            $detalleId = isset($fila['plan_detalle_id']) ? (int)$fila['plan_detalle_id'] : 0;
+            $capId = (int)$fila['capacitacion_id'];
+            $mes = (int)$fila['mes_programado'];
+            if ($detalleId < 1) {
+                $fila['plan_detalle_id'] = null;
+                $sesionesMapa = [0 => $sesionesPorCapMes[$capId . ':' . $mes] ?? []];
+                $alcances = [];
+            } else {
+                $sesionesMapa = $sesionesPorDetalle;
+                $alcances = $alcancesPor[$detalleId] ?? [];
+            }
+            $item = $this->item($fila, $sesionesMapa, $alcances);
             $items[] = $item;
-            $porMes[(int)$fila['mes_programado']][] = $item;
+            $porMes[$mes][] = $item;
         }
 
         $meses = [];
@@ -167,14 +187,13 @@ class CronogramaService
         $mes = (int)substr($fecha, 5, 2);
         $fechaAnterior = substr((string)($fila['fecha_programada'] ?? ''), 0, 10);
 
-        $duplicado = $this->planes->buscarDetallePorCapFecha(
+        $duplicado = $this->planes->buscarDetallePorCapacitacion(
             (int)$fila['plan_anual_id'],
             (int)$fila['capacitacion_id'],
-            $fecha,
             $detalleId
         );
-        if ($duplicado !== null) {
-            throw new HttpException('Ya existe una actividad con la misma capacitación y fecha.', 409);
+        if ($duplicado !== null && (int)$duplicado['plan_detalle_id'] !== $detalleId) {
+            throw new HttpException('Esta capacitación ya está contemplada en el plan anual.', 409);
         }
 
         try {
@@ -257,7 +276,17 @@ class CronogramaService
 
         $fecha = $fila['fecha_programada'] !== null && $fila['fecha_programada'] !== ''
             ? substr((string)$fila['fecha_programada'], 0, 10)
-            : sprintf('%04d-%02d-01', (int)$fila['anio'], (int)$fila['mes_programado']);
+            : null;
+        if ($fecha === null || $fecha === '') {
+            $mes = isset($fila['mes_programado']) ? (int)$fila['mes_programado'] : 0;
+            if ($mes < 1 || $mes > 12) {
+                throw new HttpException(
+                    'No hay fecha operativa para iniciar. Defina el plazo en Asignaciones o cree la sesión manualmente.',
+                    422
+                );
+            }
+            $fecha = sprintf('%04d-%02d-01', (int)$fila['anio'], $mes);
+        }
         $lista = $this->trabajadores($detalleId);
         $asignacionIds = array_map(
             static fn (array $t): int => (int)$t['asignacion_id'],
@@ -408,11 +437,13 @@ class CronogramaService
         $mes = (int)$fila['mes_programado'];
         $horas = $fila['duracion_estimada_horas'];
         $metodologia = $fila['metodologia'] ?? null;
-        $detalleId = (int)$fila['plan_detalle_id'];
-        $sesiones = $sesionesPorDetalle[$detalleId] ?? [];
+        $detalleId = isset($fila['plan_detalle_id']) && $fila['plan_detalle_id'] !== null && $fila['plan_detalle_id'] !== ''
+            ? (int)$fila['plan_detalle_id']
+            : 0;
+        $sesiones = $sesionesPorDetalle[$detalleId] ?? ($sesionesPorDetalle[0] ?? []);
         $procesoId = $fila['proceso_id'] !== null ? (int)$fila['proceso_id'] : null;
         $proyecto = $fila['proyecto'] !== null && $fila['proyecto'] !== '' ? (string)$fila['proyecto'] : null;
-        $alcances = $alcances ?? $this->planes->alcancesDeDetalle($detalleId);
+        $alcances = $alcances ?? ($detalleId > 0 ? $this->planes->alcancesDeDetalle($detalleId) : []);
         $cargos = $this->cargosDeProgramacion($fila, $alcances);
         $nombresProceso = [];
         $procesoIds = [];
@@ -436,8 +467,10 @@ class CronogramaService
                 : null);
 
         return [
-            'plan_detalle_id' => $detalleId,
-            'plan_anual_id' => (int)$fila['plan_anual_id'],
+            'plan_detalle_id' => $detalleId > 0 ? $detalleId : null,
+            'plan_anual_id' => isset($fila['plan_anual_id']) && $fila['plan_anual_id'] !== null
+                ? (int)$fila['plan_anual_id']
+                : null,
             'capacitacion_id' => (int)$fila['capacitacion_id'],
             'codigo' => (string)$fila['codigo'],
             'tema' => (string)$fila['nombre'],
@@ -597,6 +630,30 @@ class CronogramaService
                 continue;
             }
             $mapa[$detalleId][] = $sesion;
+        }
+
+        return $mapa;
+    }
+
+    /**
+     * @param list<int> $capacitacionIds
+     * @return array<string, list<array<string,mixed>>> clave "capacitacionId:mes"
+     */
+    private function sesionesPorCapacitacionMes(array $capacitacionIds, int $anio): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $capacitacionIds))));
+        if ($ids === []) {
+            return [];
+        }
+        $mapa = [];
+        foreach ($this->sesionService->resumir($this->sesiones->listarPorCapacitacionesAnio($ids, $anio)) as $sesion) {
+            $capId = (int)($sesion['capacitacion_id'] ?? 0);
+            $fecha = (string)($sesion['fecha'] ?? $sesion['fecha_hora'] ?? '');
+            $mes = strlen($fecha) >= 7 ? (int)substr($fecha, 5, 2) : 0;
+            if ($capId < 1 || $mes < 1) {
+                continue;
+            }
+            $mapa[$capId . ':' . $mes][] = $sesion;
         }
 
         return $mapa;

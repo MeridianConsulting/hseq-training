@@ -961,6 +961,18 @@ class ReporteService
         $hoja->setCellValue('A' . $fila, 'PROYECTO ACTUAL');
         $hoja->setCellValue('B' . $fila, (string)($trabajador['proyecto'] ?? '—'));
         $fila++;
+        $hoja->setCellValue('A' . $fila, 'ESTADO LABORAL');
+        $hoja->setCellValue('B' . $fila, (string)($trabajador['estado'] ?? '—'));
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'FECHA DE INACTIVACIÓN');
+        $fechaInact = $trabajador['fecha_inactivacion'] ?? null;
+        $hoja->setCellValue(
+            'B' . $fila,
+            is_string($fechaInact) && $fechaInact !== ''
+                ? (new DateTimeImmutable(substr($fechaInact, 0, 19)))->format('d/m/Y H:i')
+                : '—'
+        );
+        $fila++;
         foreach ($etiquetas as $clave => $valor) {
             $hoja->setCellValue('A' . $fila, strtoupper((string)$clave));
             $hoja->setCellValue('B' . $fila, $valor);
@@ -1180,6 +1192,7 @@ class ReporteService
             'proyecto' => $persona['proyecto'] ?? null,
             'fecha_ingreso' => $persona['contrato_fecha_inicio'] ?? null,
             'estado' => $persona['estado'] ?? null,
+            'fecha_inactivacion' => $persona['fecha_inactivacion'] ?? null,
         ];
     }
 
