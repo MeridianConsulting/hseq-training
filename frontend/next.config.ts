@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
         destination: "/cronograma",
         permanent: false,
       },
+      {
+        source: "/panel-control",
+        destination: "/dashboard",
+        permanent: false,
+      },
     ];
   },
 };

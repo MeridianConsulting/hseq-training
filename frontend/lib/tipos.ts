@@ -99,6 +99,10 @@ export type ResumenDashboard = {
     critica: KpiHoras;
   };
   ejecutadas_fuera_de_tiempo: number;
+  alertas_resumen?: {
+    proximas: number;
+    vencidas: number;
+  };
   cumplimiento_general: KpiCumplimiento;
   cumplimiento_induccion: KpiCumplimiento;
   cumplimiento_tareas_criticas: KpiCumplimiento;
@@ -466,6 +470,7 @@ export type ConsultaCumplimiento = {
   sesion_id: number | null;
   fecha_realizacion: string | null;
   fecha_vencimiento: string | null;
+  estado_asistencia?: string | null;
   ejecutada_fuera_de_tiempo?: boolean;
   resultado: string | null;
   horas_efectivas: number | null;
@@ -479,6 +484,36 @@ export type ConsultaCumplimiento = {
   estado_calculado: string;
   soportes: SoporteCumplimiento[];
   soportes_count: number;
+};
+
+export type CumplimientoPorCapacitacion = {
+  capacitacion_id: number;
+  codigo: string;
+  nombre: string;
+  tipo_nombre: string | null;
+  es_tarea_critica: boolean;
+  vigencia_nombre: string | null;
+  programadas: number;
+  ejecutadas: number;
+  pendientes: number;
+  ejecutadas_fuera_de_tiempo: number;
+  pendientes_fuera_plazo: number;
+  vigentes: number;
+  vencidas_vigencia: number;
+  fecha_desde: string | null;
+  fecha_hasta: string | null;
+};
+
+export type ConsolidadCumplimientos = {
+  periodo: PeriodoDashboard;
+  items: CumplimientoPorCapacitacion[];
+  total: number;
+  totales: {
+    programadas: number;
+    ejecutadas: number;
+    pendientes: number;
+    ejecutadas_fuera_de_tiempo: number;
+  };
 };
 
 export type DetalleConsultaCumplimiento = {
@@ -644,6 +679,7 @@ export type TotalesReporte = {
   proximas: number;
   programadas?: number;
   ejecutadas?: number;
+  ejecutadas_fuera_de_tiempo?: number;
   porcentaje: number | null;
   horas: number;
   asistieron?: number;

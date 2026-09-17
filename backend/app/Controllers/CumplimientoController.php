@@ -52,12 +52,35 @@ class CumplimientoController extends Controller
 
     public function consulta(Request $request): void
     {
+        $resultado = $this->service->consultar(
+            (int)$request->query('page', 1),
+            (int)$request->query('per_page', 20),
+            $this->filtrosConsulta($request)
+        );
+
+        $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+    }
+
+    public function consultaPorCapacitacion(Request $request): void
+    {
+        $this->success(
+            $this->service->consultarPorCapacitacion($this->filtrosConsulta($request)),
+            'Cumplimientos consolidados por capacitación'
+        );
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function filtrosConsulta(Request $request): array
+    {
         $personaRaw = $request->query('persona_id');
         $cargoRaw = $request->query('cargo_id');
         $procesoRaw = $request->query('proceso_id');
         $capRaw = $request->query('capacitacion_id');
         $tipoRaw = $request->query('tipo_capacitacion_id');
         $critica = $request->query('es_tarea_critica');
+        $fuera = $request->query('fuera_de_tiempo');
         $estadoLaboral = nullable_trimmed_string($request->query('estado_laboral'));
         if ($estadoLaboral === null) {
             $estadoLaboral = 'Activo';
@@ -66,28 +89,42 @@ class CumplimientoController extends Controller
             $estadoLaboral = '';
         }
 
-        $resultado = $this->service->consultar(
-            (int)$request->query('page', 1),
-            (int)$request->query('per_page', 20),
-            [
-                'persona_id' => ($personaRaw !== null && $personaRaw !== '') ? (int)$personaRaw : null,
-                'buscar' => nullable_trimmed_string($request->query('buscar')),
-                'cargo_id' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
-                'proceso_id' => ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
-                'proyecto' => nullable_trimmed_string($request->query('proyecto')),
-                'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
-                'tipo_capacitacion_id' => ($tipoRaw !== null && $tipoRaw !== '') ? (int)$tipoRaw : null,
-                'es_tarea_critica' => ($critica === '1' || $critica === 1 || $critica === true || $critica === 'true') ? 1 : null,
-                'estado' => nullable_trimmed_string($request->query('estado')),
-                'estado_laboral' => $estadoLaboral,
-                'fecha_realizacion_desde' => nullable_trimmed_string($request->query('fecha_realizacion_desde')),
-                'fecha_realizacion_hasta' => nullable_trimmed_string($request->query('fecha_realizacion_hasta')),
-                'fecha_vencimiento_desde' => nullable_trimmed_string($request->query('fecha_vencimiento_desde')),
-                'fecha_vencimiento_hasta' => nullable_trimmed_string($request->query('fecha_vencimiento_hasta')),
-            ]
-        );
+        $tipoPeriodo = nullable_trimmed_string($request->query('tipo'));
+        $anioRaw = $request->query('anio');
 
-        $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
+        return [
+            'persona_id' => ($personaRaw !== null && $personaRaw !== '') ? (int)$personaRaw : null,
+            'buscar' => nullable_trimmed_string($request->query('buscar')),
+            'cargo_id' => ($cargoRaw !== null && $cargoRaw !== '') ? (int)$cargoRaw : null,
+            'proceso_id' => ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null,
+            'proyecto' => nullable_trimmed_string($request->query('proyecto')),
+            'capacitacion_id' => ($capRaw !== null && $capRaw !== '') ? (int)$capRaw : null,
+            'tipo_capacitacion_id' => ($tipoRaw !== null && $tipoRaw !== '') ? (int)$tipoRaw : null,
+            'es_tarea_critica' => ($critica === '1' || $critica === 1 || $critica === true || $critica === 'true') ? 1 : null,
+            'estado' => nullable_trimmed_string($request->query('estado')),
+            'condicion' => nullable_trimmed_string($request->query('condicion')),
+            'fuera_de_tiempo' => ($fuera === '1' || $fuera === 1 || $fuera === true || $fuera === 'true') ? 1 : null,
+            'estado_laboral' => $estadoLaboral,
+            'fecha_realizacion_desde' => nullable_trimmed_string($request->query('fecha_realizacion_desde')),
+            'fecha_realizacion_hasta' => nullable_trimmed_string($request->query('fecha_realizacion_hasta')),
+            'fecha_vencimiento_desde' => nullable_trimmed_string($request->query('fecha_vencimiento_desde')),
+            'fecha_vencimiento_hasta' => nullable_trimmed_string($request->query('fecha_vencimiento_hasta')),
+            'tipo' => $tipoPeriodo,
+            'anio' => ($anioRaw !== null && $anioRaw !== '') ? (int)$anioRaw : null,
+            'mes' => $this->enteroQuery($request, 'mes'),
+            'trimestre' => $this->enteroQuery($request, 'trimestre'),
+            'semestre' => $this->enteroQuery($request, 'semestre'),
+        ];
+    }
+
+    private function enteroQuery(Request $request, string $clave): ?int
+    {
+        $raw = $request->query($clave);
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        return (int)$raw;
     }
 
     public function consultaDetalle(Request $request, string $id): void

@@ -387,7 +387,15 @@ class CumplimientoRepository
                        per.nombre_completo_nombres_primero AS persona_nombre,
                        per.estado AS estado_laboral,
                        per.cargo_id AS cargo_id_actual,
-                       cg.nombre_cargo AS cargo
+                       cg.nombre_cargo AS cargo,
+                       (
+                           SELECT sp.estado_asistencia
+                           FROM sesion_participantes sp
+                           INNER JOIN sesiones_capacitacion s ON s.sesion_id = sp.sesion_id
+                           WHERE sp.asignacion_id = a.asignacion_id
+                           ORDER BY s.fecha_hora DESC, sp.sesion_participante_id DESC
+                           LIMIT 1
+                       ) AS estado_asistencia
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 LEFT JOIN cumplimientos_capacitacion cc ON cc.asignacion_id = a.asignacion_id
@@ -397,6 +405,58 @@ class CumplimientoRepository
                 LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
                 LEFT JOIN {$cargos} cg ON cg.cargo_id = {$cargoSql}
                 LEFT JOIN procesos pr ON pr.proceso_id = {$procesoSql}";
+    }
+
+    /**
+     * Consolidado por capacitación en el período (programadas = asignaciones; ejecutadas = APROBADO).
+     * No aplica penalización por fuera de tiempo (fórmula pendiente de definición funcional).
+     *
+     * @param array<string,mixed> $filtros
+     * @return list<array<string,mixed>>
+     */
+    public function consultarPorCapacitacion(array $filtros): array
+    {
+        [$where, $params] = $this->filtrosConsulta($filtros);
+        $personas = Database::personalTable('personas');
+        $procesoSql = ContextoLaboralSql::procesoId();
+
+        return $this->db->fetchAll(
+            "SELECT a.capacitacion_id,
+                    cap.codigo AS capacitacion_codigo,
+                    cap.nombre AS capacitacion_nombre,
+                    cap.es_tarea_critica,
+                    tc.nombre AS tipo_nombre,
+                    vg.nombre AS vigencia_nombre,
+                    COUNT(*) AS programadas,
+                    SUM(CASE WHEN cc.resultado = 'APROBADO' THEN 1 ELSE 0 END) AS ejecutadas,
+                    SUM(CASE
+                        WHEN cc.cumplimiento_id IS NULL
+                             OR cc.resultado IS NULL
+                             OR cc.resultado <> 'APROBADO'
+                        THEN 1 ELSE 0 END) AS pendientes,
+                    SUM(CASE
+                        WHEN cc.resultado = 'APROBADO'
+                             AND cc.fecha_realizacion IS NOT NULL
+                             AND cc.fecha_realizacion > a.fecha_limite_cumplimiento
+                        THEN 1 ELSE 0 END) AS ejecutadas_fuera_de_tiempo,
+                    SUM(CASE WHEN e.estado_calculado = 'PENDIENTE_VENCIDA' THEN 1 ELSE 0 END) AS pendientes_fuera_plazo,
+                    SUM(CASE WHEN e.estado_calculado IN ('COMPLETADA', 'PROXIMA_A_VENCER') THEN 1 ELSE 0 END) AS vigentes,
+                    SUM(CASE WHEN e.estado_calculado = 'VENCIDA' THEN 1 ELSE 0 END) AS vencidas_vigencia,
+                    MIN(a.fecha_asignacion) AS fecha_desde,
+                    MAX(a.fecha_limite_cumplimiento) AS fecha_hasta
+             FROM asignaciones_capacitacion a
+             INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
+             LEFT JOIN cumplimientos_capacitacion cc ON cc.asignacion_id = a.asignacion_id
+             INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
+             LEFT JOIN tipos_capacitacion tc ON tc.tipo_capacitacion_id = cap.tipo_capacitacion_id
+             LEFT JOIN vigencias vg ON vg.vigencia_id = cap.vigencia_id
+             LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             LEFT JOIN procesos pr ON pr.proceso_id = {$procesoSql}
+             {$where}
+             GROUP BY a.capacitacion_id, cap.codigo, cap.nombre, cap.es_tarea_critica, tc.nombre, vg.nombre
+             ORDER BY cap.codigo ASC, cap.nombre ASC",
+            $params
+        );
     }
 
     /**
@@ -493,6 +553,56 @@ class CumplimientoRepository
         if (is_string($venceHasta) && $venceHasta !== '') {
             $condiciones[] = 'e.fecha_vencimiento <= ?';
             $params[] = $venceHasta;
+        }
+
+        $anio = $filtros['anio'] ?? null;
+        if ($anio !== null && (int)$anio > 0) {
+            $condiciones[] = 'YEAR(a.fecha_limite_cumplimiento) = ?';
+            $params[] = (int)$anio;
+        }
+
+        $meses = $filtros['meses'] ?? null;
+        if (is_array($meses) && $meses !== []) {
+            $enteros = [];
+            foreach ($meses as $mes) {
+                $m = (int)$mes;
+                if ($m >= 1 && $m <= 12) {
+                    $enteros[] = $m;
+                }
+            }
+            $enteros = array_values(array_unique($enteros));
+            if ($enteros !== []) {
+                $ph = implode(',', array_fill(0, count($enteros), '?'));
+                $condiciones[] = "MONTH(a.fecha_limite_cumplimiento) IN ({$ph})";
+                foreach ($enteros as $m) {
+                    $params[] = $m;
+                }
+            }
+        }
+
+        // Misma regla que Panel/Cronograma: fecha_realizacion > fecha_limite.
+        if (!empty($filtros['fuera_de_tiempo'])) {
+            $condiciones[] = "cc.resultado = 'APROBADO'
+                AND e.fecha_realizacion IS NOT NULL
+                AND e.fecha_realizacion > a.fecha_limite_cumplimiento";
+        }
+
+        $condicion = $filtros['condicion'] ?? null;
+        if (is_string($condicion) && $condicion !== '') {
+            $clave = strtolower(trim($condicion));
+            if ($clave === 'ejecutadas') {
+                $condiciones[] = "cc.resultado = 'APROBADO'";
+            } elseif ($clave === 'pendientes') {
+                $condiciones[] = "(cc.cumplimiento_id IS NULL OR cc.resultado IS NULL OR cc.resultado <> 'APROBADO')";
+            } elseif ($clave === 'fuera_de_tiempo') {
+                $condiciones[] = "cc.resultado = 'APROBADO'
+                    AND e.fecha_realizacion IS NOT NULL
+                    AND e.fecha_realizacion > a.fecha_limite_cumplimiento";
+            } elseif ($clave === 'vigentes') {
+                $condiciones[] = "e.estado_calculado IN ('COMPLETADA', 'PROXIMA_A_VENCER')";
+            } elseif ($clave === 'vencidas') {
+                $condiciones[] = "e.estado_calculado IN ('VENCIDA', 'PENDIENTE_VENCIDA')";
+            }
         }
 
         $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';

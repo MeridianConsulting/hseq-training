@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Exceptions\HttpException;
+use App\Repositories\AlertaRepository;
 use App\Repositories\DashboardRepository;
 use App\Repositories\PersonalRepository;
 
@@ -18,6 +19,9 @@ class DashboardService
     }
 
     /**
+     * Indicadores ejecutivos. Fuera de tiempo se cuantifica aparte; no reduce el % de cobertura
+     * (fórmula de penalización pendiente de definición funcional). No hay noveno KPI inventado.
+     *
      * @param array<string,mixed> $filtros
      * @return array<string,mixed>
      */
@@ -53,6 +57,14 @@ class DashboardService
             'critica' => $this->repo->horas($periodo, 'critica', $alcance),
         ];
 
+        $alertasFiltros = [
+            'proceso_id' => $alcance['modo'] === 'proceso' ? $alcance['proceso_id'] : null,
+            'proyecto' => $alcance['proyecto'],
+            'estado_alerta' => 'todas',
+            'tipo_alerta' => 'todos',
+        ];
+        $alertasResumen = (new AlertaRepository())->resumen($alertasFiltros);
+
         return [
             'periodo' => [
                 'tipo' => $periodo['tipo'],
@@ -75,6 +87,11 @@ class DashboardService
             'soportes' => $this->repo->soportes($periodo, $alcance),
             'horas' => $horas,
             'ejecutadas_fuera_de_tiempo' => $this->repo->ejecutadasFueraDeTiempo($periodo, $alcance),
+            // Resumen ejecutivo (sin listado). Detalle en /alertas.
+            'alertas_resumen' => [
+                'proximas' => (int)($alertasResumen['proximas_30'] ?? 0),
+                'vencidas' => (int)($alertasResumen['vencidas'] ?? 0),
+            ],
             // Compatibilidad con clientes que aún leen las claves anteriores.
             'cumplimiento_general' => $cobertura['general'],
             'cumplimiento_induccion' => $cobertura['induccion'],

@@ -5,10 +5,12 @@ export function GraficaCumplimiento({
   titulo,
   descripcion,
   kpi,
+  href,
 }: {
   titulo: string;
   descripcion: string;
   kpi: KpiCumplimiento;
+  href?: string;
 }) {
   const sinInformacion = kpi.programado === 0 && kpi.ejecutado === 0;
   const maximo = Math.max(kpi.programado, kpi.ejecutado, 1);
@@ -45,6 +47,13 @@ export function GraficaCumplimiento({
           </p>
         </>
       )}
+      {href ? (
+        <p className="mt-3 text-center text-sm">
+          <a href={href} className="font-medium text-hseq-800 underline-offset-2 hover:underline">
+            Ver en Reportes
+          </a>
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -115,7 +124,7 @@ export function TarjetaSoportes({ kpi }: { kpi: KpiSoportes }) {
       <h3 className="text-sm font-semibold text-hseq-900">Cumplimiento de soportes</h3>
       <p className="mt-1 text-xs text-slate-500">
         Capacitaciones que requieren certificado/soporte. Con soporte = cumple; sin soporte =
-        pendiente.
+        pendiente. La carga de evidencias se hace en el Tablero de Cronograma.
       </p>
       {kpi.requieren === 0 ? (
         <p className="mt-8 text-center text-sm text-slate-500">Sin requerimientos en el período</p>
@@ -137,6 +146,21 @@ export function TarjetaSoportes({ kpi }: { kpi: KpiSoportes }) {
           </div>
         </div>
       )}
+      <p className="mt-4 text-sm">
+        <a
+          href="/reportes?tipo=evidencias_faltantes"
+          className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+        >
+          Consultar evidencias faltantes
+        </a>
+        {" · "}
+        <a
+          href="/cumplimientos"
+          className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+        >
+          Ver cumplimientos / descargar soportes
+        </a>
+      </p>
     </Card>
   );
 }
@@ -144,9 +168,11 @@ export function TarjetaSoportes({ kpi }: { kpi: KpiSoportes }) {
 export function TarjetaHoras({
   titulo,
   kpi,
+  href,
 }: {
   titulo: string;
   kpi: KpiHoras;
+  href?: string;
 }) {
   const maximo = Math.max(kpi.programadas, kpi.ejecutadas, 1);
   const anchoProgramadas = (kpi.programadas / maximo) * 100;
@@ -159,6 +185,13 @@ export function TarjetaHoras({
         <BarraHoras etiqueta="Programadas" valor={kpi.programadas} ancho={anchoProgramadas} color="#0e7490" />
         <BarraHoras etiqueta="Ejecutadas" valor={kpi.ejecutadas} ancho={anchoEjecutadas} color="#14b8a6" />
       </div>
+      {href ? (
+        <p className="mt-3 text-sm">
+          <a href={href} className="font-medium text-hseq-800 underline-offset-2 hover:underline">
+            Ver en Reportes
+          </a>
+        </p>
+      ) : null}
     </Card>
   );
 }

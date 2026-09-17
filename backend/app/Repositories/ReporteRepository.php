@@ -194,7 +194,8 @@ class ReporteRepository
                 "SELECT COALESCE(SUM(g.asignadas), 0) AS asignadas,
                         COALESCE(SUM(g.completadas), 0) AS completadas,
                         COALESCE(SUM(g.pendientes), 0) AS pendientes,
-                        COALESCE(SUM(g.vencidas), 0) AS vencidas
+                        COALESCE(SUM(g.vencidas), 0) AS vencidas,
+                        COALESCE(SUM(g.fuera_de_tiempo), 0) AS fuera_de_tiempo
                  FROM ({$sql}) g",
                 $params
             );
@@ -205,23 +206,28 @@ class ReporteRepository
                 (int)($fila['pendientes'] ?? 0),
                 (int)($fila['vencidas'] ?? 0),
                 0,
-                0.0
+                0.0,
+                null,
+                (int)($fila['fuera_de_tiempo'] ?? 0)
             );
         }
 
         [$where, $params] = $this->whereAsignaciones($tipo, $filtros);
-        $inComp = $this->listaIn(self::COMPLETADAS);
         $inPend = $this->listaIn(self::PENDIENTES);
+        $ejec = $this->exprEjecutadaAprobado();
+        $fuera = $this->exprFueraDeTiempo();
         $fila = $this->db->fetch(
             "SELECT COUNT(*) AS asignadas,
-                    SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inComp}) THEN 1 ELSE 0 END) AS completadas,
+                    SUM({$ejec}) AS completadas,
                     SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inPend}) THEN 1 ELSE 0 END) AS pendientes,
-                    SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci = 'VENCIDA' THEN 1 ELSE 0 END) AS vencidas,
-                    SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ('PROXIMA_A_VENCER','PENDIENTE_PROXIMA_A_VENCER') THEN 1 ELSE 0 END) AS proximas
+                    SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ('VENCIDA','PENDIENTE_VENCIDA') THEN 1 ELSE 0 END) AS vencidas,
+                    SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ('PROXIMA_A_VENCER','PENDIENTE_PROXIMA_A_VENCER') THEN 1 ELSE 0 END) AS proximas,
+                    SUM({$fuera}) AS fuera_de_tiempo
              FROM asignaciones_capacitacion a
              INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
              LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = cap.tipo_capacitacion_id
+             {$this->joinCumplimiento()}
              {$where}",
             $params
         );
@@ -232,7 +238,9 @@ class ReporteRepository
             (int)($fila['pendientes'] ?? 0),
             (int)($fila['vencidas'] ?? 0),
             (int)($fila['proximas'] ?? 0),
-            0.0
+            0.0,
+            null,
+            (int)($fila['fuera_de_tiempo'] ?? 0)
         );
     }
 
@@ -242,9 +250,32 @@ class ReporteRepository
     }
 
     /**
+     * Métricas alineadas a Panel/Cumplimientos:
+     * ejecutadas = resultado APROBADO; fuera de tiempo = realización > fecha_limite.
+     * El % no penaliza fuera de tiempo (fórmula pendiente de definición funcional).
+     */
+    private function joinCumplimiento(): string
+    {
+        return 'LEFT JOIN cumplimientos_capacitacion cc ON cc.asignacion_id = a.asignacion_id';
+    }
+
+    private function exprEjecutadaAprobado(): string
+    {
+        return "CASE WHEN cc.resultado = 'APROBADO' THEN 1 ELSE 0 END";
+    }
+
+    private function exprFueraDeTiempo(): string
+    {
+        return "CASE WHEN cc.resultado = 'APROBADO'
+                    AND cc.fecha_realizacion IS NOT NULL
+                    AND cc.fecha_realizacion > a.fecha_limite_cumplimiento
+               THEN 1 ELSE 0 END";
+    }
+
+    /**
      * @return array{
      *   asignadas:int,completadas:int,pendientes:int,vencidas:int,proximas:int,
-     *   programadas:int,ejecutadas:int,porcentaje:?float,horas:float
+     *   programadas:int,ejecutadas:int,ejecutadas_fuera_de_tiempo:int,porcentaje:?float,horas:float
      * }
      */
     public function empaquetarTotales(
@@ -254,7 +285,8 @@ class ReporteRepository
         int $vencidas,
         int $proximas,
         float $horas,
-        ?float $porcentaje = null
+        ?float $porcentaje = null,
+        int $fueraDeTiempo = 0
     ): array {
         return [
             'asignadas' => $asignadas,
@@ -264,6 +296,7 @@ class ReporteRepository
             'proximas' => $proximas,
             'programadas' => $asignadas,
             'ejecutadas' => $completadas,
+            'ejecutadas_fuera_de_tiempo' => $fueraDeTiempo,
             'porcentaje' => $porcentaje !== null
                 ? $porcentaje
                 : ($asignadas > 0 ? round($completadas / $asignadas * 100, 1) : null),
@@ -308,10 +341,11 @@ class ReporteRepository
     private function sqlPorTrabajador(array $filtros): array
     {
         [$where, $params] = $this->whereAsignaciones('cumplimiento_trabajador', $filtros);
-        $inComp = $this->listaIn(self::COMPLETADAS);
         $inPend = $this->listaIn(self::PENDIENTES);
         $personas = Database::personalTable('personas');
         $cargos = Database::personalTable('cargos');
+        $ejec = $this->exprEjecutadaAprobado();
+        $fuera = $this->exprFueraDeTiempo();
 
         $sql = "SELECT a.persona_id_ext,
                        MAX(per.numero_documento) AS numero_documento,
@@ -320,14 +354,16 @@ class ReporteRepository
                        MAX(proc.nombre) AS proceso_nombre,
                        MAX(NULLIF(TRIM(a.proyecto), '')) AS proyecto,
                        COUNT(*) AS asignadas,
-                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inComp}) THEN 1 ELSE 0 END) AS completadas,
+                       SUM({$ejec}) AS completadas,
                        SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inPend}) THEN 1 ELSE 0 END) AS pendientes,
-                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci = 'VENCIDA' THEN 1 ELSE 0 END) AS vencidas
+                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ('VENCIDA','PENDIENTE_VENCIDA') THEN 1 ELSE 0 END) AS vencidas,
+                       SUM({$fuera}) AS fuera_de_tiempo
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = cap.tipo_capacitacion_id
                 LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id
+                {$this->joinCumplimiento()}
                 LEFT JOIN {$personas} per ON per.persona_id = a.persona_id_ext
                 LEFT JOIN {$cargos} car ON car.cargo_id = a.cargo_id_ext
                 {$where}
@@ -344,32 +380,39 @@ class ReporteRepository
     private function sqlAgrupado(string $tipo, array $filtros): array
     {
         [$where, $params] = $this->whereAsignaciones('cumplimiento_general', $filtros);
-        $inComp = $this->listaIn(self::COMPLETADAS);
         $inPend = $this->listaIn(self::PENDIENTES);
+        $ejec = $this->exprEjecutadaAprobado();
+        $fuera = $this->exprFueraDeTiempo();
 
         if ($tipo === 'cumplimiento_cargo') {
             $grupo = 'COALESCE(car.nombre_cargo, \'(Sin cargo)\')';
+            $grupoId = 'a.cargo_id_ext';
             $groupBy = 'a.cargo_id_ext, car.nombre_cargo';
             $joinCargo = $this->joinCargo();
         } elseif ($tipo === 'cumplimiento_proceso') {
             $grupo = 'COALESCE(proc.nombre, \'(Sin proceso)\')';
+            $grupoId = 'a.proceso_id';
             $groupBy = 'a.proceso_id, proc.nombre';
             $joinCargo = 'LEFT JOIN procesos proc ON proc.proceso_id = a.proceso_id';
         } else {
             $grupo = 'COALESCE(NULLIF(TRIM(a.proyecto), \'\'), \'(Sin proyecto)\')';
+            $grupoId = 'NULLIF(TRIM(a.proyecto), \'\')';
             $groupBy = 'a.proyecto';
             $joinCargo = '';
         }
 
         $sql = "SELECT {$grupo} AS grupo,
+                       {$grupoId} AS grupo_id,
                        COUNT(*) AS asignadas,
-                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inComp}) THEN 1 ELSE 0 END) AS completadas,
+                       SUM({$ejec}) AS completadas,
                        SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ({$inPend}) THEN 1 ELSE 0 END) AS pendientes,
-                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci = 'VENCIDA' THEN 1 ELSE 0 END) AS vencidas
+                       SUM(CASE WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci IN ('VENCIDA','PENDIENTE_VENCIDA') THEN 1 ELSE 0 END) AS vencidas,
+                       SUM({$fuera}) AS fuera_de_tiempo
                 FROM asignaciones_capacitacion a
                 INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
                 LEFT JOIN tipos_capacitacion tip ON tip.tipo_capacitacion_id = cap.tipo_capacitacion_id
+                {$this->joinCumplimiento()}
                 {$joinCargo}
                 {$where}
                 GROUP BY {$groupBy}
@@ -657,7 +700,7 @@ class ReporteRepository
         $params = [];
         $columnaFecha = $tipo === 'vencidas'
             ? 'COALESCE(e.fecha_vencimiento, e.fecha_limite_cumplimiento)'
-            : 'a.fecha_asignacion';
+            : 'a.fecha_limite_cumplimiento';
         $this->aplicarComunes($condiciones, $params, $filtros, $columnaFecha, true);
 
         if ($tipo === 'vencidas') {

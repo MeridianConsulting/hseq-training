@@ -149,6 +149,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->get('/soportes/{id}/archivo', [CumplimientoController::class, 'descargarSoporte'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->delete('/soportes/{id}', [CumplimientoController::class, 'destroySoporte'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
         $router->get('/consulta/opciones', [CumplimientoController::class, 'opcionesConsulta'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
+        $router->get('/consulta/por-capacitacion', [CumplimientoController::class, 'consultaPorCapacitacion'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->get('/consulta/trabajador/{id}', [CumplimientoController::class, 'consultaTrabajador'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->get('/consulta/{id}', [CumplimientoController::class, 'consultaDetalle'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->get('/consulta', [CumplimientoController::class, 'consulta'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);

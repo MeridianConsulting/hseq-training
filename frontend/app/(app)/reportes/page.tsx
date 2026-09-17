@@ -6,7 +6,7 @@ import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "@/components/ui/field";
+import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { MasFiltros } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
@@ -25,6 +25,7 @@ import type {
   PersonaCorporativa,
   ResultadoReporte,
   SoporteCumplimiento,
+  TipoPeriodoDashboard,
   TotalesReporte,
 } from "@/lib/tipos";
 import { TIPOS_REPORTE } from "@/lib/tipos";
@@ -48,6 +49,64 @@ const TIPOS_DETALLE = [
   "reinducciones",
   "tareas_criticas",
 ];
+
+const TIPOS_AGREGADOS = [
+  "cumplimiento_trabajador",
+  "cumplimiento_cargo",
+  "cumplimiento_proceso",
+  "cumplimiento_proyecto",
+];
+
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+function aniosDisponibles(): number[] {
+  const actual = new Date().getFullYear();
+  return [actual - 2, actual - 1, actual, actual + 1];
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Misma ventana que DashboardService::periodo. */
+function rangoDePeriodo(
+  tipoPeriodo: TipoPeriodoDashboard,
+  anio: number,
+  mes: number,
+  trimestre: number,
+  semestre: number,
+): { desde: string; hasta: string } {
+  if (tipoPeriodo === "mensual") {
+    const ultimo = new Date(anio, mes, 0).getDate();
+    return { desde: `${anio}-${pad(mes)}-01`, hasta: `${anio}-${pad(mes)}-${pad(ultimo)}` };
+  }
+  if (tipoPeriodo === "trimestral") {
+    const inicioMes = (trimestre - 1) * 3 + 1;
+    const finMes = inicioMes + 2;
+    const ultimo = new Date(anio, finMes, 0).getDate();
+    return { desde: `${anio}-${pad(inicioMes)}-01`, hasta: `${anio}-${pad(finMes)}-${pad(ultimo)}` };
+  }
+  if (tipoPeriodo === "semestral") {
+    const inicioMes = semestre === 1 ? 1 : 7;
+    const finMes = semestre === 1 ? 6 : 12;
+    const ultimo = new Date(anio, finMes, 0).getDate();
+    return { desde: `${anio}-${pad(inicioMes)}-01`, hasta: `${anio}-${pad(finMes)}-${pad(ultimo)}` };
+  }
+  return { desde: `${anio}-01-01`, hasta: `${anio}-12-31` };
+}
 
 function formatoFecha(valor: unknown): string {
   if (typeof valor !== "string" || !valor) return "—";
@@ -95,7 +154,8 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
       { clave: "programadas", etiqueta: "Programadas" },
       { clave: "ejecutadas", etiqueta: "Ejecutadas" },
       { clave: "pendientes", etiqueta: "Pendientes" },
-      { clave: "vencidas", etiqueta: "Vencidas" },
+      { clave: "vencidas", etiqueta: "Fuera de plazo" },
+      { clave: "ejecutadas_fuera_de_tiempo", etiqueta: "Fuera de tiempo" },
       { clave: "porcentaje", etiqueta: "% cumplimiento" },
     ];
   }
@@ -107,7 +167,8 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
       { clave: "programadas", etiqueta: "Programadas" },
       { clave: "ejecutadas", etiqueta: "Ejecutadas" },
       { clave: "pendientes", etiqueta: "Pendientes" },
-      { clave: "vencidas", etiqueta: "Vencidas" },
+      { clave: "vencidas", etiqueta: "Fuera de plazo" },
+      { clave: "ejecutadas_fuera_de_tiempo", etiqueta: "Fuera de tiempo" },
       { clave: "porcentaje", etiqueta: "% cumplimiento" },
     ];
   }
@@ -165,8 +226,10 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
     { clave: "capacitacion", etiqueta: "Capacitación" },
     { clave: "origen", etiqueta: "Origen" },
     { clave: "estado", etiqueta: "Estado" },
-    { clave: "fecha_asignacion", etiqueta: "Asignación" },
-    { clave: "fecha_realizacion", etiqueta: "Realización" },
+    { clave: "fecha_desde", etiqueta: "Fecha desde" },
+    { clave: "fecha_hasta", etiqueta: "Fecha hasta" },
+    { clave: "fecha_realizacion", etiqueta: "Fecha real" },
+    { clave: "oportunidad", etiqueta: "Oportunidad" },
     { clave: "fecha_vencimiento", etiqueta: "Vencimiento" },
   ];
   if (tipo === "inducciones") {
@@ -185,6 +248,7 @@ function celda(tipo: string, clave: string, item: Record<string, unknown>) {
   const valor = item[clave];
   if (clave.includes("fecha") || clave === "fecha") return formatoFecha(valor);
   if (clave === "estado" || clave === "estado_asistencia" || clave === "origen") return etiquetaEstado(valor);
+  if (clave === "oportunidad") return texto(valor);
   if (clave === "porcentaje") return valor === null || valor === undefined ? "—" : `${valor}%`;
   if (clave === "es_tarea_critica" || clave === "tiene_soporte" || clave === "requiere_certificado") {
     return valor ? "Sí" : "No";
@@ -225,9 +289,21 @@ export default function Page() {
 }
 
 function Contenido() {
-  const [tipo, setTipo] = useState("cumplimiento_general");
-  const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState("");
+  const hoy = new Date();
+  const [tipo, setTipo] = useState(() => {
+    if (typeof window === "undefined") return "cumplimiento_general";
+    const t = new URLSearchParams(window.location.search).get("tipo");
+    if (t && TIPOS_REPORTE.some((op) => op.id === t)) return t;
+    return "cumplimiento_general";
+  });
+  const [tipoPeriodo, setTipoPeriodo] = useState<TipoPeriodoDashboard>("mensual");
+  const [anio, setAnio] = useState(hoy.getFullYear());
+  const [mes, setMes] = useState(hoy.getMonth() + 1);
+  const [trimestre, setTrimestre] = useState(Math.ceil((hoy.getMonth() + 1) / 3));
+  const [semestre, setSemestre] = useState(hoy.getMonth() + 1 <= 6 ? 1 : 2);
+  const rangoInicial = rangoDePeriodo("mensual", hoy.getFullYear(), hoy.getMonth() + 1, 1, 1);
+  const [desde, setDesde] = useState(rangoInicial.desde);
+  const [hasta, setHasta] = useState(rangoInicial.hasta);
   const [procesoId, setProcesoId] = useState("");
   const [proyecto, setProyecto] = useState("");
   const [buscar, setBuscar] = useState("");
@@ -264,10 +340,33 @@ function Contenido() {
   const [soportesDetalle, setSoportesDetalle] = useState<SoporteCumplimiento[]>([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [masFiltros, setMasFiltros] = useState(false);
+  const [drillItems, setDrillItems] = useState<Record<string, unknown>[]>([]);
+  const [drillTitulo, setDrillTitulo] = useState("");
+  const [drillAbierto, setDrillAbierto] = useState(false);
+  const [cargandoDrill, setCargandoDrill] = useState(false);
 
   const esHistorial = tipo === "historial_trabajador";
   const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
   const permiteDetalle = TIPOS_DETALLE.includes(tipo);
+  const permiteDrill = TIPOS_AGREGADOS.includes(tipo);
+
+  function aplicarPeriodo(
+    siguienteTipo: TipoPeriodoDashboard,
+    siguienteAnio: number,
+    siguienteMes: number,
+    siguienteTrimestre: number,
+    siguienteSemestre: number,
+  ) {
+    const rango = rangoDePeriodo(
+      siguienteTipo,
+      siguienteAnio,
+      siguienteMes,
+      siguienteTrimestre,
+      siguienteSemestre,
+    );
+    setDesde(rango.desde);
+    setHasta(rango.hasta);
+  }
 
   const params = useMemo(
     () => ({
@@ -379,6 +478,49 @@ function Contenido() {
     }
   }
 
+  async function abrirDrill(item: Record<string, unknown>) {
+    const extras: Record<string, string | number | undefined> = {
+      desde: params.desde,
+      hasta: params.hasta,
+      proceso_id: params.proceso_id,
+      proyecto: params.proyecto,
+      estado: params.estado,
+      page: 1,
+      per_page: 100,
+    };
+    let tituloDrill = "Detalle de registros";
+    if (tipo === "cumplimiento_trabajador" && item.persona_id_ext) {
+      extras.persona_id = Number(item.persona_id_ext);
+      tituloDrill = `Detalle — ${texto(item.trabajador)}`;
+    } else if (tipo === "cumplimiento_cargo" && item.grupo_id != null && item.grupo_id !== "") {
+      extras.cargo_id_ext = Number(item.grupo_id);
+      tituloDrill = `Detalle — ${texto(item.grupo)}`;
+    } else if (tipo === "cumplimiento_proceso" && item.grupo_id != null && item.grupo_id !== "") {
+      extras.proceso_id = Number(item.grupo_id);
+      tituloDrill = `Detalle — ${texto(item.grupo)}`;
+    } else if (tipo === "cumplimiento_proyecto") {
+      const proy = typeof item.grupo_id === "string" && item.grupo_id
+        ? item.grupo_id
+        : typeof item.grupo === "string" && item.grupo !== "(Sin proyecto)"
+          ? item.grupo
+          : undefined;
+      extras.proyecto = proy;
+      tituloDrill = `Detalle — ${texto(item.grupo)}`;
+    }
+    setDrillTitulo(tituloDrill);
+    setDrillAbierto(true);
+    setCargandoDrill(true);
+    setDrillItems([]);
+    const r = await apiGet<ResultadoReporte>(withQuery("/api/reportes/cumplimiento_general", extras));
+    setCargandoDrill(false);
+    if (r.cancelada) return;
+    if (!r.success || !r.data) {
+      setError(r.message || "No fue posible cargar el detalle del grupo.");
+      return;
+    }
+    setDrillItems(r.data.items);
+  }
+
   useEffect(() => {
     void (async () => {
       const respuesta = await apiGet<OpcionesAlertas>("/api/reportes/opciones");
@@ -488,6 +630,96 @@ function Contenido() {
               ))}
             </select>
           </Field>
+        ) : null}
+        {muestraPeriodo ? (
+          <>
+            <Field etiqueta="Período">
+              <select
+                className={inputClass}
+                value={tipoPeriodo}
+                onChange={(e) => {
+                  const t = e.target.value as TipoPeriodoDashboard;
+                  setTipoPeriodo(t);
+                  aplicarPeriodo(t, anio, mes, trimestre, semestre);
+                }}
+              >
+                <option value="mensual">Mensual</option>
+                <option value="trimestral">Trimestral</option>
+                <option value="semestral">Semestral</option>
+                <option value="anual">Anual</option>
+              </select>
+            </Field>
+            <Field etiqueta="Año" className={fieldClassAnio}>
+              <select
+                className={inputClassAnio}
+                value={anio}
+                onChange={(e) => {
+                  const a = Number(e.target.value);
+                  setAnio(a);
+                  aplicarPeriodo(tipoPeriodo, a, mes, trimestre, semestre);
+                }}
+              >
+                {aniosDisponibles().map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {tipoPeriodo === "mensual" ? (
+              <Field etiqueta="Mes">
+                <select
+                  className={inputClass}
+                  value={mes}
+                  onChange={(e) => {
+                    const m = Number(e.target.value);
+                    setMes(m);
+                    aplicarPeriodo(tipoPeriodo, anio, m, trimestre, semestre);
+                  }}
+                >
+                  {MESES.map((nombre, idx) => (
+                    <option key={nombre} value={idx + 1}>
+                      {nombre}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {tipoPeriodo === "trimestral" ? (
+              <Field etiqueta="Trimestre">
+                <select
+                  className={inputClass}
+                  value={trimestre}
+                  onChange={(e) => {
+                    const t = Number(e.target.value);
+                    setTrimestre(t);
+                    aplicarPeriodo(tipoPeriodo, anio, mes, t, semestre);
+                  }}
+                >
+                  <option value={1}>1 (ene–mar)</option>
+                  <option value={2}>2 (abr–jun)</option>
+                  <option value={3}>3 (jul–sep)</option>
+                  <option value={4}>4 (oct–dic)</option>
+                </select>
+              </Field>
+            ) : null}
+            {tipoPeriodo === "semestral" ? (
+              <Field etiqueta="Semestre">
+                <select
+                  className={inputClass}
+                  value={semestre}
+                  onChange={(e) => {
+                    const s = Number(e.target.value);
+                    setSemestre(s);
+                    aplicarPeriodo(tipoPeriodo, anio, mes, trimestre, s);
+                  }}
+                >
+                  <option value={1}>1 (ene–jun)</option>
+                  <option value={2}>2 (jul–dic)</option>
+                </select>
+              </Field>
+            ) : null}
+          </>
         ) : null}
         {esHistorial ? (
           <Field etiqueta="Trabajador">
@@ -638,7 +870,11 @@ function Contenido() {
               <Tarjeta etiqueta="Programadas" valor={String(valorProgramadas(totales))} />
               <Tarjeta etiqueta="Ejecutadas" valor={String(valorEjecutadas(totales))} />
               <Tarjeta etiqueta="Pendientes" valor={String(totales.pendientes)} />
-              <Tarjeta etiqueta="Vencidas" valor={String(totales.vencidas)} />
+              <Tarjeta etiqueta="Fuera de plazo" valor={String(totales.vencidas)} />
+              <Tarjeta
+                etiqueta="Fuera de tiempo"
+                valor={String(totales.ejecutadas_fuera_de_tiempo ?? 0)}
+              />
               <Tarjeta
                 etiqueta="% cumplimiento"
                 valor={totales.porcentaje === null ? "—" : `${totales.porcentaje}%`}
@@ -671,22 +907,34 @@ function Contenido() {
         <>
           <Table
             columnas={
-              permiteDetalle
+              permiteDetalle || permiteDrill
                 ? [...columnas, { clave: "_acciones", etiqueta: "Acciones" }]
                 : columnas
             }
             filas={items.map((item) => {
               const celdas = columnas.map((col) => celda(tipo, col.clave, item));
-              if (permiteDetalle) {
+              if (permiteDetalle || permiteDrill) {
                 celdas.push(
-                  <button
-                    key="detalle"
-                    type="button"
-                    className="font-medium text-hseq-800 underline-offset-2 hover:underline"
-                    onClick={() => void abrirDetalle(item)}
-                  >
-                    Ver detalle
-                  </button>,
+                  <span key="acciones" className="flex flex-wrap gap-2">
+                    {permiteDetalle ? (
+                      <button
+                        type="button"
+                        className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                        onClick={() => void abrirDetalle(item)}
+                      >
+                        Ver detalle
+                      </button>
+                    ) : null}
+                    {permiteDrill ? (
+                      <button
+                        type="button"
+                        className="font-medium text-hseq-800 underline-offset-2 hover:underline"
+                        onClick={() => void abrirDrill(item)}
+                      >
+                        Ver registros
+                      </button>
+                    ) : null}
+                  </span>,
                 );
               }
               return celdas;
@@ -696,6 +944,43 @@ function Contenido() {
           <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargar(p)} />
         </>
       )}
+
+      <Modal
+        abierto={drillAbierto}
+        titulo={drillTitulo}
+        onCerrar={() => {
+          setDrillAbierto(false);
+          setDrillItems([]);
+        }}
+      >
+        {cargandoDrill ? (
+          <p className="text-sm text-slate-500">Cargando registros…</p>
+        ) : (
+          <Table
+            columnas={[
+              { clave: "documento", etiqueta: "Documento" },
+              { clave: "trabajador", etiqueta: "Trabajador" },
+              { clave: "capacitacion", etiqueta: "Capacitación" },
+              { clave: "fecha_desde", etiqueta: "Desde" },
+              { clave: "fecha_hasta", etiqueta: "Hasta" },
+              { clave: "fecha_realizacion", etiqueta: "Fecha real" },
+              { clave: "oportunidad", etiqueta: "Oportunidad" },
+              { clave: "estado", etiqueta: "Estado" },
+            ]}
+            filas={drillItems.map((item) => [
+              texto(item.documento),
+              texto(item.trabajador),
+              texto(item.capacitacion),
+              formatoFecha(item.fecha_desde ?? item.fecha_asignacion),
+              formatoFecha(item.fecha_hasta ?? item.fecha_limite_cumplimiento),
+              formatoFecha(item.fecha_realizacion),
+              texto(item.oportunidad),
+              etiquetaEstado(item.estado),
+            ])}
+            vacio="No hay registros para este grupo en el período."
+          />
+        )}
+      </Modal>
 
       <Modal abierto={detalle !== null} titulo="Detalle del registro" onCerrar={() => setDetalle(null)}>
         {detalle ? (
@@ -741,12 +1026,20 @@ function Contenido() {
                 <dd>{detalle.es_tarea_critica ? "Sí" : "No"}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Asignación</dt>
-                <dd>{formatoFecha(detalle.fecha_asignacion)}</dd>
+                <dt className="text-xs uppercase text-slate-500">Fecha desde</dt>
+                <dd>{formatoFecha(detalle.fecha_desde ?? detalle.fecha_asignacion)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Realización</dt>
+                <dt className="text-xs uppercase text-slate-500">Fecha hasta</dt>
+                <dd>{formatoFecha(detalle.fecha_hasta ?? detalle.fecha_limite_cumplimiento)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Fecha real de ejecución</dt>
                 <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Oportunidad</dt>
+                <dd>{texto(detalle.oportunidad)}</dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-slate-500">Vencimiento</dt>

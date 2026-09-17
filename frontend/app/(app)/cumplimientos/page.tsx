@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ListaEvidencias } from "@/app/(app)/cumplimientos/evidencias";
+import { procesoPermiteFiltroProyecto } from "@/components/dashboard/filtro-periodo";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, inputClass } from "@/components/ui/field";
+import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
 import { Modal } from "@/components/ui/modal";
@@ -19,26 +20,32 @@ import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
 import { Eye, UserRound } from "lucide-react";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type {
+  ConsolidadCumplimientos,
   ConsultaCumplimiento,
+  CumplimientoPorCapacitacion,
   DetalleConsultaCumplimiento,
   OpcionesConsultaCumplimientos,
   SituacionTrabajadorCumplimiento,
+  TipoPeriodoDashboard,
 } from "@/lib/tipos";
+
+const hoy = new Date();
 
 const FILTROS_DEFAULT = {
   buscar: "",
   capacitacion_id: "",
-  estado: "",
+  condicion: "",
   cargo_id: "",
   proceso_id: "",
   proyecto: "",
   tipo_capacitacion_id: "",
   es_tarea_critica: "",
   estado_laboral: "Activo",
-  fecha_realizacion_desde: "",
-  fecha_realizacion_hasta: "",
-  fecha_vencimiento_desde: "",
-  fecha_vencimiento_hasta: "",
+  tipo: "mensual" as TipoPeriodoDashboard,
+  anio: String(hoy.getFullYear()),
+  mes: String(hoy.getMonth() + 1),
+  trimestre: String(Math.ceil((hoy.getMonth() + 1) / 3)),
+  semestre: String(hoy.getMonth() + 1 <= 6 ? 1 : 2),
 };
 
 const ETIQUETAS_ESTADO: Record<string, string> = {
@@ -49,6 +56,30 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
   PROXIMA_A_VENCER: "Próxima a vencer",
   VENCIDA: "Vencida",
 };
+
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+function aniosDisponibles(): number[] {
+  const actual = new Date().getFullYear();
+  const lista: number[] = [];
+  for (let anio = actual - 2; anio <= actual + 1; anio += 1) {
+    lista.push(anio);
+  }
+  return lista;
+}
 
 function tonoEstado(estado: string): "alto" | "aviso" | "ok" | "neutral" {
   if (estado === "VENCIDA" || estado === "PENDIENTE_VENCIDA") return "alto";
@@ -64,14 +95,7 @@ function formatoFecha(valor: string | null | undefined): string {
   return `${dia}/${mes}/${anio}`;
 }
 
-function contextoPersona(item: ConsultaCumplimiento): string {
-  const cargo = (item.cargo ?? "").trim();
-  const proyecto = (item.proyecto ?? "").trim();
-  if (cargo && proyecto) return `${cargo} · ${proyecto}`;
-  return cargo || proyecto || "—";
-}
-
-function etiquetaAsistencia(valor: string | null): string {
+function etiquetaAsistencia(valor: string | null | undefined): string {
   if (valor === "ASISTIO") return "Asistió";
   if (valor === "TARDE") return "Tarde";
   if (valor === "AUSENTE") return "Ausente";
@@ -85,6 +109,25 @@ function siNo(valor: boolean | null | undefined): string {
   return "—";
 }
 
+function etiquetaCondicion(valor: string): string {
+  if (valor === "ejecutadas") return "Ejecutadas";
+  if (valor === "pendientes") return "Pendientes";
+  if (valor === "fuera_de_tiempo") return "Fuera de tiempo";
+  if (valor === "vigentes") return "Vigentes";
+  if (valor === "vencidas") return "Vencidas";
+  return valor;
+}
+
+function paramsPeriodo(valores: typeof FILTROS_DEFAULT) {
+  return {
+    tipo: valores.tipo || "mensual",
+    anio: valores.anio || undefined,
+    mes: valores.tipo === "mensual" ? valores.mes || undefined : undefined,
+    trimestre: valores.tipo === "trimestral" ? valores.trimestre || undefined : undefined,
+    semestre: valores.tipo === "semestral" ? valores.semestre || undefined : undefined,
+  };
+}
+
 export default function Page() {
   return (
     <RequierePermiso permiso="cumplimientos.ver">
@@ -94,12 +137,16 @@ export default function Page() {
 }
 
 function Contenido() {
-  const { valores, setFiltro, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
+  const { valores, setFiltro, setVarios, limpiar } = useFiltrosUrl(FILTROS_DEFAULT, {
     keysDebounce: ["buscar"],
   });
-  const [items, setItems] = useState<ConsultaCumplimiento[]>([]);
-  const [pagina, setPagina] = useState(1);
-  const [ultima, setUltima] = useState(1);
+  const [consolidados, setConsolidados] = useState<CumplimientoPorCapacitacion[]>([]);
+  const [totales, setTotales] = useState({
+    programadas: 0,
+    ejecutadas: 0,
+    pendientes: 0,
+    ejecutadas_fuera_de_tiempo: 0,
+  });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [capacitaciones, setCapacitaciones] = useState<
@@ -113,41 +160,33 @@ function Contenido() {
     capacitaciones: [],
   });
   const [masFiltros, setMasFiltros] = useState(() =>
-    Boolean(
-      valores.cargo_id ||
-        valores.proceso_id ||
-        valores.proyecto ||
-        valores.tipo_capacitacion_id ||
-        valores.es_tarea_critica ||
-        valores.fecha_realizacion_desde ||
-        valores.fecha_realizacion_hasta ||
-        valores.fecha_vencimiento_desde ||
-        valores.fecha_vencimiento_hasta,
-    ),
+    Boolean(valores.cargo_id || valores.tipo_capacitacion_id || valores.es_tarea_critica),
   );
+  const [capDetalle, setCapDetalle] = useState<CumplimientoPorCapacitacion | null>(null);
+  const [personas, setPersonas] = useState<ConsultaCumplimiento[]>([]);
+  const [paginaPers, setPaginaPers] = useState(1);
+  const [ultimaPers, setUltimaPers] = useState(1);
+  const [cargandoPers, setCargandoPers] = useState(false);
   const [detalle, setDetalle] = useState<DetalleConsultaCumplimiento | null>(null);
   const [situacion, setSituacion] = useState<SituacionTrabajadorCumplimiento | null>(null);
 
-  async function cargarListado(paginaActual = 1) {
+  const muestraProyecto = procesoPermiteFiltroProyecto(valores.proceso_id, opciones.procesos);
+
+  async function cargarConsolidados() {
     setCargando(true);
     try {
-      const respuesta = await apiGet<ListaPaginada<ConsultaCumplimiento>>(
-        withQuery("/api/cumplimientos/consulta", {
-          page: paginaActual,
-          per_page: 15,
+      const respuesta = await apiGet<ConsolidadCumplimientos>(
+        withQuery("/api/cumplimientos/consulta/por-capacitacion", {
+          ...paramsPeriodo(valores),
           buscar: valores.buscar.trim() || undefined,
           capacitacion_id: valores.capacitacion_id || undefined,
-          estado: valores.estado || undefined,
+          condicion: valores.condicion || undefined,
           cargo_id: valores.cargo_id || undefined,
           proceso_id: valores.proceso_id || undefined,
-          proyecto: valores.proyecto || undefined,
+          proyecto: muestraProyecto ? valores.proyecto || undefined : undefined,
           tipo_capacitacion_id: valores.tipo_capacitacion_id || undefined,
           es_tarea_critica: valores.es_tarea_critica || undefined,
           estado_laboral: valores.estado_laboral || "todos",
-          fecha_realizacion_desde: valores.fecha_realizacion_desde || undefined,
-          fecha_realizacion_hasta: valores.fecha_realizacion_hasta || undefined,
-          fecha_vencimiento_desde: valores.fecha_vencimiento_desde || undefined,
-          fecha_vencimiento_hasta: valores.fecha_vencimiento_hasta || undefined,
         }),
       );
       if (respuesta.cancelada) {
@@ -155,35 +194,78 @@ function Contenido() {
       }
       if (!respuesta.success || !respuesta.data) {
         setError(respuesta.message || "No fue posible cargar los cumplimientos.");
+        setConsolidados([]);
         return;
       }
-      setItems(respuesta.data.items);
-      setPagina(respuesta.data.pagination.current_page);
-      setUltima(respuesta.data.pagination.last_page);
+      setConsolidados(respuesta.data.items ?? []);
+      setTotales(
+        respuesta.data.totales ?? {
+          programadas: 0,
+          ejecutadas: 0,
+          pendientes: 0,
+          ejecutadas_fuera_de_tiempo: 0,
+        },
+      );
       setError(null);
     } finally {
       setCargando(false);
     }
   }
 
+  async function cargarPersonas(cap: CumplimientoPorCapacitacion, paginaActual = 1) {
+    setCargandoPers(true);
+    try {
+      const respuesta = await apiGet<ListaPaginada<ConsultaCumplimiento>>(
+        withQuery("/api/cumplimientos/consulta", {
+          page: paginaActual,
+          per_page: 20,
+          ...paramsPeriodo(valores),
+          capacitacion_id: cap.capacitacion_id,
+          buscar: valores.buscar.trim() || undefined,
+          condicion: valores.condicion || undefined,
+          cargo_id: valores.cargo_id || undefined,
+          proceso_id: valores.proceso_id || undefined,
+          proyecto: muestraProyecto ? valores.proyecto || undefined : undefined,
+          tipo_capacitacion_id: valores.tipo_capacitacion_id || undefined,
+          es_tarea_critica: valores.es_tarea_critica || undefined,
+          estado_laboral: valores.estado_laboral || "todos",
+        }),
+      );
+      if (respuesta.cancelada) {
+        return;
+      }
+      if (!respuesta.success || !respuesta.data) {
+        setError(respuesta.message || "No fue posible cargar las personas de la capacitación.");
+        return;
+      }
+      setPersonas(respuesta.data.items);
+      setPaginaPers(respuesta.data.pagination.current_page);
+      setUltimaPers(respuesta.data.pagination.last_page);
+      setError(null);
+    } finally {
+      setCargandoPers(false);
+    }
+  }
+
   useDebouncedCallback(
     () => {
-      void cargarListado(1);
+      void cargarConsolidados();
     },
     [
       valores.buscar,
       valores.capacitacion_id,
-      valores.estado,
+      valores.condicion,
       valores.cargo_id,
       valores.proceso_id,
       valores.proyecto,
       valores.tipo_capacitacion_id,
       valores.es_tarea_critica,
       valores.estado_laboral,
-      valores.fecha_realizacion_desde,
-      valores.fecha_realizacion_hasta,
-      valores.fecha_vencimiento_desde,
-      valores.fecha_vencimiento_hasta,
+      valores.tipo,
+      valores.anio,
+      valores.mes,
+      valores.trimestre,
+      valores.semestre,
     ],
   );
 
@@ -199,21 +281,15 @@ function Contenido() {
 
   const extrasActivos = [
     valores.cargo_id,
-    valores.proceso_id,
-    valores.proyecto,
     valores.tipo_capacitacion_id,
     valores.es_tarea_critica,
-    valores.fecha_realizacion_desde,
-    valores.fecha_realizacion_hasta,
-    valores.fecha_vencimiento_desde,
-    valores.fecha_vencimiento_hasta,
     valores.estado_laboral !== "Activo" ? valores.estado_laboral : "",
   ].filter(Boolean).length;
 
   const chipsActivos = useMemo(() => {
     const chips: ChipFiltro[] = [];
     if (valores.buscar.trim()) {
-      chips.push({ clave: "buscar", etiqueta: "Trabajador", valor: valores.buscar.trim() });
+      chips.push({ clave: "buscar", etiqueta: "Buscar", valor: valores.buscar.trim() });
     }
     if (valores.capacitacion_id) {
       const cap = capacitaciones.find((c) => String(c.capacitacion_id) === valores.capacitacion_id);
@@ -223,11 +299,11 @@ function Contenido() {
         valor: cap ? `${cap.codigo} — ${cap.nombre}` : valores.capacitacion_id,
       });
     }
-    if (valores.estado) {
+    if (valores.condicion) {
       chips.push({
-        clave: "estado",
-        etiqueta: "Estado",
-        valor: ETIQUETAS_ESTADO[valores.estado] ?? valores.estado,
+        clave: "condicion",
+        etiqueta: "Condición",
+        valor: etiquetaCondicion(valores.condicion),
       });
     }
     if (valores.cargo_id) {
@@ -238,12 +314,16 @@ function Contenido() {
       const proc = opciones.procesos.find((p) => String(p.proceso_id) === valores.proceso_id);
       chips.push({ clave: "proceso_id", etiqueta: "Proceso", valor: proc?.nombre ?? valores.proceso_id });
     }
-    if (valores.proyecto) {
+    if (muestraProyecto && valores.proyecto) {
       chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
     }
     if (valores.tipo_capacitacion_id) {
       const tipo = opciones.tipos.find((t) => String(t.tipo_capacitacion_id) === valores.tipo_capacitacion_id);
-      chips.push({ clave: "tipo_capacitacion_id", etiqueta: "Tipo", valor: tipo?.nombre ?? valores.tipo_capacitacion_id });
+      chips.push({
+        clave: "tipo_capacitacion_id",
+        etiqueta: "Tipo",
+        valor: tipo?.nombre ?? valores.tipo_capacitacion_id,
+      });
     }
     if (valores.es_tarea_critica) {
       chips.push({ clave: "es_tarea_critica", etiqueta: "Tarea crítica", valor: "Sí" });
@@ -256,7 +336,13 @@ function Contenido() {
       });
     }
     return chips;
-  }, [valores, capacitaciones, opciones]);
+  }, [valores, capacitaciones, opciones, muestraProyecto]);
+
+  async function abrirCapacitacion(item: CumplimientoPorCapacitacion) {
+    setCapDetalle(item);
+    setPersonas([]);
+    await cargarPersonas(item, 1);
+  }
 
   async function verDetalle(item: ConsultaCumplimiento) {
     const respuesta = await apiGet<DetalleConsultaCumplimiento>(
@@ -291,7 +377,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Cumplimientos"
-        descripcion="Consulte el estado real de las capacitaciones que debe cumplir cada trabajador. El registro de asistencia, evaluación y evidencias se hace en el Tablero de Cronograma."
+        descripcion="Consolide el resultado de las capacitaciones programadas (Asignaciones) y ejecutadas (Tablero de Cronograma). Esta pantalla es solo consulta: no registre asistencia, notas ni soportes aquí."
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
@@ -342,12 +428,115 @@ function Contenido() {
       ) : null}
 
       <Filters>
-        <Field etiqueta="Trabajador">
+        <Field etiqueta="Proceso">
+          <select
+            className={inputClass}
+            value={valores.proceso_id}
+            onChange={(e) => {
+              const procesoId = e.target.value;
+              const mantiene = procesoPermiteFiltroProyecto(procesoId, opciones.procesos);
+              setVarios({
+                proceso_id: procesoId,
+                proyecto: mantiene ? valores.proyecto : "",
+              });
+            }}
+          >
+            <option value="">Todos</option>
+            {opciones.procesos.map((p) => (
+              <option key={p.proceso_id} value={p.proceso_id}>
+                {p.nombre}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {muestraProyecto ? (
+          <Field etiqueta="Proyecto">
+            <select
+              className={inputClass}
+              value={valores.proyecto}
+              onChange={(e) => setFiltro("proyecto", e.target.value)}
+            >
+              <option value="">Todos</option>
+              {opciones.proyectos.map((nombre) => (
+                <option key={nombre} value={nombre}>
+                  {nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        <Field etiqueta="Período">
+          <select
+            className={inputClass}
+            value={valores.tipo}
+            onChange={(e) => setFiltro("tipo", e.target.value)}
+          >
+            <option value="mensual">Mensual</option>
+            <option value="trimestral">Trimestral</option>
+            <option value="semestral">Semestral</option>
+            <option value="anual">Anual</option>
+          </select>
+        </Field>
+        <Field etiqueta="Año" className={fieldClassAnio}>
+          <select
+            className={inputClassAnio}
+            value={valores.anio}
+            onChange={(e) => setFiltro("anio", e.target.value)}
+          >
+            {aniosDisponibles().map((anio) => (
+              <option key={anio} value={anio}>
+                {anio}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {valores.tipo === "mensual" ? (
+          <Field etiqueta="Mes">
+            <select
+              className={inputClass}
+              value={valores.mes}
+              onChange={(e) => setFiltro("mes", e.target.value)}
+            >
+              {MESES.map((nombre, idx) => (
+                <option key={nombre} value={idx + 1}>
+                  {nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        {valores.tipo === "trimestral" ? (
+          <Field etiqueta="Trimestre">
+            <select
+              className={inputClass}
+              value={valores.trimestre}
+              onChange={(e) => setFiltro("trimestre", e.target.value)}
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </Field>
+        ) : null}
+        {valores.tipo === "semestral" ? (
+          <Field etiqueta="Semestre">
+            <select
+              className={inputClass}
+              value={valores.semestre}
+              onChange={(e) => setFiltro("semestre", e.target.value)}
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+            </select>
+          </Field>
+        ) : null}
+        <Field etiqueta="Buscar">
           <input
             className={inputClass}
             value={valores.buscar}
             onChange={(e) => setFiltro("buscar", e.target.value)}
-            placeholder="Nombre, documento o capacitación"
+            placeholder="Código, capacitación, nombre o documento"
           />
         </Field>
         <Field etiqueta="Capacitación">
@@ -364,19 +553,53 @@ function Contenido() {
             ))}
           </select>
         </Field>
-        <Field etiqueta="Estado">
+        <Field etiqueta="Condición">
           <select
             className={inputClass}
-            value={valores.estado}
-            onChange={(e) => setFiltro("estado", e.target.value)}
+            value={valores.condicion}
+            onChange={(e) => setFiltro("condicion", e.target.value)}
+          >
+            <option value="">Todas</option>
+            <option value="ejecutadas">Ejecutadas</option>
+            <option value="pendientes">Pendientes</option>
+            <option value="fuera_de_tiempo">Fuera de tiempo</option>
+            <option value="vigentes">Vigentes</option>
+            <option value="vencidas">Vencidas</option>
+          </select>
+        </Field>
+      </Filters>
+
+      <MasFiltros
+        abierto={masFiltros}
+        onToggle={() => setMasFiltros((abierto) => !abierto)}
+        extrasActivos={extrasActivos}
+      >
+        <Field etiqueta="Cargo">
+          <select
+            className={inputClass}
+            value={valores.cargo_id}
+            onChange={(e) => setFiltro("cargo_id", e.target.value)}
           >
             <option value="">Todos</option>
-            <option value="COMPLETADA">Cumple</option>
-            <option value="PENDIENTE">Pendiente</option>
-            <option value="PENDIENTE_PROXIMA_A_VENCER">Próxima a vencer (plazo)</option>
-            <option value="PENDIENTE_VENCIDA">Pendiente vencida</option>
-            <option value="PROXIMA_A_VENCER">Vigencia próxima a vencer</option>
-            <option value="VENCIDA">Vencida</option>
+            {opciones.cargos.map((c) => (
+              <option key={c.cargo_id} value={c.cargo_id}>
+                {c.nombre_cargo}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field etiqueta="Tipo">
+          <select
+            className={inputClass}
+            value={valores.tipo_capacitacion_id}
+            onChange={(e) => setFiltro("tipo_capacitacion_id", e.target.value)}
+          >
+            <option value="">Todos</option>
+            {opciones.tipos.map((t) => (
+              <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
+                {t.nombre}
+              </option>
+            ))}
           </select>
         </Field>
         <Field etiqueta="Estado laboral">
@@ -390,181 +613,179 @@ function Contenido() {
             <option value="todos">Todos</option>
           </select>
         </Field>
-      </Filters>
-
-      <MasFiltros
-        abierto={masFiltros}
-        onToggle={() => setMasFiltros((abierto) => !abierto)}
-        extrasActivos={extrasActivos}
-      >
-            <Field etiqueta="Cargo">
-              <select
-                className={inputClass}
-                value={valores.cargo_id}
-                onChange={(e) => setFiltro("cargo_id", e.target.value)}
-              >
-                <option value="">Todos</option>
-                {opciones.cargos.map((c) => (
-                  <option key={c.cargo_id} value={c.cargo_id}>
-                    {c.nombre_cargo}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field etiqueta="Proceso">
-              <select
-                className={inputClass}
-                value={valores.proceso_id}
-                onChange={(e) => setFiltro("proceso_id", e.target.value)}
-              >
-                <option value="">Todos</option>
-                {opciones.procesos.map((p) => (
-                  <option key={p.proceso_id} value={p.proceso_id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field etiqueta="Proyecto">
-              <select
-                className={inputClass}
-                value={valores.proyecto}
-                onChange={(e) => setFiltro("proyecto", e.target.value)}
-              >
-                <option value="">Todos</option>
-                {opciones.proyectos.map((nombre) => (
-                  <option key={nombre} value={nombre}>
-                    {nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field etiqueta="Tipo">
-              <select
-                className={inputClass}
-                value={valores.tipo_capacitacion_id}
-                onChange={(e) => setFiltro("tipo_capacitacion_id", e.target.value)}
-              >
-                <option value="">Todos</option>
-                {opciones.tipos.map((t) => (
-                  <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
-                    {t.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={valores.es_tarea_critica === "1"}
-                onChange={(e) => setFiltro("es_tarea_critica", e.target.checked ? "1" : "")}
-              />
-              Solo tareas críticas
-            </label>
-            <Field etiqueta="Realización desde">
-              <input
-                type="date"
-                className={inputClass}
-                value={valores.fecha_realizacion_desde}
-                onChange={(e) => setFiltro("fecha_realizacion_desde", e.target.value)}
-              />
-            </Field>
-            <Field etiqueta="Realización hasta">
-              <input
-                type="date"
-                className={inputClass}
-                value={valores.fecha_realizacion_hasta}
-                onChange={(e) => setFiltro("fecha_realizacion_hasta", e.target.value)}
-              />
-            </Field>
-            <Field etiqueta="Vencimiento desde">
-              <input
-                type="date"
-                className={inputClass}
-                value={valores.fecha_vencimiento_desde}
-                onChange={(e) => setFiltro("fecha_vencimiento_desde", e.target.value)}
-              />
-            </Field>
-            <Field etiqueta="Vencimiento hasta">
-              <input
-                type="date"
-                className={inputClass}
-                value={valores.fecha_vencimiento_hasta}
-                onChange={(e) => setFiltro("fecha_vencimiento_hasta", e.target.value)}
-              />
-            </Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={valores.es_tarea_critica === "1"}
+            onChange={(e) => setFiltro("es_tarea_critica", e.target.checked ? "1" : "")}
+          />
+          Solo tareas críticas
+        </label>
       </MasFiltros>
 
-      <FiltrosActivos chips={chipsActivos} onQuitar={(clave) => setFiltro(clave, clave === "estado_laboral" ? "Activo" : "")} onLimpiar={limpiar} />
+      <FiltrosActivos
+        chips={chipsActivos}
+        onQuitar={(clave) => setFiltro(clave, clave === "estado_laboral" ? "Activo" : "")}
+        onLimpiar={limpiar}
+      />
+
+      {!cargando && consolidados.length > 0 ? (
+        <p className="mb-3 text-sm text-slate-600">
+          Periodo: {totales.programadas} programadas · {totales.ejecutadas} ejecutadas ·{" "}
+          {totales.pendientes} pendientes · {totales.ejecutadas_fuera_de_tiempo} fuera de tiempo
+          {" "}(sin penalización porcentual; la fórmula definitiva está pendiente).
+        </p>
+      ) : null}
 
       {cargando ? (
-        <ListaCargando mensaje="Cargando cumplimientos…" />
+        <ListaCargando mensaje="Cargando cumplimientos por capacitación…" />
       ) : (
-        <>
-          <Table
-            columnas={[
-              { clave: "persona", etiqueta: "Trabajador" },
-              { clave: "contexto", etiqueta: "Cargo / proyecto" },
-              { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "real", etiqueta: "Realización" },
-              { clave: "vence", etiqueta: "Vencimiento" },
-              { clave: "estado", etiqueta: "Estado" },
-              { clave: "acciones", etiqueta: "", clase: "w-px whitespace-nowrap" },
-            ]}
-            filas={items.map((item) => [
-              <span key="p" className="flex flex-col">
-                <Link
-                  href={`/personal/${item.persona_id_ext}`}
-                  prefetch={false}
-                  className="font-medium text-hseq-800 underline-offset-2 hover:underline"
-                >
-                  {item.persona_nombre ?? `Persona ${item.persona_id_ext}`}
-                </Link>
-                <span className="text-xs text-slate-500">{item.numero_documento ?? "—"}</span>
-              </span>,
-              contextoPersona(item),
-              <span key="c" className="flex flex-col">
-                <span>{item.capacitacion_nombre}</span>
-                <span className="text-xs text-slate-500">{item.capacitacion_codigo}</span>
-              </span>,
-              <span key="r" className="flex flex-col">
-                <span>{formatoFecha(item.fecha_realizacion)}</span>
-                {item.ejecutada_fuera_de_tiempo ? (
-                  <span className="text-xs font-medium text-amber-700">Fuera de tiempo</span>
-                ) : null}
-              </span>,
-              formatoFecha(item.fecha_vencimiento),
-              <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
-                {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
-              </Badge>,
-              <span key="a" className="flex flex-nowrap gap-1">
-                <Button
-                  type="button"
-                  variante="ghost"
-                  className="px-2"
-                  title="Detalle"
-                  aria-label="Ver detalle"
-                  onClick={() => void verDetalle(item)}
-                >
-                  <Eye className="h-4 w-4" aria-hidden />
-                </Button>
-                <Button
-                  type="button"
-                  variante="ghost"
-                  className="px-2"
-                  title="Situación del trabajador"
-                  aria-label="Ver situación del trabajador"
-                  onClick={() => void verSituacion(item.persona_id_ext)}
-                >
-                  <UserRound className="h-4 w-4" aria-hidden />
-                </Button>
-              </span>,
-            ])}
-            vacio="No hay obligaciones para los filtros seleccionados."
-          />
-          <Pagination pagina={pagina} ultima={ultima} onCambiar={(p) => void cargarListado(p)} />
-        </>
+        <Table
+          columnas={[
+            { clave: "cap", etiqueta: "Capacitación" },
+            { clave: "prog", etiqueta: "Programadas" },
+            { clave: "ejec", etiqueta: "Ejecutadas" },
+            { clave: "pend", etiqueta: "Pendientes" },
+            { clave: "fuera", etiqueta: "Fuera de tiempo" },
+            { clave: "vig", etiqueta: "Vigencia" },
+            { clave: "acc", etiqueta: "", clase: "w-px whitespace-nowrap" },
+          ]}
+          filas={consolidados.map((item) => [
+            <span key="c" className="flex flex-col">
+              <span className="font-medium text-hseq-900">{item.nombre}</span>
+              <span className="text-xs text-slate-500">
+                {item.codigo}
+                {item.tipo_nombre ? ` · ${item.tipo_nombre}` : ""}
+                {item.es_tarea_critica ? " · Crítica" : ""}
+              </span>
+            </span>,
+            item.programadas,
+            item.ejecutadas,
+            item.pendientes,
+            item.ejecutadas_fuera_de_tiempo > 0 ? (
+              <span key="f" className="font-medium text-amber-700">
+                {item.ejecutadas_fuera_de_tiempo}
+              </span>
+            ) : (
+              0
+            ),
+            item.vigencia_nombre ?? "Sin renovación",
+            <Button
+              key="a"
+              type="button"
+              variante="ghost"
+              className="px-2"
+              title="Ver personas"
+              aria-label="Ver personas de la capacitación"
+              onClick={() => void abrirCapacitacion(item)}
+            >
+              <Eye className="h-4 w-4" aria-hidden />
+            </Button>,
+          ])}
+          vacio="No hay capacitaciones con asignaciones para los filtros del período. Ajuste el período o cree asignaciones."
+        />
       )}
+
+      <Modal
+        abierto={capDetalle !== null}
+        titulo={
+          capDetalle
+            ? `${capDetalle.codigo} — ${capDetalle.nombre}`
+            : "Personas de la capacitación"
+        }
+        onCerrar={() => {
+          setCapDetalle(null);
+          setPersonas([]);
+        }}
+      >
+        {capDetalle ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              {capDetalle.programadas} programadas · {capDetalle.ejecutadas} ejecutadas ·{" "}
+              {capDetalle.pendientes} pendientes · {capDetalle.ejecutadas_fuera_de_tiempo} fuera de
+              tiempo. Periodo {formatoFecha(capDetalle.fecha_desde)} →{" "}
+              {formatoFecha(capDetalle.fecha_hasta)}.
+            </p>
+            {cargandoPers ? (
+              <p className="text-sm text-slate-500">Cargando personas…</p>
+            ) : (
+              <>
+                <Table
+                  columnas={[
+                    { clave: "doc", etiqueta: "Documento" },
+                    { clave: "nom", etiqueta: "Trabajador" },
+                    { clave: "car", etiqueta: "Cargo" },
+                    { clave: "proy", etiqueta: "Proyecto" },
+                    { clave: "desde", etiqueta: "Desde" },
+                    { clave: "hasta", etiqueta: "Hasta" },
+                    { clave: "real", etiqueta: "Fecha real" },
+                    { clave: "asis", etiqueta: "Asistencia" },
+                    { clave: "nota", etiqueta: "Nota" },
+                    { clave: "sop", etiqueta: "Soporte" },
+                    { clave: "opc", etiqueta: "Oportunidad" },
+                    { clave: "est", etiqueta: "Estado" },
+                    { clave: "acc", etiqueta: "", clase: "w-px whitespace-nowrap" },
+                  ]}
+                  filas={personas.map((p) => [
+                    p.numero_documento ?? "—",
+                    p.persona_nombre ?? `Persona ${p.persona_id_ext}`,
+                    p.cargo ?? "—",
+                    p.proyecto ?? "—",
+                    formatoFecha(p.fecha_asignacion),
+                    formatoFecha(p.fecha_limite_cumplimiento),
+                    formatoFecha(p.fecha_realizacion),
+                    etiquetaAsistencia(p.estado_asistencia),
+                    p.requiere_evaluacion
+                      ? p.nota_evaluacion !== null
+                        ? String(p.nota_evaluacion)
+                        : "—"
+                      : "N/A",
+                    p.soportes_count > 0 ? `${p.soportes_count}` : p.requiere_certificado ? "Falta" : "N/A",
+                    p.fecha_realizacion
+                      ? p.ejecutada_fuera_de_tiempo
+                        ? "Fuera de tiempo"
+                        : "Dentro del tiempo"
+                      : p.estado_calculado === "PENDIENTE_VENCIDA"
+                        ? "Pendiente fuera de plazo"
+                        : "—",
+                    <Badge key="e" tono={tonoEstado(p.estado_calculado)}>
+                      {ETIQUETAS_ESTADO[p.estado_calculado] ?? p.estado_calculado}
+                    </Badge>,
+                    <span key="a" className="flex flex-nowrap gap-1">
+                      <Button
+                        type="button"
+                        variante="ghost"
+                        className="px-2"
+                        title="Trazabilidad"
+                        onClick={() => void verDetalle(p)}
+                      >
+                        <Eye className="h-4 w-4" aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variante="ghost"
+                        className="px-2"
+                        title="Situación del trabajador"
+                        onClick={() => void verSituacion(p.persona_id_ext)}
+                      >
+                        <UserRound className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </span>,
+                  ])}
+                  vacio="No hay personas asignadas a esta capacitación en el período."
+                />
+                <Pagination
+                  pagina={paginaPers}
+                  ultima={ultimaPers}
+                  onCambiar={(p) => {
+                    if (capDetalle) void cargarPersonas(capDetalle, p);
+                  }}
+                />
+              </>
+            )}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         abierto={detalle !== null}
@@ -592,7 +813,7 @@ function Contenido() {
                 valor={`Asignación ${detalle.obligacion.asignacion_id} · ${detalle.obligacion.origen ?? "—"} · ${detalle.obligacion.fuente}`}
               />
               <Dato
-                etiqueta="Plazo / programación"
+                etiqueta="Plazo Desde → Hasta"
                 valor={`${formatoFecha(detalle.programacion.fecha_desde)} → ${formatoFecha(detalle.programacion.fecha_hasta ?? detalle.programacion.fecha_programada)} · ${detalle.programacion.fuente}`}
               />
               <Dato
@@ -600,11 +821,17 @@ function Contenido() {
                 valor={`${formatoFecha(detalle.ejecucion.fecha_sesion ?? detalle.ejecucion.fecha_realizacion)} · ${detalle.ejecucion.fuente}`}
               />
               <Dato
-                etiqueta="Ejecutada fuera de tiempo"
+                etiqueta="¿Se ejecutó?"
+                valor={detalle.ejecucion.fecha_realizacion || detalle.ejecucion.fecha_sesion ? "Sí" : "No"}
+              />
+              <Dato
+                etiqueta="Oportunidad"
                 valor={
                   detalle.ejecutada_fuera_de_tiempo || detalle.ejecucion.fuera_de_tiempo
-                    ? "Sí (realización posterior a fecha hasta)"
-                    : "No"
+                    ? "Fuera del tiempo (realización posterior a fecha hasta)"
+                    : detalle.ejecucion.fecha_realizacion || detalle.ejecucion.fecha_sesion
+                      ? "Dentro del tiempo"
+                      : "Sin ejecución"
                 }
               />
               <Dato
@@ -615,7 +842,13 @@ function Contenido() {
                 etiqueta="Evaluación"
                 valor={
                   detalle.evaluacion.requiere
-                    ? `Nota ${detalle.evaluacion.nota_obtenida ?? "—"} / mínima ${detalle.evaluacion.nota_minima} · ${detalle.evaluacion.fuente}`
+                    ? `Nota ${detalle.evaluacion.nota_obtenida ?? "—"} / mínima ${detalle.evaluacion.nota_minima} · ${
+                        detalle.evaluacion.aprobada === true
+                          ? "Aprobada"
+                          : detalle.evaluacion.aprobada === false
+                            ? "No aprobada"
+                            : "Pendiente"
+                      } · ${detalle.evaluacion.fuente}`
                     : `No requiere · ${detalle.evaluacion.fuente}`
                 }
               />
@@ -626,7 +859,7 @@ function Contenido() {
                 valor={`${detalle.vigencia.nombre ?? "Sin vencimiento"} · vence ${formatoFecha(detalle.vigencia.fecha_vencimiento)} · ${detalle.vigencia.fuente}`}
               />
               <div>
-                <dt className="text-xs uppercase text-slate-500">Estado actual</dt>
+                <dt className="text-xs uppercase text-slate-500">Estado calculado</dt>
                 <dd className="mt-1">
                   <Badge tono={tonoEstado(detalle.estado_actual)}>
                     {ETIQUETAS_ESTADO[detalle.estado_actual] ?? detalle.estado_actual}
@@ -635,7 +868,9 @@ function Contenido() {
               </div>
             </dl>
             <div>
-              <p className="mb-1 text-xs uppercase text-slate-500">Evidencias ({detalle.soportes.fuente})</p>
+              <p className="mb-1 text-xs uppercase text-slate-500">
+                Evidencias (solo consulta · {detalle.soportes.fuente})
+              </p>
               <ListaEvidencias soportes={detalle.soportes.items} />
             </div>
           </div>

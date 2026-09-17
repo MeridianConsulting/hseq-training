@@ -238,8 +238,11 @@ class ReporteService
             $hoja->setCellValue('A' . $fila, 'PENDIENTES');
             $hoja->setCellValue('B' . $fila, $totales['pendientes']);
             $fila++;
-            $hoja->setCellValue('A' . $fila, 'VENCIDAS');
+            $hoja->setCellValue('A' . $fila, 'VENCIDAS / FUERA DE PLAZO');
             $hoja->setCellValue('B' . $fila, $totales['vencidas']);
+            $fila++;
+            $hoja->setCellValue('A' . $fila, 'EJECUTADAS FUERA DE TIEMPO');
+            $hoja->setCellValue('B' . $fila, $totales['ejecutadas_fuera_de_tiempo'] ?? 0);
             $fila++;
             $hoja->setCellValue('A' . $fila, '% CUMPLIMIENTO');
             $hoja->setCellValue('B' . $fila, $totales['porcentaje'] === null ? '—' : $totales['porcentaje']);
@@ -507,6 +510,7 @@ class ReporteService
         if ($tipo === 'cumplimiento_trabajador') {
             $programadas = (int)($fila['asignadas'] ?? 0);
             $ejecutadas = (int)($fila['completadas'] ?? 0);
+            $fuera = (int)($fila['fuera_de_tiempo'] ?? 0);
 
             return [
                 'persona_id_ext' => isset($fila['persona_id_ext']) ? (int)$fila['persona_id_ext'] : null,
@@ -521,6 +525,7 @@ class ReporteService
                 'completadas' => $ejecutadas,
                 'pendientes' => (int)($fila['pendientes'] ?? 0),
                 'vencidas' => (int)($fila['vencidas'] ?? 0),
+                'ejecutadas_fuera_de_tiempo' => $fuera,
                 'porcentaje' => $programadas > 0 ? round($ejecutadas / $programadas * 100, 1) : null,
             ];
         }
@@ -528,15 +533,18 @@ class ReporteService
         if ($this->repo->esAgrupado($tipo)) {
             $programadas = (int)($fila['asignadas'] ?? 0);
             $ejecutadas = (int)($fila['completadas'] ?? 0);
+            $fuera = (int)($fila['fuera_de_tiempo'] ?? 0);
 
             return [
                 'grupo' => (string)($fila['grupo'] ?? ''),
+                'grupo_id' => $fila['grupo_id'] ?? null,
                 'programadas' => $programadas,
                 'ejecutadas' => $ejecutadas,
                 'asignadas' => $programadas,
                 'completadas' => $ejecutadas,
                 'pendientes' => (int)($fila['pendientes'] ?? 0),
                 'vencidas' => (int)($fila['vencidas'] ?? 0),
+                'ejecutadas_fuera_de_tiempo' => $fuera,
                 'porcentaje' => $programadas > 0 ? round($ejecutadas / $programadas * 100, 1) : null,
             ];
         }
@@ -616,8 +624,21 @@ class ReporteService
             'estado' => $fila['estado_calculado'] ?? null,
             'fecha_asignacion' => $fila['fecha_asignacion'] ?? null,
             'fecha_limite_cumplimiento' => $fila['fecha_limite_cumplimiento'] ?? null,
+            'fecha_desde' => isset($fila['fecha_asignacion']) ? substr((string)$fila['fecha_asignacion'], 0, 10) : null,
+            'fecha_hasta' => isset($fila['fecha_limite_cumplimiento'])
+                ? substr((string)$fila['fecha_limite_cumplimiento'], 0, 10)
+                : null,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'ejecutada_fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
+                $fila['fecha_realizacion'] ?? null,
+                $fila['fecha_limite_cumplimiento'] ?? null
+            ),
+            'oportunidad' => $this->etiquetaOportunidad(
+                $fila['fecha_realizacion'] ?? null,
+                $fila['fecha_limite_cumplimiento'] ?? null,
+                (string)($fila['estado_calculado'] ?? '')
+            ),
             'fecha_ingreso' => $fila['fecha_ingreso'] ?? null,
             'periodicidad' => humanizar_nombre_unidad($fila['periodicidad_nombre'] ?? null),
             'nota_evaluacion' => isset($fila['nota_evaluacion']) && $fila['nota_evaluacion'] !== null
@@ -646,7 +667,8 @@ class ReporteService
                 ['clave' => 'programadas', 'etiqueta' => 'Programadas', 'tipo' => 'numero'],
                 ['clave' => 'ejecutadas', 'etiqueta' => 'Ejecutadas', 'tipo' => 'numero'],
                 ['clave' => 'pendientes', 'etiqueta' => 'Pendientes', 'tipo' => 'numero'],
-                ['clave' => 'vencidas', 'etiqueta' => 'Vencidas', 'tipo' => 'numero'],
+                ['clave' => 'vencidas', 'etiqueta' => 'Vencidas / fuera de plazo', 'tipo' => 'numero'],
+                ['clave' => 'ejecutadas_fuera_de_tiempo', 'etiqueta' => 'Fuera de tiempo', 'tipo' => 'numero'],
                 ['clave' => 'porcentaje', 'etiqueta' => '% cumplimiento', 'tipo' => 'numero'],
             ];
         }
@@ -663,7 +685,8 @@ class ReporteService
                 ['clave' => 'programadas', 'etiqueta' => 'Programadas', 'tipo' => 'numero'],
                 ['clave' => 'ejecutadas', 'etiqueta' => 'Ejecutadas', 'tipo' => 'numero'],
                 ['clave' => 'pendientes', 'etiqueta' => 'Pendientes', 'tipo' => 'numero'],
-                ['clave' => 'vencidas', 'etiqueta' => 'Vencidas', 'tipo' => 'numero'],
+                ['clave' => 'vencidas', 'etiqueta' => 'Vencidas / fuera de plazo', 'tipo' => 'numero'],
+                ['clave' => 'ejecutadas_fuera_de_tiempo', 'etiqueta' => 'Fuera de tiempo', 'tipo' => 'numero'],
                 ['clave' => 'porcentaje', 'etiqueta' => '% cumplimiento', 'tipo' => 'numero'],
             ];
         }
@@ -728,9 +751,11 @@ class ReporteService
                 ['clave' => 'cargo', 'etiqueta' => 'Cargo'],
                 ['clave' => 'proceso', 'etiqueta' => 'Proceso'],
                 ['clave' => 'fecha_asignacion', 'etiqueta' => 'Fecha de asignación', 'tipo' => 'fecha'],
+                ['clave' => 'fecha_limite_cumplimiento', 'etiqueta' => 'Fecha hasta', 'tipo' => 'fecha'],
                 ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha de realización', 'tipo' => 'fecha'],
                 ['clave' => 'fecha_sesion', 'etiqueta' => 'Fecha de sesión', 'tipo' => 'fecha'],
                 ['clave' => 'estado', 'etiqueta' => 'Estado'],
+                ['clave' => 'oportunidad', 'etiqueta' => 'Oportunidad'],
                 ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
                 ['clave' => 'resultado', 'etiqueta' => 'Resultado'],
                 ['clave' => 'horas_efectivas', 'etiqueta' => 'Horas', 'tipo' => 'numero'],
@@ -753,8 +778,10 @@ class ReporteService
             ['clave' => 'tipo', 'etiqueta' => 'Tipo'],
             ['clave' => 'origen', 'etiqueta' => 'Origen'],
             ['clave' => 'estado', 'etiqueta' => 'Estado'],
-            ['clave' => 'fecha_asignacion', 'etiqueta' => 'Fecha de asignación', 'tipo' => 'fecha'],
-            ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha de realización', 'tipo' => 'fecha'],
+            ['clave' => 'fecha_desde', 'etiqueta' => 'Fecha desde', 'tipo' => 'fecha'],
+            ['clave' => 'fecha_hasta', 'etiqueta' => 'Fecha hasta', 'tipo' => 'fecha'],
+            ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha real de ejecución', 'tipo' => 'fecha'],
+            ['clave' => 'oportunidad', 'etiqueta' => 'Oportunidad'],
             ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
         ];
 
@@ -796,7 +823,8 @@ class ReporteService
 
     /**
      * Totales de cumplimiento general con la misma fórmula del Panel:
-     * programadas = plan anual APROBADO; ejecutadas = cumplimientos en rango.
+     * programadas = asignaciones con fecha_limite en rango; ejecutadas = APROBADO por fecha_realizacion.
+     * Fuera de tiempo se muestra aparte; no reduce el %.
      *
      * @param array<string,mixed> $filtros
      * @param array<string,mixed> $base
@@ -807,18 +835,16 @@ class ReporteService
         $desde = is_string($filtros['desde'] ?? null) ? $filtros['desde'] : (date('Y') . '-01-01');
         $hasta = is_string($filtros['hasta'] ?? null) ? $filtros['hasta'] : (date('Y') . '-12-31');
         $alcance = $this->alcancePanel($filtros);
+        $periodo = [
+            'anio' => (int)substr($desde, 0, 4),
+            'meses' => [],
+            'desde' => $desde,
+            'hasta' => $hasta,
+        ];
 
         $programadas = $this->programadoEnRango($desde, $hasta, $alcance);
-        $ejecutadas = $this->dashboard->ejecutado(
-            [
-                'anio' => (int)substr($desde, 0, 4),
-                'meses' => [],
-                'desde' => $desde,
-                'hasta' => $hasta,
-            ],
-            'general',
-            $alcance
-        );
+        $ejecutadas = $this->dashboard->ejecutado($periodo, 'general', $alcance);
+        $fuera = $this->dashboard->ejecutadasFueraDeTiempo($periodo, $alcance);
 
         $pendientes = (int)($base['pendientes'] ?? 0);
         $vencidas = (int)($base['vencidas'] ?? 0);
@@ -832,12 +858,39 @@ class ReporteService
             $vencidas,
             $proximas,
             0.0,
-            $porcentaje
+            $porcentaje,
+            $fuera
         );
         $totales['programadas'] = $programadas;
         $totales['ejecutadas'] = $ejecutadas;
+        $totales['ejecutadas_fuera_de_tiempo'] = $fuera;
 
         return $totales;
+    }
+
+    private function ejecutadaFueraDeTiempo(mixed $fechaRealizacion, mixed $fechaHasta): bool
+    {
+        if ($fechaRealizacion === null || $fechaRealizacion === '' || $fechaHasta === null || $fechaHasta === '') {
+            return false;
+        }
+        $real = substr((string)$fechaRealizacion, 0, 10);
+        $hasta = substr((string)$fechaHasta, 0, 10);
+
+        return $real !== '' && $hasta !== '' && $real > $hasta;
+    }
+
+    private function etiquetaOportunidad(mixed $fechaRealizacion, mixed $fechaHasta, string $estado): string
+    {
+        if ($fechaRealizacion !== null && $fechaRealizacion !== '') {
+            return $this->ejecutadaFueraDeTiempo($fechaRealizacion, $fechaHasta)
+                ? 'Fuera de tiempo'
+                : 'Dentro del tiempo';
+        }
+        if ($estado === 'PENDIENTE_VENCIDA') {
+            return 'Pendiente fuera de plazo';
+        }
+
+        return '—';
     }
 
     /**
@@ -1079,8 +1132,11 @@ class ReporteService
         $hoja->setCellValue('A' . $fila, 'PENDIENTES');
         $hoja->setCellValue('B' . $fila, $totales['pendientes']);
         $fila++;
-        $hoja->setCellValue('A' . $fila, 'VENCIDAS');
+        $hoja->setCellValue('A' . $fila, 'VENCIDAS / FUERA DE PLAZO');
         $hoja->setCellValue('B' . $fila, $totales['vencidas']);
+        $fila++;
+        $hoja->setCellValue('A' . $fila, 'EJECUTADAS FUERA DE TIEMPO');
+        $hoja->setCellValue('B' . $fila, $totales['ejecutadas_fuera_de_tiempo'] ?? 0);
         $fila++;
         $hoja->setCellValue('A' . $fila, '% CUMPLIMIENTO');
         $hoja->setCellValue('B' . $fila, $totales['porcentaje'] === null ? '—' : $totales['porcentaje']);
@@ -1184,6 +1240,15 @@ class ReporteService
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'fecha_sesion' => $fechaSesion,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'ejecutada_fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
+                $fila['fecha_realizacion'] ?? null,
+                $fila['fecha_limite_cumplimiento'] ?? null
+            ),
+            'oportunidad' => $this->etiquetaOportunidad(
+                $fila['fecha_realizacion'] ?? null,
+                $fila['fecha_limite_cumplimiento'] ?? null,
+                (string)($fila['estado_calculado'] ?? '')
+            ),
             'estado' => $fila['estado_calculado'] ?? null,
             'resultado' => $fila['cumplimiento_resultado'] ?? null,
             'horas_efectivas' => isset($fila['horas_efectivas']) && $fila['horas_efectivas'] !== null

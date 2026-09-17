@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   FiltroPeriodo,
@@ -99,12 +100,13 @@ function Contenido() {
   const cobertura = resumen?.cobertura;
   const eficacia = resumen?.eficacia;
   const horas = resumen?.horas;
+  const alertas = resumen?.alertas_resumen;
 
   return (
     <>
       <PageHeader
         titulo="Panel de control"
-        descripcion="Indicadores de cobertura, eficacia, soportes y horas calculados desde el programa de capacitación."
+        descripcion="Vista ejecutiva del programa: Asignaciones definen lo programado, Cronograma registra lo ejecutado, Cumplimientos consolida y el Panel presenta indicadores. Solo consulta."
         acciones={
           resumen ? (
             <Card className="min-w-[11rem] py-3">
@@ -141,10 +143,37 @@ function Contenido() {
 
       {resumen && cobertura && eficacia && horas ? (
         <>
-          <p className="mb-4 text-sm text-slate-500">
-            Período: <span className="font-medium text-hseq-900">{resumen.periodo.etiqueta}</span>
-            {cargando ? " · Actualizando…" : null}
-          </p>
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold uppercase tracking-wide text-hseq-900">
+                Cumplimiento general
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Período:{" "}
+                <span className="font-medium text-hseq-900">{resumen.periodo.etiqueta}</span>
+                {cargando ? " · Actualizando…" : null}
+              </p>
+            </div>
+            {alertas ? (
+              <Card className="py-3 px-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Alertas (resumen)
+                </p>
+                <p className="mt-1 text-sm text-slate-700">
+                  <span className="font-semibold text-amber-700">{alertas.proximas}</span> próximas
+                  {" · "}
+                  <span className="font-semibold text-red-700">{alertas.vencidas}</span> vencidas
+                </p>
+                <Link
+                  href="/alertas"
+                  prefetch={false}
+                  className="mt-1 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
+                >
+                  Ver alertas
+                </Link>
+              </Card>
+            ) : null}
+          </div>
 
           <section className="mb-8">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -152,31 +181,44 @@ function Contenido() {
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <GraficaCumplimiento
-                titulo="Cumplimiento general"
-                descripcion="Capacitaciones ejecutadas / programadas × 100."
+                titulo="Cobertura general"
+                descripcion="Ejecutadas (APROBADO) / programadas (Asignaciones) × 100."
                 kpi={cobertura.general}
+                href="/reportes?tipo=cumplimiento_general"
               />
               <GraficaCumplimiento
                 titulo="Inducción y reinducción"
                 descripcion="Solo capacitaciones de inducción/reinducción."
                 kpi={cobertura.induccion}
+                href="/reportes?tipo=inducciones"
               />
               <GraficaCumplimiento
                 titulo="Tareas críticas"
                 descripcion="Solo capacitaciones marcadas como tarea crítica."
                 kpi={cobertura.tareas_criticas}
+                href="/reportes?tipo=tareas_criticas"
               />
             </div>
             <Card className="mt-4 max-w-md py-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Ejecutadas fuera de tiempo
+                Control de oportunidad
               </p>
+              <p className="mt-1 text-sm font-medium text-slate-700">Ejecutadas fuera de tiempo</p>
               <p className="mt-1 text-3xl font-semibold text-hseq-900">
                 {resumen.ejecutadas_fuera_de_tiempo ?? 0}
               </p>
               <p className="mt-2 text-sm text-slate-600">
-                Cumplimientos aprobados cuya fecha real supera la fecha hasta de la asignación.
+                Cumplimientos aprobados cuya fecha real supera la fecha hasta de la asignación. Siguen
+                contando como ejecutadas; no reducen el % de cobertura (penalización pendiente de
+                definición). No es un noveno KPI adicional.
               </p>
+              <Link
+                href="/reportes?tipo=cumplimiento_general"
+                prefetch={false}
+                className="mt-2 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
+              >
+                Analizar en Reportes
+              </Link>
             </Card>
           </section>
 
@@ -217,9 +259,17 @@ function Contenido() {
               Horas de capacitación
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <TarjetaHoras titulo="Total" kpi={horas.general} />
-              <TarjetaHoras titulo="Inducción y reinducción" kpi={horas.induccion} />
-              <TarjetaHoras titulo="Tareas críticas" kpi={horas.critica} />
+              <TarjetaHoras titulo="Total" kpi={horas.general} href="/reportes?tipo=horas" />
+              <TarjetaHoras
+                titulo="Inducción y reinducción"
+                kpi={horas.induccion}
+                href="/reportes?tipo=horas"
+              />
+              <TarjetaHoras
+                titulo="Tareas críticas"
+                kpi={horas.critica}
+                href="/reportes?tipo=tareas_criticas"
+              />
             </div>
           </section>
         </>

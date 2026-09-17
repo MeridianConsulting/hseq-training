@@ -187,12 +187,20 @@ function FilaCapacitacion({
           <dd>{texto(item.proyecto)}</dd>
         </div>
         <div>
-          <dt className="text-slate-400">Asignación</dt>
+          <dt className="text-slate-400">Asignación (Desde)</dt>
           <dd>{fecha(item.fecha_asignacion)}</dd>
         </div>
         <div>
-          <dt className="text-slate-400">Realización</dt>
+          <dt className="text-slate-400">Fecha hasta</dt>
+          <dd>{fecha(item.fecha_limite_cumplimiento)}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-400">Fecha real</dt>
           <dd>{fecha(item.fecha_realizacion)}</dd>
+        </div>
+        <div>
+          <dt className="text-slate-400">Oportunidad</dt>
+          <dd>{texto(item.oportunidad)}</dd>
         </div>
         <div>
           <dt className="text-slate-400">Sesión</dt>

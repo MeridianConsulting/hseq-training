@@ -139,45 +139,6 @@ class DashboardRepository
     }
 
     /**
-     * @param array{anio?:int,meses?:list<int>,desde:string,hasta:string} $periodo
-     * @param array{modo?:string,proceso_id?:?int,proyecto?:?string} $alcance
-     * @return list<array{capacitacion_id:int,codigo:string,nombre:string,promedio:float,evaluaciones:int}>
-     */
-    public function eficaciaPorTema(array $periodo, array $alcance = []): array
-    {
-        $alcance = $this->normalizarAlcance($alcance);
-        [$filtroAlcance, $paramsAlcance] = $this->filtroAlcance('a', $alcance);
-
-        $filas = $this->db->fetchAll(
-            "SELECT cap.capacitacion_id, cap.codigo, cap.nombre,
-                    AVG(cump.nota_evaluacion) AS promedio,
-                    COUNT(cump.nota_evaluacion) AS evaluaciones
-             FROM cumplimientos_capacitacion cump
-             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = cump.asignacion_id
-             INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
-             WHERE cump.fecha_realizacion BETWEEN ? AND ?
-               AND cump.nota_evaluacion IS NOT NULL
-               {$filtroAlcance}
-             GROUP BY cap.capacitacion_id, cap.codigo, cap.nombre
-             ORDER BY cap.nombre ASC",
-            array_merge([$periodo['desde'], $periodo['hasta']], $paramsAlcance)
-        );
-
-        $salida = [];
-        foreach ($filas as $fila) {
-            $salida[] = [
-                'capacitacion_id' => (int)$fila['capacitacion_id'],
-                'codigo' => (string)$fila['codigo'],
-                'nombre' => (string)$fila['nombre'],
-                'promedio' => round((float)$fila['promedio'], 2),
-                'evaluaciones' => (int)$fila['evaluaciones'],
-            ];
-        }
-
-        return $salida;
-    }
-
-    /**
      * Cumplimientos que requieren soporte (capacitaciones.certificado = 1).
      *
      * @param array{anio:int,meses:list<int>,desde:string,hasta:string} $periodo
@@ -375,26 +336,6 @@ class DashboardRepository
             "AND ({$alias}.ambito IN ('ADMINISTRACION', 'PROYECTO') OR {$alias}.ambito IS NULL)",
             [],
         ];
-    }
-
-    /**
-     * @return array{0:string,1:string,2:list<mixed>}
-     */
-    private function recortePlan(string $recorte): array
-    {
-        if ($recorte === 'critica') {
-            return ['', 'AND cap.es_tarea_critica = 1', []];
-        }
-
-        if ($recorte === 'induccion') {
-            return [
-                'LEFT JOIN tipos_capacitacion t ON t.tipo_capacitacion_id = cap.tipo_capacitacion_id',
-                'AND t.nombre IS NOT NULL AND (' . $this->sqlNombreInduccion('t.nombre') . ')',
-                [],
-            ];
-        }
-
-        return ['', '', []];
     }
 
     /**

@@ -159,6 +159,7 @@ class CumplimientoService
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
         $offset = ($pagina - 1) * $porPagina;
+        $filtros = $this->aplicarPeriodoAFiltros($filtros);
 
         try {
             $filas = $this->repo->consultar($porPagina, $offset, $filtros);
@@ -175,6 +176,115 @@ class CumplimientoService
         } catch (Throwable $e) {
             $this->falloConsulta($e);
         }
+    }
+
+    /**
+     * Consolidado por capacitación. Ejecutadas = resultado APROBADO (alineado a Panel).
+     * Fuera de tiempo se cuenta aparte; no reduce el porcentaje (fórmula pendiente).
+     *
+     * @param array<string,mixed> $filtros
+     * @return array{periodo:array<string,mixed>,items:list<array<string,mixed>>,total:int,totales:array<string,int>}
+     */
+    public function consultarPorCapacitacion(array $filtros): array
+    {
+        if (!isset($filtros['tipo']) || $filtros['tipo'] === null || $filtros['tipo'] === '') {
+            $filtros['tipo'] = 'mensual';
+        }
+        if (!isset($filtros['anio']) || $filtros['anio'] === null || $filtros['anio'] === '') {
+            $filtros['anio'] = (int)date('Y');
+        }
+        if (($filtros['tipo'] ?? '') === 'mensual' && (!isset($filtros['mes']) || $filtros['mes'] === null || $filtros['mes'] === '')) {
+            $filtros['mes'] = (int)date('n');
+        }
+        $filtros = $this->aplicarPeriodoAFiltros($filtros);
+        $periodo = (new DashboardService())->periodo([
+            'tipo' => $filtros['tipo'] ?? 'mensual',
+            'anio' => $filtros['anio'] ?? (int)date('Y'),
+            'mes' => $filtros['mes'] ?? null,
+            'trimestre' => $filtros['trimestre'] ?? null,
+            'semestre' => $filtros['semestre'] ?? null,
+        ]);
+
+        try {
+            $filas = $this->repo->consultarPorCapacitacion($filtros);
+            $items = [];
+            $totales = [
+                'programadas' => 0,
+                'ejecutadas' => 0,
+                'pendientes' => 0,
+                'ejecutadas_fuera_de_tiempo' => 0,
+            ];
+            foreach ($filas as $fila) {
+                $programadas = (int)($fila['programadas'] ?? 0);
+                $ejecutadas = (int)($fila['ejecutadas'] ?? 0);
+                $pendientes = (int)($fila['pendientes'] ?? 0);
+                $fuera = (int)($fila['ejecutadas_fuera_de_tiempo'] ?? 0);
+                $totales['programadas'] += $programadas;
+                $totales['ejecutadas'] += $ejecutadas;
+                $totales['pendientes'] += $pendientes;
+                $totales['ejecutadas_fuera_de_tiempo'] += $fuera;
+                $items[] = [
+                    'capacitacion_id' => (int)$fila['capacitacion_id'],
+                    'codigo' => (string)($fila['capacitacion_codigo'] ?? ''),
+                    'nombre' => (string)($fila['capacitacion_nombre'] ?? ''),
+                    'tipo_nombre' => $fila['tipo_nombre'] ?? null,
+                    'es_tarea_critica' => (int)($fila['es_tarea_critica'] ?? 0) === 1,
+                    'vigencia_nombre' => humanizar_nombre_unidad($fila['vigencia_nombre'] ?? null),
+                    'programadas' => $programadas,
+                    'ejecutadas' => $ejecutadas,
+                    'pendientes' => $pendientes,
+                    'ejecutadas_fuera_de_tiempo' => $fuera,
+                    'pendientes_fuera_plazo' => (int)($fila['pendientes_fuera_plazo'] ?? 0),
+                    'vigentes' => (int)($fila['vigentes'] ?? 0),
+                    'vencidas_vigencia' => (int)($fila['vencidas_vigencia'] ?? 0),
+                    'fecha_desde' => isset($fila['fecha_desde']) && $fila['fecha_desde'] !== null
+                        ? substr((string)$fila['fecha_desde'], 0, 10)
+                        : null,
+                    'fecha_hasta' => isset($fila['fecha_hasta']) && $fila['fecha_hasta'] !== null
+                        ? substr((string)$fila['fecha_hasta'], 0, 10)
+                        : null,
+                ];
+            }
+
+            return [
+                'periodo' => $periodo,
+                'items' => $items,
+                'total' => count($items),
+                'totales' => $totales,
+            ];
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            $this->falloConsulta($e);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $filtros
+     * @return array<string,mixed>
+     */
+    private function aplicarPeriodoAFiltros(array $filtros): array
+    {
+        $tipo = $filtros['tipo'] ?? null;
+        if (!is_string($tipo) || $tipo === '') {
+            return $filtros;
+        }
+
+        $periodo = (new DashboardService())->periodo([
+            'tipo' => $tipo,
+            'anio' => $filtros['anio'] ?? (int)date('Y'),
+            'mes' => $filtros['mes'] ?? null,
+            'trimestre' => $filtros['trimestre'] ?? null,
+            'semestre' => $filtros['semestre'] ?? null,
+        ]);
+        $filtros['anio'] = (int)$periodo['anio'];
+        $filtros['meses'] = $periodo['meses'];
+        $filtros['tipo'] = $periodo['tipo'];
+        $filtros['mes'] = $periodo['mes'] ?? ($filtros['mes'] ?? null);
+        $filtros['trimestre'] = $periodo['trimestre'] ?? ($filtros['trimestre'] ?? null);
+        $filtros['semestre'] = $periodo['semestre'] ?? ($filtros['semestre'] ?? null);
+
+        return $filtros;
     }
 
     /**
@@ -537,6 +647,7 @@ class CumplimientoService
                 : null,
             'fecha_realizacion' => $fila['fecha_realizacion'] ?? null,
             'fecha_vencimiento' => $fila['fecha_vencimiento'] ?? null,
+            'estado_asistencia' => $fila['estado_asistencia'] ?? null,
             'ejecutada_fuera_de_tiempo' => $this->ejecutadaFueraDeTiempo(
                 $fila['fecha_realizacion'] ?? null,
                 $fila['fecha_limite_cumplimiento'] ?? null
@@ -1231,6 +1342,10 @@ class CumplimientoService
 
     /**
      * @param array<string,mixed>|null $sesion
+     */
+    /**
+     * Misma regla que Panel y Cronograma: fuera de tiempo si fecha_realizacion > fecha_limite.
+     * No se usa para penalizar el % de cobertura (decisión funcional pendiente).
      */
     private function ejecutadaFueraDeTiempo(mixed $fechaRealizacion, mixed $fechaHasta): bool
     {
