@@ -77,8 +77,12 @@ class CronogramaRepository
             "SELECT d.plan_detalle_id,
                     d.plan_anual_id,
                     COALESCE(d.mes_programado, g.mes_programado) AS mes_programado,
-                    COALESCE(d.fecha_programada, g.fecha_programada) AS fecha_programada,
+                    g.fecha_desde,
+                    g.fecha_hasta,
+                    COALESCE(d.fecha_programada, g.fecha_hasta) AS fecha_programada,
                     g.cantidad_programada,
+                    g.ejecutadas_fuera_de_tiempo,
+                    g.pendientes_fuera_plazo,
                     COALESCE(d.estado_programacion, 'PROGRAMADA') AS estado_programacion,
                     COALESCE(d.ambito, g.ambito) AS ambito,
                     COALESCE(d.proyecto, g.proyecto) AS proyecto,
@@ -103,12 +107,29 @@ class CronogramaRepository
              FROM (
                 SELECT a.capacitacion_id,
                        MONTH(a.fecha_limite_cumplimiento) AS mes_programado,
-                       MIN(a.fecha_limite_cumplimiento) AS fecha_programada,
+                       MIN(a.fecha_asignacion) AS fecha_desde,
+                       MAX(a.fecha_limite_cumplimiento) AS fecha_hasta,
+                       MAX(a.fecha_limite_cumplimiento) AS fecha_programada,
                        COUNT(*) AS cantidad_programada,
+                       SUM(
+                         CASE
+                           WHEN cump.fecha_realizacion IS NOT NULL
+                            AND DATE(cump.fecha_realizacion) > a.fecha_limite_cumplimiento
+                           THEN 1 ELSE 0
+                         END
+                       ) AS ejecutadas_fuera_de_tiempo,
+                       SUM(
+                         CASE
+                           WHEN cump.cumplimiento_id IS NULL
+                            AND a.fecha_limite_cumplimiento < CURDATE()
+                           THEN 1 ELSE 0
+                         END
+                       ) AS pendientes_fuera_plazo,
                        MIN(a.proceso_id) AS proceso_id,
                        MIN(a.ambito) AS ambito,
                        MIN(a.proyecto) AS proyecto
                 FROM asignaciones_capacitacion a
+                LEFT JOIN cumplimientos_capacitacion cump ON cump.asignacion_id = a.asignacion_id
                 WHERE YEAR(a.fecha_limite_cumplimiento) = ?
                   AND MONTH(a.fecha_limite_cumplimiento) IN ({$inMeses})
                 GROUP BY a.capacitacion_id, MONTH(a.fecha_limite_cumplimiento)
@@ -125,9 +146,63 @@ class CronogramaRepository
              LEFT JOIN procesos pr ON pr.proceso_id = COALESCE(d.proceso_id, g.proceso_id)
              WHERE 1 = 1
                {$extras}
-             ORDER BY COALESCE(d.fecha_programada, g.fecha_programada) ASC, c.codigo ASC",
+             ORDER BY COALESCE(d.fecha_programada, g.fecha_hasta) ASC, c.codigo ASC",
             $params
         );
+    }
+
+    /**
+     * Un grupo operativo: capacitación + año + mes de Fecha Hasta.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function buscarGrupo(int $capacitacionId, int $anio, int $mes): ?array
+    {
+        if ($capacitacionId < 1 || $anio < 2000 || $mes < 1 || $mes > 12) {
+            return null;
+        }
+
+        $filas = $this->programadas(
+            ['anio' => $anio, 'meses' => [$mes]],
+            null,
+            null,
+            null
+        );
+        foreach ($filas as $fila) {
+            if ((int)$fila['capacitacion_id'] === $capacitacionId && (int)$fila['mes_programado'] === $mes) {
+                $fila['anio'] = $anio;
+                return $fila;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{fecha_desde:?string,fecha_hasta:?string,cantidad:int}
+     */
+    public function periodoGrupo(int $capacitacionId, int $anio, int $mes): array
+    {
+        $fila = $this->db->fetch(
+            "SELECT MIN(a.fecha_asignacion) AS fecha_desde,
+                    MAX(a.fecha_limite_cumplimiento) AS fecha_hasta,
+                    COUNT(*) AS cantidad
+             FROM asignaciones_capacitacion a
+             WHERE a.capacitacion_id = ?
+               AND YEAR(a.fecha_limite_cumplimiento) = ?
+               AND MONTH(a.fecha_limite_cumplimiento) = ?",
+            [$capacitacionId, $anio, $mes]
+        );
+
+        return [
+            'fecha_desde' => isset($fila['fecha_desde']) && $fila['fecha_desde'] !== null
+                ? substr((string)$fila['fecha_desde'], 0, 10)
+                : null,
+            'fecha_hasta' => isset($fila['fecha_hasta']) && $fila['fecha_hasta'] !== null
+                ? substr((string)$fila['fecha_hasta'], 0, 10)
+                : null,
+            'cantidad' => (int)($fila['cantidad'] ?? 0),
+        ];
     }
 
     public function buscarProgramacion(int $detalleId): ?array
@@ -199,13 +274,23 @@ class CronogramaRepository
         return $this->db->fetchAll(
             "SELECT a.asignacion_id,
                     a.persona_id_ext,
+                    a.fecha_asignacion,
+                    a.fecha_limite_cumplimiento,
+                    a.proyecto,
                     per.numero_documento,
                     per.nombre_completo_nombres_primero AS persona_nombre,
                     COALESCE(cg.nombre_cargo, cgp.nombre_cargo) AS nombre_cargo,
-                    e.estado_calculado
+                    e.estado_calculado,
+                    cump.fecha_realizacion,
+                    CASE
+                      WHEN cump.fecha_realizacion IS NOT NULL
+                       AND DATE(cump.fecha_realizacion) > a.fecha_limite_cumplimiento
+                      THEN 1 ELSE 0
+                    END AS ejecutada_fuera_de_tiempo
              FROM asignaciones_capacitacion a
              INNER JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
              INNER JOIN {$personas} per ON per.persona_id = a.persona_id_ext
+             LEFT JOIN cumplimientos_capacitacion cump ON cump.asignacion_id = a.asignacion_id
              LEFT JOIN {$cargos} cg ON cg.cargo_id = a.cargo_id_ext
              LEFT JOIN {$cargos} cgp ON cgp.cargo_id = per.cargo_id
              WHERE a.capacitacion_id = ?

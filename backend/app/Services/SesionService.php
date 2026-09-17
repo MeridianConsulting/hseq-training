@@ -635,6 +635,28 @@ class SesionService
             'No es posible retirar convocados de una capacitación finalizada.',
             'No es posible retirar convocados de una sesión cancelada.'
         );
+
+        $participantes = is_array($actual['participantes'] ?? null) ? $actual['participantes'] : [];
+        $encontrado = null;
+        foreach ($participantes as $fila) {
+            if ((int)($fila['asignacion_id'] ?? 0) === $asignacionId) {
+                $encontrado = $fila;
+                break;
+            }
+        }
+        if ($encontrado === null) {
+            throw new HttpException('El trabajador no está convocado a esta sesión.', 404);
+        }
+
+        $asistencia = strtoupper((string)($encontrado['estado_asistencia'] ?? 'CONVOCADO'));
+        $tieneCumplimiento = isset($encontrado['cumplimiento_id']) && (int)$encontrado['cumplimiento_id'] > 0;
+        if ($tieneCumplimiento || ($asistencia !== '' && $asistencia !== 'CONVOCADO')) {
+            throw new HttpException(
+                'No es posible retirar a un trabajador con asistencia, evaluación o soportes registrados.',
+                409
+            );
+        }
+
         $eliminados = $this->repo->eliminarParticipante($sesionId, $asignacionId);
         if ($eliminados < 1) {
             throw new HttpException('El trabajador no está convocado a esta sesión.', 404);

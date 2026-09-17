@@ -645,7 +645,7 @@ export function FormularioAsistencia({
                   value={sesion.fecha ?? fechaCump}
                 />
                 <span className="mt-1 block text-xs text-slate-500">
-                  Es la fecha programada del Plan anual.
+                  Es la fecha real de la sesión (no el Plan Anual ni el plazo Desde/Hasta).
                 </span>
               </Field>
               <Field etiqueta="Resultado">

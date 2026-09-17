@@ -61,6 +61,10 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
 
     $router->group(['prefix' => '/cronograma'], function ($router) {
         $router->get('', [CronogramaController::class, 'show'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->get('/grupo', [CronogramaController::class, 'verGrupo'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->get('/grupo/trabajadores', [CronogramaController::class, 'trabajadoresGrupo'], [[PermisoMiddleware::class, 'planes.ver']]);
+        $router->post('/grupo/iniciar', [CronogramaController::class, 'iniciarGrupo'], [[PermisoMiddleware::class, 'sesiones.crear']]);
+        $router->post('/grupo/agregar-persona', [CronogramaController::class, 'agregarPersonaGrupo'], [[PermisoMiddleware::class, 'asignaciones.crear']]);
         $router->get('/{detalleId}/trabajadores', [CronogramaController::class, 'trabajadores'], [[PermisoMiddleware::class, 'planes.ver']]);
         $router->put('/{detalleId}/reprogramar', [CronogramaController::class, 'reprogramar'], [[PermisoMiddleware::class, 'planes.editar']]);
         $router->post('/{detalleId}/cancelar', [CronogramaController::class, 'cancelar'], [[PermisoMiddleware::class, 'planes.editar']]);

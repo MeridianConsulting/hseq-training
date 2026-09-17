@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ApiErrorMap } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ApiErrorMap, type ListaPaginada } from "@/lib/api";
 import type {
   ContextoSesion,
   ConvocableSesion,
@@ -13,6 +13,7 @@ import type {
   ItemCatalogo,
   ItemCronograma,
   ParticipanteSesion,
+  PersonaCorporativa,
   SesionCronograma,
 } from "@/lib/tipos";
 
@@ -442,15 +443,19 @@ function FilaConvocable({
 
 export function PanelConvocados({
   sesionId,
+  item,
   onCambio,
 }: {
   sesionId: number;
+  item?: ItemCronograma | null;
   onCambio: () => void;
 }) {
   const [detalle, setDetalle] = useState<DetalleSesion | null>(null);
   const [convocables, setConvocables] = useState<ConvocableSesion[]>([]);
   const [seleccionados, setSeleccionados] = useState<number[]>([]);
   const [buscar, setBuscar] = useState("");
+  const [buscarFaltante, setBuscarFaltante] = useState("");
+  const [faltantes, setFaltantes] = useState<PersonaCorporativa[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -549,6 +554,52 @@ export function PanelConvocados({
     onCambio();
   }
 
+  async function buscarPersonasFaltantes(texto: string) {
+    setBuscarFaltante(texto);
+    if (texto.trim().length < 2 || !item) {
+      setFaltantes([]);
+      return;
+    }
+    const r = await apiGet<ListaPaginada<PersonaCorporativa>>(
+      withQuery("/api/personal", { buscar: texto.trim(), estado: "Activo", per_page: 15 }),
+    );
+    if (r.success && r.data) {
+      const ya = new Set((detalle?.participantes ?? []).map((p) => p.persona_id_ext));
+      setFaltantes((r.data.items ?? []).filter((p) => !ya.has(p.persona_id)));
+    }
+  }
+
+  async function agregarFaltante(personaId: number) {
+    if (!item) {
+      return;
+    }
+    setGuardando(true);
+    setError(null);
+    const r = await apiPost<{ asignacion: { asignacion_id: number } }>(
+      "/api/cronograma/grupo/agregar-persona",
+      {
+        capacitacion_id: item.capacitacion_id,
+        anio: item.anio,
+        mes: item.mes,
+        persona_id_ext: personaId,
+        sesion_id: sesionId,
+      },
+    );
+    setGuardando(false);
+    if (r.cancelada) {
+      return;
+    }
+    if (!r.success) {
+      setError(r.message || "No fue posible agregar al trabajador.");
+      return;
+    }
+    setMensaje("Trabajador asignado y convocado.");
+    setBuscarFaltante("");
+    setFaltantes([]);
+    await recargar();
+    onCambio();
+  }
+
   const participantes: ParticipanteSesion[] = detalle?.participantes ?? [];
 
   return (
@@ -582,13 +633,21 @@ export function PanelConvocados({
                 <span>
                   {p.persona_nombre}
                   <span className="ml-2 text-xs text-slate-500">{p.numero_documento}</span>
+                  {p.estado_asistencia !== "CONVOCADO" ? (
+                    <span className="ml-2 text-xs text-amber-700">({p.estado_asistencia})</span>
+                  ) : null}
                 </span>
                 <Button
                   type="button"
                   variante="ghost"
                   className="px-2 py-1 text-xs"
-                  disabled={guardando}
+                  disabled={guardando || p.estado_asistencia !== "CONVOCADO" || !!p.cumplimiento_id}
                   onClick={() => void retirar(p.asignacion_id)}
+                  title={
+                    p.estado_asistencia !== "CONVOCADO" || p.cumplimiento_id
+                      ? "Solo se puede retirar si está convocado sin asistencia ni evidencias"
+                      : "Retirar de la sesión"
+                  }
                 >
                   Retirar
                 </Button>
@@ -633,6 +692,48 @@ export function PanelConvocados({
           </Button>
         </div>
       </div>
+
+      {item ? (
+        <div>
+          <p className="mb-2 text-sm font-medium text-slate-700">Persona sin asignación (crear y convocar)</p>
+          <p className="mb-2 text-xs text-slate-500">
+            Crea la asignación con el mismo periodo Desde/Hasta del grupo y la convoca a esta sesión.
+          </p>
+          <input
+            className={`${inputClass} mb-2`}
+            value={buscarFaltante}
+            onChange={(e) => void buscarPersonasFaltantes(e.target.value)}
+            placeholder="Buscar trabajador activo por documento o nombre"
+          />
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200">
+            {faltantes.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-slate-500">
+                {buscarFaltante.trim().length < 2
+                  ? "Escriba al menos 2 caracteres para buscar."
+                  : "Sin resultados o ya están convocados."}
+              </p>
+            ) : (
+              faltantes.map((p) => (
+                <div key={p.persona_id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <span>
+                    {p.nombre_completo}
+                    <span className="ml-2 text-xs text-slate-500">{p.numero_documento}</span>
+                  </span>
+                  <Button
+                    type="button"
+                    variante="ghost"
+                    className="px-2 py-1 text-xs"
+                    disabled={guardando || lleno}
+                    onClick={() => void agregarFaltante(p.persona_id)}
+                  >
+                    Agregar
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

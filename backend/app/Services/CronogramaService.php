@@ -132,23 +132,182 @@ class CronogramaService
     public function ver(int $detalleId): array
     {
         $fila = $this->exigirAprobado($detalleId);
+        $anio = (int)$fila['anio'];
+        $mes = (int)($fila['mes_programado'] ?? 0);
+        if ($mes < 1 && !empty($fila['fecha_programada'])) {
+            $mes = (int)substr((string)$fila['fecha_programada'], 5, 2);
+        }
+        if ($mes >= 1 && $mes <= 12) {
+            $periodo = $this->repo->periodoGrupo((int)$fila['capacitacion_id'], $anio, $mes);
+            $fila['fecha_desde'] = $periodo['fecha_desde'];
+            $fila['fecha_hasta'] = $periodo['fecha_hasta'];
+            if ($periodo['cantidad'] > 0) {
+                $fila['cantidad_programada'] = $periodo['cantidad'];
+            }
+            $grupo = $this->repo->buscarGrupo((int)$fila['capacitacion_id'], $anio, $mes);
+            if ($grupo !== null) {
+                $fila['ejecutadas_fuera_de_tiempo'] = $grupo['ejecutadas_fuera_de_tiempo'] ?? 0;
+                $fila['pendientes_fuera_plazo'] = $grupo['pendientes_fuera_plazo'] ?? 0;
+            }
+        }
         $sesiones = $this->sesionesPorDetalle([$detalleId]);
 
         return $this->item($fila, $sesiones);
     }
 
     /**
-     * @return array{items:list<array<string,mixed>>,total:int,cantidad_programada:int}
+     * @return array{items:list<array<string,mixed>>,total:int,cantidad_programada:int,fecha_desde:?string,fecha_hasta:?string}
      */
     public function trabajadores(int $detalleId): array
     {
         $fila = $this->exigirAprobado($detalleId);
-        $cargos = $this->cargosDeProgramacion($fila);
-        $cargoIds = array_map(static fn (array $c): int => (int)$c['cargo_id'], $cargos);
-        $filas = $this->repo->trabajadoresProgramados((int)$fila['capacitacion_id'], $cargoIds);
+        $anio = (int)$fila['anio'];
+        $mes = (int)$fila['mes_programado'];
 
+        return $this->trabajadoresDeGrupo((int)$fila['capacitacion_id'], $anio, $mes, (int)$fila['cantidad_programada']);
+    }
+
+    /**
+     * @return array{items:list<array<string,mixed>>,total:int,cantidad_programada:int,fecha_desde:?string,fecha_hasta:?string}
+     */
+    public function trabajadoresGrupo(int $capacitacionId, int $anio, int $mes): array
+    {
+        $fila = $this->exigirGrupo($capacitacionId, $anio, $mes);
+
+        return $this->trabajadoresDeGrupo($capacitacionId, $anio, $mes, (int)$fila['cantidad_programada']);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function verGrupo(int $capacitacionId, int $anio, int $mes): array
+    {
+        $fila = $this->exigirGrupo($capacitacionId, $anio, $mes);
+        $sesiones = $this->sesionesPorCapacitacionMes([$capacitacionId], $anio);
+
+        return $this->item($fila, [0 => $sesiones[$capacitacionId . ':' . $mes] ?? []]);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function iniciarGrupo(int $capacitacionId, int $anio, int $mes, int $usuarioId): array
+    {
+        $fila = $this->exigirGrupo($capacitacionId, $anio, $mes);
+        if (strtoupper((string)($fila['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
+            throw new HttpException('No es posible iniciar una programación cancelada.', 409);
+        }
+
+        $detalleId = isset($fila['plan_detalle_id']) ? (int)$fila['plan_detalle_id'] : 0;
+        $clave = $capacitacionId . ':' . $mes;
+        $existentes = $detalleId > 0
+            ? ($this->sesionesPorDetalle([$detalleId])[$detalleId] ?? [])
+            : ($this->sesionesPorCapacitacionMes([$capacitacionId], $anio)[$clave] ?? []);
+
+        foreach ($existentes as $sesion) {
+            $estado = strtoupper((string)($sesion['estado'] ?? ''));
+            if ($estado === 'PROGRAMADA') {
+                $sesionId = (int)($sesion['sesion_id'] ?? 0);
+                if ($sesionId > 0 && (int)($sesion['convocados'] ?? 0) === 0) {
+                    $this->sesionService->sincronizarConvocados($sesionId, $usuarioId, true);
+                }
+
+                return $detalleId > 0 ? $this->ver($detalleId) : $this->verGrupo($capacitacionId, $anio, $mes);
+            }
+            if ($estado === 'EJECUTADA') {
+                throw new HttpException('La capacitación ya fue finalizada.', 409);
+            }
+        }
+
+        $fechaHasta = isset($fila['fecha_hasta']) && $fila['fecha_hasta'] !== null && $fila['fecha_hasta'] !== ''
+            ? substr((string)$fila['fecha_hasta'], 0, 10)
+            : (isset($fila['fecha_programada']) && $fila['fecha_programada'] !== null && $fila['fecha_programada'] !== ''
+                ? substr((string)$fila['fecha_programada'], 0, 10)
+                : sprintf('%04d-%02d-01', $anio, $mes));
+
+        $lista = $this->trabajadoresDeGrupo($capacitacionId, $anio, $mes, (int)$fila['cantidad_programada']);
+        $asignacionIds = array_map(
+            static fn (array $t): int => (int)$t['asignacion_id'],
+            $lista['items']
+        );
+        $cupo = max(count($asignacionIds), (int)$fila['cantidad_programada'], 1);
+        $catalogo = $this->datosInicioSesion($fila);
+
+        $this->sesionService->crear([
+            'plan_detalle_id' => $detalleId > 0 ? $detalleId : null,
+            'capacitacion_id' => $capacitacionId,
+            'fecha' => $fechaHasta,
+            'hora' => '08:00',
+            'modalidad_id' => $catalogo['modalidad_id'],
+            'ubicacion_id' => $catalogo['ubicacion_id'],
+            'enlace_virtual' => $catalogo['enlace_virtual'],
+            'proveedor_id' => $catalogo['proveedor_id'],
+            'cupo_maximo' => $cupo,
+            'asignacion_ids' => $asignacionIds,
+        ], $usuarioId);
+
+        return $detalleId > 0 ? $this->ver($detalleId) : $this->verGrupo($capacitacionId, $anio, $mes);
+    }
+
+    /**
+     * Agrega persona faltante: crea asignación MANUAL del periodo del grupo y opcionalmente convoca.
+     *
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     * @return array{asignacion:array<string,mixed>,item:array<string,mixed>}
+     */
+    public function agregarPersonaGrupo(
+        int $capacitacionId,
+        int $anio,
+        int $mes,
+        int $personaId,
+        int $usuarioId,
+        ?int $sesionId = null,
+        ?array $actor = null
+    ): array {
+        $fila = $this->exigirGrupo($capacitacionId, $anio, $mes);
+        $periodo = $this->repo->periodoGrupo($capacitacionId, $anio, $mes);
+        $fechaDesde = $periodo['fecha_desde'] ?? sprintf('%04d-%02d-01', $anio, $mes);
+        $fechaHasta = $periodo['fecha_hasta'] ?? sprintf(
+            '%04d-%02d-%02d',
+            $anio,
+            $mes,
+            (int)(new \DateTimeImmutable(sprintf('%04d-%02d-01', $anio, $mes)))->format('t')
+        );
+
+        $asignaciones = new AsignacionService();
+        $asignacion = $asignaciones->crear([
+            'persona_id_ext' => $personaId,
+            'capacitacion_id' => $capacitacionId,
+            'fecha_asignacion' => $fechaDesde,
+            'fecha_limite_cumplimiento' => $fechaHasta,
+        ], $usuarioId, $actor);
+
+        if ($sesionId !== null && $sesionId > 0) {
+            $this->sesionService->convocar($sesionId, [
+                'asignacion_ids' => [(int)$asignacion['asignacion_id']],
+            ], $usuarioId);
+        }
+
+        $detalleId = isset($fila['plan_detalle_id']) ? (int)$fila['plan_detalle_id'] : 0;
+
+        return [
+            'asignacion' => $asignacion,
+            'item' => $detalleId > 0 ? $this->ver($detalleId) : $this->verGrupo($capacitacionId, $anio, $mes),
+        ];
+    }
+
+    /**
+     * @return array{items:list<array<string,mixed>>,total:int,cantidad_programada:int,fecha_desde:?string,fecha_hasta:?string}
+     */
+    private function trabajadoresDeGrupo(int $capacitacionId, int $anio, int $mes, int $cantidadProgramada): array
+    {
+        $filas = $this->repo->trabajadoresPorPlazo($capacitacionId, $anio, $mes);
+        $periodo = $this->repo->periodoGrupo($capacitacionId, $anio, $mes);
         $items = [];
         foreach ($filas as $t) {
+            $fechaReal = $t['fecha_realizacion'] ?? null;
+            $fechaHasta = $t['fecha_limite_cumplimiento'] ?? null;
+            $fuera = (int)($t['ejecutada_fuera_de_tiempo'] ?? 0) === 1;
             $items[] = [
                 'asignacion_id' => (int)$t['asignacion_id'],
                 'persona_id_ext' => (int)$t['persona_id_ext'],
@@ -157,15 +316,45 @@ class CronogramaService
                 'nombre_cargo' => $t['nombre_cargo'] !== null && $t['nombre_cargo'] !== ''
                     ? (string)$t['nombre_cargo']
                     : null,
+                'proyecto' => $t['proyecto'] !== null && $t['proyecto'] !== ''
+                    ? (string)$t['proyecto']
+                    : null,
+                'fecha_asignacion' => $t['fecha_asignacion'] !== null
+                    ? substr((string)$t['fecha_asignacion'], 0, 10)
+                    : null,
+                'fecha_limite_cumplimiento' => $fechaHasta !== null
+                    ? substr((string)$fechaHasta, 0, 10)
+                    : null,
+                'fecha_realizacion' => $fechaReal !== null
+                    ? substr((string)$fechaReal, 0, 10)
+                    : null,
                 'estado_asignacion' => (string)($t['estado_calculado'] ?? ''),
+                'ejecutada_fuera_de_tiempo' => $fuera,
+                'dentro_de_tiempo' => $fechaReal !== null && !$fuera,
             ];
         }
 
         return [
             'items' => $items,
             'total' => count($items),
-            'cantidad_programada' => (int)$fila['cantidad_programada'],
+            'cantidad_programada' => $cantidadProgramada > 0 ? $cantidadProgramada : count($items),
+            'fecha_desde' => $periodo['fecha_desde'],
+            'fecha_hasta' => $periodo['fecha_hasta'],
         ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function exigirGrupo(int $capacitacionId, int $anio, int $mes): array
+    {
+        $fila = $this->repo->buscarGrupo($capacitacionId, $anio, $mes);
+        if ($fila === null) {
+            throw new HttpException('No hay asignaciones para esa capacitación en el periodo indicado.', 404);
+        }
+        $fila['anio'] = $anio;
+
+        return $fila;
     }
 
     /**
@@ -254,60 +443,19 @@ class CronogramaService
     public function iniciar(int $detalleId, int $usuarioId): array
     {
         $fila = $this->exigirAprobado($detalleId);
-        if (strtoupper((string)($fila['estado_programacion'] ?? 'PROGRAMADA')) === 'CANCELADA') {
-            throw new HttpException('No es posible iniciar una programación cancelada.', 409);
+        $anio = (int)$fila['anio'];
+        $mes = (int)($fila['mes_programado'] ?? 0);
+        if ($mes < 1 && !empty($fila['fecha_programada'])) {
+            $mes = (int)substr((string)$fila['fecha_programada'], 5, 2);
+        }
+        if ($mes < 1 || $mes > 12) {
+            throw new HttpException(
+                'No hay fecha operativa para iniciar. Defina el plazo en Asignaciones.',
+                422
+            );
         }
 
-        $existentes = $this->sesionesPorDetalle([$detalleId])[$detalleId] ?? [];
-        foreach ($existentes as $sesion) {
-            $estado = strtoupper((string)($sesion['estado'] ?? ''));
-            if ($estado === 'PROGRAMADA') {
-                $sesionId = (int)($sesion['sesion_id'] ?? 0);
-                if ($sesionId > 0 && (int)($sesion['convocados'] ?? 0) === 0) {
-                    $this->sesionService->sincronizarConvocados($sesionId, $usuarioId, true);
-                }
-
-                return $this->ver($detalleId);
-            }
-            if ($estado === 'EJECUTADA') {
-                throw new HttpException('La capacitación ya fue finalizada.', 409);
-            }
-        }
-
-        $fecha = $fila['fecha_programada'] !== null && $fila['fecha_programada'] !== ''
-            ? substr((string)$fila['fecha_programada'], 0, 10)
-            : null;
-        if ($fecha === null || $fecha === '') {
-            $mes = isset($fila['mes_programado']) ? (int)$fila['mes_programado'] : 0;
-            if ($mes < 1 || $mes > 12) {
-                throw new HttpException(
-                    'No hay fecha operativa para iniciar. Defina el plazo en Asignaciones o cree la sesión manualmente.',
-                    422
-                );
-            }
-            $fecha = sprintf('%04d-%02d-01', (int)$fila['anio'], $mes);
-        }
-        $lista = $this->trabajadores($detalleId);
-        $asignacionIds = array_map(
-            static fn (array $t): int => (int)$t['asignacion_id'],
-            $lista['items']
-        );
-        $cupo = max(count($asignacionIds), (int)$fila['cantidad_programada'], 1);
-        $catalogo = $this->datosInicioSesion($fila);
-
-        $this->sesionService->crear([
-            'plan_detalle_id' => $detalleId,
-            'fecha' => $fecha,
-            'hora' => '08:00',
-            'modalidad_id' => $catalogo['modalidad_id'],
-            'ubicacion_id' => $catalogo['ubicacion_id'],
-            'enlace_virtual' => $catalogo['enlace_virtual'],
-            'proveedor_id' => $catalogo['proveedor_id'],
-            'cupo_maximo' => $cupo,
-            'asignacion_ids' => $asignacionIds,
-        ], $usuarioId);
-
-        return $this->ver($detalleId);
+        return $this->iniciarGrupo((int)$fila['capacitacion_id'], $anio, $mes, $usuarioId);
     }
 
     /**
@@ -471,6 +619,7 @@ class CronogramaService
             'plan_anual_id' => isset($fila['plan_anual_id']) && $fila['plan_anual_id'] !== null
                 ? (int)$fila['plan_anual_id']
                 : null,
+            'grupo_key' => (int)$fila['capacitacion_id'] . '-' . (int)$fila['anio'] . '-' . $mes,
             'capacitacion_id' => (int)$fila['capacitacion_id'],
             'codigo' => (string)$fila['codigo'],
             'tema' => (string)$fila['nombre'],
@@ -479,10 +628,20 @@ class CronogramaService
             'metodologia' => is_string($metodologia) && $metodologia !== '' ? $metodologia : null,
             'mes' => $mes,
             'mes_nombre' => $this->nombreMes($mes),
+            'fecha_desde' => isset($fila['fecha_desde']) && $fila['fecha_desde'] !== null && $fila['fecha_desde'] !== ''
+                ? substr((string)$fila['fecha_desde'], 0, 10)
+                : null,
+            'fecha_hasta' => isset($fila['fecha_hasta']) && $fila['fecha_hasta'] !== null && $fila['fecha_hasta'] !== ''
+                ? substr((string)$fila['fecha_hasta'], 0, 10)
+                : ($fila['fecha_programada'] !== null
+                    ? substr((string)$fila['fecha_programada'], 0, 10)
+                    : null),
             'fecha_programada' => $fila['fecha_programada'] !== null
                 ? substr((string)$fila['fecha_programada'], 0, 10)
                 : null,
             'cantidad_programada' => (int)$fila['cantidad_programada'],
+            'ejecutadas_fuera_de_tiempo' => (int)($fila['ejecutadas_fuera_de_tiempo'] ?? 0),
+            'pendientes_fuera_plazo' => (int)($fila['pendientes_fuera_plazo'] ?? 0),
             'anio' => (int)$fila['anio'],
             'proceso_id' => $procesoId,
             'proceso_ids' => array_values($procesoIds),

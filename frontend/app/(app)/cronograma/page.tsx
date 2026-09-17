@@ -145,15 +145,19 @@ function Contenido() {
   }
 
   async function abrirTrabajadores(item: ItemCronograma) {
-    if (!item.plan_detalle_id) {
-      setError("Esta programación proviene de Asignaciones. Consulte los trabajadores en el módulo de Asignaciones.");
-      return;
-    }
     setTrabajadoresDe(item);
     setTrabajadores([]);
-    const respuesta = await apiGet<{ items: TrabajadorCronograma[] }>(
-      `/api/cronograma/${item.plan_detalle_id}/trabajadores`,
-    );
+    const respuesta = item.plan_detalle_id
+      ? await apiGet<{ items: TrabajadorCronograma[] }>(
+          `/api/cronograma/${item.plan_detalle_id}/trabajadores`,
+        )
+      : await apiGet<{ items: TrabajadorCronograma[] }>(
+          withQuery("/api/cronograma/grupo/trabajadores", {
+            capacitacion_id: item.capacitacion_id,
+            anio: item.anio,
+            mes: item.mes,
+          }),
+        );
     if (respuesta.cancelada) {
       return;
     }
@@ -186,12 +190,17 @@ function Contenido() {
   }
 
   async function confirmarInicio() {
-    if (!iniciarDe?.plan_detalle_id) {
-      setError("Para iniciar se requiere vínculo con el plan aprobado o cree la sesión desde Asignaciones.");
+    if (!iniciarDe) {
       return;
     }
     setGuardando(true);
-    const respuesta = await apiPost<ItemCronograma>(`/api/cronograma/${iniciarDe.plan_detalle_id}/iniciar`, {});
+    const respuesta = iniciarDe.plan_detalle_id
+      ? await apiPost<ItemCronograma>(`/api/cronograma/${iniciarDe.plan_detalle_id}/iniciar`, {})
+      : await apiPost<ItemCronograma>("/api/cronograma/grupo/iniciar", {
+          capacitacion_id: iniciarDe.capacitacion_id,
+          anio: iniciarDe.anio,
+          mes: iniciarDe.mes,
+        });
     setGuardando(false);
     if (respuesta.cancelada) {
       return;
@@ -250,19 +259,22 @@ function Contenido() {
 
           <Table
             columnas={[
-              { clave: "fecha", etiqueta: "Fecha" },
+              { clave: "desde", etiqueta: "Desde" },
+              { clave: "hasta", etiqueta: "Hasta" },
               { clave: "codigo", etiqueta: "Código" },
               { clave: "cap", etiqueta: "Capacitación" },
               { clave: "proceso", etiqueta: "Proceso" },
               { clave: "proyecto", etiqueta: "Proyecto" },
               { clave: "cargo", etiqueta: "Cargo" },
               { clave: "trab", etiqueta: "Trabajadores" },
+              { clave: "oportunidad", etiqueta: "Oportunidad" },
               { clave: "estado", etiqueta: "Estado" },
               { clave: "acc", etiqueta: "Acciones" },
             ]}
             vacio="No hay capacitaciones programadas para este período."
             filas={items.map((item) => [
-              formatearFecha(item.fecha_programada),
+              formatearFecha(item.fecha_desde ?? item.fecha_programada),
+              formatearFecha(item.fecha_hasta ?? item.fecha_programada),
               item.codigo,
               item.tema,
               item.proceso_nombre ?? "—",
@@ -271,6 +283,21 @@ function Contenido() {
                 ? item.cargos_aplicables.map((c) => c.nombre_cargo).join(", ")
                 : "—",
               `${item.cantidad_programada} trabajador${item.cantidad_programada === 1 ? "" : "es"}`,
+              <span key={`o-${item.capacitacion_id}-${item.mes}`} className="flex flex-col gap-0.5 text-xs">
+                {(item.ejecutadas_fuera_de_tiempo ?? 0) > 0 ? (
+                  <span className="font-medium text-amber-700">
+                    {item.ejecutadas_fuera_de_tiempo} fuera de tiempo
+                  </span>
+                ) : null}
+                {(item.pendientes_fuera_plazo ?? 0) > 0 ? (
+                  <span className="font-medium text-rose-700">
+                    {item.pendientes_fuera_plazo} pendiente(s) fuera de plazo
+                  </span>
+                ) : null}
+                {(item.ejecutadas_fuera_de_tiempo ?? 0) < 1 && (item.pendientes_fuera_plazo ?? 0) < 1
+                  ? "—"
+                  : null}
+              </span>,
               <Badge key={`e-${item.capacitacion_id}-${item.mes}`} tono={tonoEstado(item.estado_operativo)}>
                 {etiquetaEstado(item.estado_operativo)}
               </Badge>,
@@ -281,7 +308,7 @@ function Contenido() {
                 <Button type="button" variante="ghost" onClick={() => void abrirTrabajadores(item)}>
                   <Users className="h-4 w-4" aria-hidden />
                 </Button>
-                {programada(item) && puede("planes.editar") ? (
+                {programada(item) && puede("planes.editar") && item.plan_detalle_id ? (
                   <Button type="button" variante="ghost" onClick={() => void cancelarProgramacion(item)}>
                     <Ban className="h-4 w-4" aria-hidden />
                   </Button>
@@ -346,8 +373,23 @@ function Contenido() {
                 <dd>{etiquetaVigencia(detalle)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Fecha programada</dt>
-                <dd>{formatearFecha(detalle.fecha_programada)}</dd>
+                <dt className="text-xs uppercase text-slate-500">Fecha desde</dt>
+                <dd>{formatearFecha(detalle.fecha_desde ?? detalle.fecha_programada)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Fecha hasta</dt>
+                <dd>{formatearFecha(detalle.fecha_hasta ?? detalle.fecha_programada)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Oportunidad</dt>
+                <dd className="text-sm">
+                  {(detalle.ejecutadas_fuera_de_tiempo ?? 0) > 0
+                    ? `${detalle.ejecutadas_fuera_de_tiempo} ejecutada(s) fuera de tiempo`
+                    : "Sin ejecuciones fuera de tiempo"}
+                  {(detalle.pendientes_fuera_plazo ?? 0) > 0
+                    ? ` · ${detalle.pendientes_fuera_plazo} pendiente(s) fuera de plazo`
+                    : ""}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-slate-500">Proceso</dt>
@@ -406,26 +448,34 @@ function Contenido() {
         {trabajadoresDe ? (
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
-              {trabajadoresDe.codigo} — {trabajadoresDe.tema}. {trabajadores.length} trabajador
-              {trabajadores.length === 1 ? "" : "es"} con el curso asignado
-              {trabajadoresDe.cantidad_programada > 0
-                ? ` (la matriz estima ${trabajadoresDe.cantidad_programada} por cargo)`
-                : ""}
-              . Si faltan personas, asígnelas en el módulo de asignaciones.
+              {trabajadoresDe.codigo} — {trabajadoresDe.tema}. Periodo{" "}
+              {formatearFecha(trabajadoresDe.fecha_desde)} → {formatearFecha(trabajadoresDe.fecha_hasta)}.{" "}
+              {trabajadores.length} trabajador{trabajadores.length === 1 ? "" : "es"} asignados.
+              Si falta alguien, puede agregarlo desde la ejecución (crea la asignación) o en Asignaciones.
             </p>
             <Table
               columnas={[
                 { clave: "doc", etiqueta: "Documento" },
                 { clave: "nom", etiqueta: "Nombre" },
                 { clave: "car", etiqueta: "Cargo" },
+                { clave: "proy", etiqueta: "Proyecto" },
                 { clave: "est", etiqueta: "Estado" },
+                { clave: "opc", etiqueta: "Oportunidad" },
               ]}
-              vacio="Nadie tiene esta capacitación asignada. Cree la asignación en el módulo de asignaciones."
+              vacio="Nadie tiene esta capacitación asignada en el periodo. Cree la asignación en Asignaciones o agréguela al iniciar la ejecución."
               filas={trabajadores.map((t) => [
                 t.numero_documento,
                 t.persona_nombre,
                 t.nombre_cargo ?? "—",
+                t.proyecto ?? "—",
                 ETIQUETAS_ASIGNACION[t.estado_asignacion] ?? t.estado_asignacion,
+                t.fecha_realizacion
+                  ? t.ejecutada_fuera_de_tiempo
+                    ? "Fuera de tiempo"
+                    : "Dentro del tiempo"
+                  : t.estado_asignacion === "PENDIENTE_VENCIDA"
+                    ? "Pendiente fuera de plazo"
+                    : "—",
               ])}
             />
           </div>
@@ -440,9 +490,10 @@ function Contenido() {
         {iniciarDe ? (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} el{" "}
-              {formatearFecha(iniciarDe.fecha_programada)} a las 08:00, con los trabajadores
-              que ya tienen esta capacitación asignada.
+              Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} con fecha de sesión{" "}
+              {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00,
+              convocando a las personas asignadas en el periodo{" "}
+              {formatearFecha(iniciarDe.fecha_desde)} → {formatearFecha(iniciarDe.fecha_hasta)}.
             </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variante="secondary" onClick={() => setIniciarDe(null)}>

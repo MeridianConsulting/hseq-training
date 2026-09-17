@@ -46,6 +46,64 @@ class CronogramaController extends Controller
         $this->success($this->servicio->tablero($filtros), 'Cronograma del programa');
     }
 
+    public function verGrupo(Request $request): void
+    {
+        [$capId, $anio, $mes] = $this->grupoDesdeQuery($request);
+        $this->success($this->servicio->verGrupo($capId, $anio, $mes), 'Detalle de la programación');
+    }
+
+    public function trabajadoresGrupo(Request $request): void
+    {
+        [$capId, $anio, $mes] = $this->grupoDesdeQuery($request);
+        $this->success($this->servicio->trabajadoresGrupo($capId, $anio, $mes), 'Trabajadores programados');
+    }
+
+    public function iniciarGrupo(Request $request): void
+    {
+        $datos = $this->validate($request, [
+            'capacitacion_id' => 'required|integer|min:1',
+            'anio' => 'required|integer|min:2000|max:2100',
+            'mes' => 'required|integer|min:1|max:12',
+        ]);
+        $capId = (int)$datos['capacitacion_id'];
+        $anio = (int)$datos['anio'];
+        $mes = (int)$datos['mes'];
+        $item = $this->servicio->iniciarGrupo($capId, $anio, $mes, $request->userId());
+
+        $this->auditoria->dePeticion(
+            $request,
+            'iniciar',
+            'asignaciones_capacitacion',
+            $capId,
+            ['capacitacion_id' => $capId, 'anio' => $anio, 'mes' => $mes]
+        );
+
+        $this->success($item, 'Capacitación iniciada correctamente.');
+    }
+
+    public function agregarPersonaGrupo(Request $request): void
+    {
+        $datos = $this->validate($request, [
+            'capacitacion_id' => 'required|integer|min:1',
+            'anio' => 'required|integer|min:2000|max:2100',
+            'mes' => 'required|integer|min:1|max:12',
+            'persona_id_ext' => 'required|integer|min:1',
+            'sesion_id' => 'nullable|integer|min:1',
+        ]);
+
+        $resultado = $this->servicio->agregarPersonaGrupo(
+            (int)$datos['capacitacion_id'],
+            (int)$datos['anio'],
+            (int)$datos['mes'],
+            (int)$datos['persona_id_ext'],
+            $request->userId(),
+            isset($datos['sesion_id']) ? (int)$datos['sesion_id'] : null,
+            AuditoriaService::actorDe($request)
+        );
+
+        $this->success($resultado, 'Trabajador agregado a la programación.');
+    }
+
     public function ver(Request $request, string $detalleId): void
     {
         $this->success($this->servicio->ver((int)$detalleId), 'Detalle de la programación');
@@ -97,6 +155,25 @@ class CronogramaController extends Controller
         );
 
         $this->success($item, 'Capacitación iniciada correctamente.');
+    }
+
+    /**
+     * @return array{0:int,1:int,2:int}
+     */
+    private function grupoDesdeQuery(Request $request): array
+    {
+        $query = $request->allQuery();
+        $datos = $this->validateArray([
+            'capacitacion_id' => $this->enteroONulo($query['capacitacion_id'] ?? null),
+            'anio' => $this->enteroONulo($query['anio'] ?? null),
+            'mes' => $this->enteroONulo($query['mes'] ?? null),
+        ], [
+            'capacitacion_id' => 'required|integer|min:1',
+            'anio' => 'required|integer|min:2000|max:2100',
+            'mes' => 'required|integer|min:1|max:12',
+        ]);
+
+        return [(int)$datos['capacitacion_id'], (int)$datos['anio'], (int)$datos['mes']];
     }
 
     private function enteroONulo(mixed $valor): ?int

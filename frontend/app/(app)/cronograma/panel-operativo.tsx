@@ -89,7 +89,18 @@ export function PanelOperativo({
 
   async function finalizar() {
     if (!sesion) return;
-    if (!window.confirm("¿Finalizar esta capacitación? Después no se podrá editar asistencia, evaluaciones ni soportes.")) {
+    const requisitos: string[] = ["asistencia de todos los convocados"];
+    if (sesion.requiere_evaluacion) {
+      requisitos.push("evaluación/nota de asistentes");
+    }
+    if (sesion.requiere_certificado) {
+      requisitos.push("soportes/certificados adjuntos");
+    }
+    if (
+      !window.confirm(
+        `¿Finalizar esta capacitación?\n\nDebe cumplir: ${requisitos.join(", ")}.\nDespués no se podrá editar asistencia, evaluaciones ni soportes.`,
+      )
+    ) {
       return;
     }
     setFinalizando(true);
@@ -133,7 +144,9 @@ export function PanelOperativo({
   return (
     <div className="space-y-6">
       <p className="text-sm text-slate-600">
-        {item.codigo} — {item.tema}. Fecha programada: {item.fecha_programada ?? "—"}.
+        {item.codigo} — {item.tema}. Periodo{" "}
+        {(item.fecha_desde ?? item.fecha_programada ?? "—").toString().slice(0, 10)} →{" "}
+        {(item.fecha_hasta ?? item.fecha_programada ?? "—").toString().slice(0, 10)}.
       </p>
       {error ? <Alert tono="error">{error}</Alert> : null}
 
@@ -151,6 +164,7 @@ export function PanelOperativo({
           </p>
           <PanelConvocados
             sesionId={sesion.sesion_id}
+            item={item}
             onCambio={() => void cargar(sesion.sesion_id)}
           />
         </details>
