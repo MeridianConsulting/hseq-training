@@ -30,7 +30,7 @@ class MigracionController extends Controller
         $anio = (int)$request->input('anio_programa', date('Y'));
         $resultado = $this->service->validar($archivo, $anio, AuditoriaService::actorDe($request));
 
-        $this->success($resultado, 'Archivo validado. Revise el resumen antes de confirmar.');
+        $this->success($resultado, 'Archivo validado. Revise el resumen de historial antes de confirmar. No se crearán trabajadores, capacitaciones ni asignaciones pendientes.');
     }
 
     public function show(Request $request, string $id): void
@@ -64,7 +64,7 @@ class MigracionController extends Controller
     public function confirmar(Request $request, string $id): void
     {
         $resultado = $this->service->confirmar((int)$id, AuditoriaService::actorDe($request));
-        $this->success($resultado, 'Migración confirmada.');
+        $this->success($resultado, 'Historial importado. Revise alertas; las asignaciones futuras se programan a mano.');
     }
 
     public function cancelar(Request $request, string $id): void

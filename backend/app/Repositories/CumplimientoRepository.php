@@ -77,6 +77,56 @@ class CumplimientoRepository
     }
 
     /**
+     * Claves "personaId|capacitacionId|Y-m-d" de ejecuciones ya persistidas.
+     *
+     * @param list<int> $personaIds
+     * @return array<string, true>
+     */
+    public function mapaEjecuciones(array $personaIds): array
+    {
+        $personaIds = array_values(array_unique(array_filter($personaIds, static fn ($id) => $id > 0)));
+        if ($personaIds === []) {
+            return [];
+        }
+
+        $mapa = [];
+        foreach (array_chunk($personaIds, 500) as $lote) {
+            $placeholders = implode(',', array_fill(0, count($lote), '?'));
+            $filas = $this->db->fetchAll(
+                "SELECT a.persona_id_ext, a.capacitacion_id, c.fecha_realizacion
+                 FROM cumplimientos_capacitacion c
+                 INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
+                 WHERE a.persona_id_ext IN ({$placeholders})",
+                $lote
+            );
+            foreach ($filas as $fila) {
+                $fecha = (string)($fila['fecha_realizacion'] ?? '');
+                if ($fecha === '') {
+                    continue;
+                }
+                $clave = (int)$fila['persona_id_ext'] . '|' . (int)$fila['capacitacion_id'] . '|' . $fecha;
+                $mapa[$clave] = true;
+            }
+        }
+
+        return $mapa;
+    }
+
+    public function existeEjecucion(int $personaId, int $capacitacionId, string $fecha): bool
+    {
+        $fila = $this->db->fetch(
+            'SELECT c.cumplimiento_id
+             FROM cumplimientos_capacitacion c
+             INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
+             WHERE a.persona_id_ext = ? AND a.capacitacion_id = ? AND c.fecha_realizacion = ?
+             LIMIT 1',
+            [$personaId, $capacitacionId, $fecha]
+        );
+
+        return $fila !== null;
+    }
+
+    /**
      * @param array<string,mixed> $datos
      */
     public function actualizar(int $id, array $datos): int

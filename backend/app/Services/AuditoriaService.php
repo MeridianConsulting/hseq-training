@@ -54,7 +54,7 @@ class AuditoriaService
         'incluir_asignaciones' => 'Incluir asignaciones',
         'quitar_asignacion' => 'Quitar asignación del plan',
         'mover_asignacion' => 'Mover asignación',
-        'migracion_inicial' => 'Carga inicial Excel',
+        'migracion_inicial' => 'Carga inicial de historial',
         'exportar' => 'Exportar reporte',
         'importar' => 'Importar personal',
     ];
@@ -70,7 +70,7 @@ class AuditoriaService
         'cumplimientos_capacitacion' => 'Cumplimientos',
         'soportes_cumplimiento' => 'Evidencias',
         'personal' => 'Personal',
-        'migraciones' => 'Carga inicial Excel',
+        'migraciones' => 'Carga inicial de historial',
         'reportes' => 'Reportes',
     ];
 
@@ -124,7 +124,7 @@ class AuditoriaService
             ['valor' => 'cumplimientos', 'etiqueta' => 'Cumplimientos'],
             ['valor' => 'catalogos', 'etiqueta' => 'Catálogos'],
             ['valor' => 'personal', 'etiqueta' => 'Personal'],
-            ['valor' => 'migracion', 'etiqueta' => 'Carga inicial Excel'],
+            ['valor' => 'migracion', 'etiqueta' => 'Carga inicial de historial'],
             ['valor' => 'reportes', 'etiqueta' => 'Reportes'],
         ];
     }

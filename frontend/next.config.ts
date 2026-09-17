@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
         destination: "/dashboard",
         permanent: false,
       },
+      {
+        source: "/carga-inicial-excel",
+        destination: "/migracion",
+        permanent: false,
+      },
     ];
   },
 };

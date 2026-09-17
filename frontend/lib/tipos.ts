@@ -1084,7 +1084,8 @@ export type ResumenMigracion = {
   capacitaciones: ConteoMigracion;
   matriz: ConteoMigracion;
   cumplimientos: ConteoMigracion;
-  asignaciones_pendientes?: ConteoMigracion;
+  omitidos_pendientes?: number;
+  omitidos_duplicado?: number;
   inconsistencias_total: number;
   errores: number;
   advertencias: number;

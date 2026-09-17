@@ -33,7 +33,7 @@ const MODULOS = [
   { valor: "cumplimientos", etiqueta: "Cumplimientos" },
   { valor: "catalogos", etiqueta: "Catálogos" },
   { valor: "personal", etiqueta: "Personal" },
-  { valor: "migracion", etiqueta: "Carga inicial Excel" },
+  { valor: "migracion", etiqueta: "Carga inicial de historial" },
   { valor: "reportes", etiqueta: "Reportes" },
 ];
 
@@ -68,7 +68,7 @@ const ACCIONES = [
   { valor: "incluir_asignaciones", etiqueta: "Incluir asignaciones" },
   { valor: "quitar_asignacion", etiqueta: "Quitar asignación del plan" },
   { valor: "mover_asignacion", etiqueta: "Mover asignación" },
-  { valor: "migracion_inicial", etiqueta: "Carga inicial Excel" },
+  { valor: "migracion_inicial", etiqueta: "Carga inicial de historial" },
   { valor: "exportar", etiqueta: "Exportar reporte" },
   { valor: "importar", etiqueta: "Importar personal" },
 ];

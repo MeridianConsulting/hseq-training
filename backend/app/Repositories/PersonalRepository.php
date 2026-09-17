@@ -124,6 +124,20 @@ class PersonalRepository
      */
     public function documentosExistentes(array $numeros): array
     {
+        $mapa = [];
+        foreach ($this->idsPorDocumentos($numeros) as $doc => $_) {
+            $mapa[$doc] = true;
+        }
+
+        return $mapa;
+    }
+
+    /**
+     * @param list<string> $numeros
+     * @return array<string, int>
+     */
+    public function idsPorDocumentos(array $numeros): array
+    {
         $numeros = array_values(array_unique(array_filter($numeros, static fn ($n) => $n !== '')));
 
         if ($numeros === []) {
@@ -136,12 +150,12 @@ class PersonalRepository
         foreach (array_chunk($numeros, 500) as $lote) {
             $placeholders = implode(',', array_fill(0, count($lote), '?'));
             $filas = $this->db->fetchAll(
-                "SELECT numero_documento FROM {$personas} WHERE numero_documento IN ({$placeholders})",
+                "SELECT persona_id, numero_documento FROM {$personas} WHERE numero_documento IN ({$placeholders})",
                 $lote
             );
 
             foreach ($filas as $fila) {
-                $encontrados[(string)$fila['numero_documento']] = true;
+                $encontrados[(string)$fila['numero_documento']] = (int)$fila['persona_id'];
             }
         }
 

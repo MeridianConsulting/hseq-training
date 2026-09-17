@@ -304,6 +304,18 @@ class AlertaRepository
         $condiciones = [];
         $params = [];
 
+        // Vigencia: solo el ciclo más reciente por persona+capacitación (RF-CI-056).
+        $condiciones[] = "(v.tipo_alerta COLLATE utf8mb4_unicode_ci = 'LIMITE_CUMPLIMIENTO'
+            OR NOT EXISTS (
+                SELECT 1
+                FROM cumplimientos_capacitacion c2
+                INNER JOIN asignaciones_capacitacion a2 ON a2.asignacion_id = c2.asignacion_id
+                WHERE a2.persona_id_ext = v.persona_id_ext
+                  AND a2.capacitacion_id = v.capacitacion_id
+                  AND c2.resultado COLLATE utf8mb4_unicode_ci = 'APROBADO'
+                  AND c2.fecha_realizacion > v.fecha_realizacion
+            ))";
+
         $personaId = $filtros['persona_id'] ?? $filtros['persona_id_ext'] ?? null;
         if ($personaId !== null && (int)$personaId > 0) {
             $condiciones[] = 'v.persona_id_ext = ?';

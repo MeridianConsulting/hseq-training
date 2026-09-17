@@ -142,11 +142,21 @@ function Contenido() {
   return (
     <>
       <PageHeader
-        titulo="Carga inicial desde Excel"
-        descripcion="Valide la matriz HSEQ-PRG-10, revise inconsistencias y confirme la importación. No se escriben datos hasta confirmar."
+        titulo="Carga inicial de historial"
+        descripcion="Incorpora capacitaciones ya realizadas (fecha real + vigencia del catálogo) para alimentar alertas. No crea trabajadores, capacitaciones, matriz ni asignaciones futuras. HSEQ programa Fecha Desde/Hasta a mano."
       />
       {error ? <Alert tono="error">{error}</Alert> : null}
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
+
+      <ol className="mb-6 list-decimal space-y-1 rounded-xl border border-slate-200 bg-white p-4 pl-8 text-sm text-slate-600">
+        <li>Seleccionar archivo</li>
+        <li>Analizar archivo</li>
+        <li>Validar información</li>
+        <li>Mostrar resumen</li>
+        <li>Mostrar inconsistencias</li>
+        <li>Confirmar carga</li>
+        <li>Mostrar resultado final</li>
+      </ol>
 
       <form onSubmit={validar} className="mb-6 grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
         <Field etiqueta="Archivo Excel (.xlsx)">
@@ -157,7 +167,7 @@ function Contenido() {
             onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
           />
         </Field>
-        <Field etiqueta="Año del programa" className={fieldClassAnio}>
+        <Field etiqueta="Año de las fechas históricas" className={fieldClassAnio}>
           <input
             className={inputClassAnio}
             type="number"
@@ -230,7 +240,7 @@ function Contenido() {
                   {confirmando ? "Confirmando…" : (
                     <>
                       <Check className="h-4 w-4" aria-hidden />
-                      Confirmar importación
+                      Confirmar carga de historial
                     </>
                   )}
                 </Button>
@@ -305,10 +315,9 @@ function Hojas({ resumen }: { resumen: Migracion["resumen"] }) {
 
 function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
   const filas: [string, ConteoMigracion | undefined][] = [
-    ["Trabajadores", resumen?.trabajadores],
-    ["Capacitaciones", resumen?.capacitaciones],
-    ["Matriz", resumen?.matriz],
-    ["Cumplimientos (E)", resumen?.cumplimientos],
+    ["Trabajadores (solo consulta a Personal Corporativo)", resumen?.trabajadores],
+    ["Capacitaciones (solo catálogo existente)", resumen?.capacitaciones],
+    ["Historial ejecutado (E)", resumen?.cumplimientos],
   ];
   return (
     <div>
@@ -318,8 +327,8 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
           { clave: "tipo", etiqueta: "Tipo" },
           { clave: "d", etiqueta: "Detectados" },
           { clave: "v", etiqueta: "Válidos" },
-          { clave: "i", etiqueta: "Inconsistencias" },
-          { clave: "e", etiqueta: "Ya en sistema" },
+          { clave: "i", etiqueta: "No importables" },
+          { clave: "e", etiqueta: "Ya en sistema / duplicados" },
         ]}
         filas={filas.map(([etiqueta, bloque]) => [
           etiqueta,
@@ -331,6 +340,10 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
       />
       <p className="mt-2 text-sm text-slate-500">
         {resumen?.errores ?? 0} error(es), {resumen?.advertencias ?? 0} advertencia(s).
+        {resumen?.omitidos_pendientes
+          ? ` Pendientes (P) no importados: ${resumen.omitidos_pendientes}.`
+          : null}{" "}
+        La hoja de matriz no se persiste. Los soportes PDF no viajan en el Excel.
       </p>
     </div>
   );
@@ -338,21 +351,20 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
 
 function ConteosFinales({ conteos }: { conteos: Record<string, ConteoMigracion> }) {
   const filas: [string, string][] = [
-    ["Trabajadores", "trabajadores"],
-    ["Capacitaciones", "capacitaciones"],
-    ["Matriz", "matriz"],
-    ["Cumplimientos", "cumplimientos"],
+    ["Trabajadores identificados", "trabajadores"],
+    ["Capacitaciones identificadas", "capacitaciones"],
+    ["Historial importado", "cumplimientos"],
   ];
   return (
     <div>
-      <h2 className="mb-2 text-sm font-semibold text-slate-800">Resultado de la importación</h2>
+      <h2 className="mb-2 text-sm font-semibold text-slate-800">Importación finalizada</h2>
       <Table
         columnas={[
           { clave: "tipo", etiqueta: "Tipo" },
           { clave: "excel", etiqueta: "Excel" },
           { clave: "imp", etiqueta: "Importados" },
           { clave: "rec", etiqueta: "Rechazados" },
-          { clave: "sis", etiqueta: "Sistema" },
+          { clave: "sis", etiqueta: "En sistema" },
           { clave: "dif", etiqueta: "Diferencia" },
         ]}
         filas={filas.map(([etiqueta, clave]) => {
@@ -368,7 +380,8 @@ function ConteosFinales({ conteos }: { conteos: Record<string, ConteoMigracion> 
         })}
       />
       <p className="mt-2 text-sm text-slate-500">
-        Sistema cuenta las claves de este archivo que quedaron en la base. La diferencia suele ser rechazos o registros que ya existían.
+        El historial alimenta vigencias y alertas. HSEQ asigna el futuro de forma manual. No se crearon
+        personas, capacitaciones, matriz ni programaciones pendientes.
       </p>
     </div>
   );
