@@ -78,6 +78,9 @@ class MigracionService
             Logger::error(self::MSG_PERSONAL . ': ' . $e->getMessage());
             throw new HttpException(self::MSG_PERSONAL, $e instanceof PDOException ? 503 : 500);
         }
+        // El Excel solo se lee en memoria/tmp; no se conserva en disco (trazabilidad = nombre + auditoría).
+        @unlink($tmp);
+
         $id = $this->repo->crear([
             'usuario_id_ext' => $actor['usuario_id'] ?? null,
             'usuario_nombre' => $actor['nombre'] ?? null,
@@ -91,18 +94,6 @@ class MigracionService
             'inconsistencias_json' => $this->aJson($dry['inconsistencias']),
             'conteos_json' => $this->aJson($dry['conteos']),
         ]);
-
-        $relativo = 'migraciones/' . $id . '/origen.' . $validado['extension'];
-        $destino = $this->directorioBase() . '/' . $relativo;
-        $dir = dirname($destino);
-        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            throw new HttpException(self::MSG_ARCHIVO, 500);
-        }
-        if (!@rename($tmp, $destino) && !@copy($tmp, $destino)) {
-            throw new HttpException(self::MSG_ARCHIVO, 500);
-        }
-        @unlink($tmp);
-        $this->repo->actualizar($id, ['ruta_archivo' => $relativo]);
 
         return $this->presentar($this->exigir($id));
     }
@@ -235,32 +226,25 @@ class MigracionService
         if (($fila['estado'] ?? '') !== 'VALIDADA') {
             throw new HttpException('Esta migración ya no puede cancelarse.', 409);
         }
-        $this->repo->actualizar($id, ['estado' => 'CANCELADA']);
+        $this->borrarArchivoOrigenSiExiste($fila);
+        $this->repo->actualizar($id, [
+            'estado' => 'CANCELADA',
+            'ruta_archivo' => '',
+        ]);
 
         return $this->presentar($this->exigir($id));
     }
 
+    /**
+     * Ya no se conservan Excel de origen. Endpoint legado: responde 404.
+     */
     public function archivoOrigen(int $id): array
     {
-        $fila = $this->exigir($id);
-        $relativo = str_replace('\\', '/', (string)($fila['ruta_archivo'] ?? ''));
-        if ($relativo === '' || str_contains($relativo, '..')) {
-            throw new HttpException('El archivo original no está disponible.', 404);
-        }
-        $ruta = $this->directorioBase() . '/' . ltrim($relativo, '/');
-        if (!is_file($ruta)) {
-            throw new HttpException('El archivo original no está disponible.', 404);
-        }
-        $contenido = file_get_contents($ruta);
-        if ($contenido === false) {
-            throw new HttpException('El archivo original no está disponible.', 404);
-        }
-
-        return [
-            'contenido' => $contenido,
-            'nombre' => (string)($fila['nombre_archivo'] ?? 'origen.xlsx'),
-            'mime' => (string)($fila['mime_type'] ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
-        ];
+        $this->exigir($id);
+        throw new HttpException(
+            'El archivo original no se conserva. Queda el nombre en el registro y la auditoría de la carga.',
+            404
+        );
     }
 
     /**
@@ -853,6 +837,26 @@ class MigracionService
     private function directorioBase(): string
     {
         return rtrim(str_replace('\\', '/', BASE_PATH), '/') . '/storage/uploads';
+    }
+
+    /** @param array<string,mixed> $fila */
+    private function borrarArchivoOrigenSiExiste(array $fila): void
+    {
+        $relativo = str_replace('\\', '/', (string)($fila['ruta_archivo'] ?? ''));
+        if ($relativo === '' || str_contains($relativo, '..') || !str_starts_with($relativo, 'migraciones/')) {
+            return;
+        }
+        $ruta = $this->directorioBase() . '/' . ltrim($relativo, '/');
+        if (is_file($ruta)) {
+            @unlink($ruta);
+        }
+        $dir = dirname($ruta);
+        if (is_dir($dir)) {
+            $restantes = @scandir($dir);
+            if (is_array($restantes) && count(array_diff($restantes, ['.', '..'])) === 0) {
+                @rmdir($dir);
+            }
+        }
     }
 
     private function tamanoMaximo(): int

@@ -206,22 +206,6 @@ function Contenido() {
               <Download className="h-4 w-4" aria-hidden />
               Descargar reporte de inconsistencias
             </Button>
-            <Button
-              type="button"
-              variante="secondary"
-              onClick={() => {
-                if (!migracion) return;
-                void apiDownload(
-                  `/api/migracion/${migracion.migracion_id}/archivo`,
-                  migracion.nombre_archivo || "origen.xlsx",
-                ).catch((e) => {
-                  setError(e instanceof Error ? e.message : "No fue posible descargar el archivo original.");
-                });
-              }}
-            >
-              <Download className="h-4 w-4" aria-hidden />
-              Descargar archivo original
-            </Button>
             {pendiente ? (
               <>
                 <Button type="button" variante="danger" disabled={cancelando} onClick={() => void cancelar()}>
