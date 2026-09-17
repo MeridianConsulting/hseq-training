@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ListaEvidencias } from "@/app/(app)/cumplimientos/evidencias";
+import { useAuth } from "@/components/auth-provider";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Field, inputClass } from "@/components/ui/field";
 import { ListaCargando } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft } from "lucide-react";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
-import type { Asignacion, Cumplimiento, PerfilTrabajador, PersonaCorporativa } from "@/lib/tipos";
+import type { Asignacion, Capacitacion, Cumplimiento, PerfilTrabajador, PersonaCorporativa } from "@/lib/tipos";
 
 function formatoFecha(valor: string | null | undefined): string {
   if (!valor) return "—";
@@ -111,35 +114,37 @@ export default function PerfilPersonalPage() {
 function Contenido() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
+  const { puede } = useAuth();
   const [perfil, setPerfil] = useState<PerfilTrabajador | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
+  const cargarPerfil = useCallback(async () => {
     if (!Number.isFinite(id) || id < 1) {
       setError("El trabajador no existe en la base corporativa.");
       setCargando(false);
       return;
     }
-
-    void (async () => {
-      setCargando(true);
-      const respuesta = await apiGet<PerfilTrabajador>(`/api/personal/${id}/perfil`);
-      setCargando(false);
-      if (respuesta.cancelada) {
-        return;
-      }
-      if (!respuesta.success || !respuesta.data) {
-        setError(respuesta.message || "No fue posible consultar la información del trabajador.");
-        setPerfil(null);
-        return;
-      }
-      setPerfil(respuesta.data);
-      setMensaje(respuesta.message || "Información del trabajador cargada correctamente.");
-      setError(null);
-    })();
+    setCargando(true);
+    const respuesta = await apiGet<PerfilTrabajador>(`/api/personal/${id}/perfil`);
+    setCargando(false);
+    if (respuesta.cancelada) {
+      return;
+    }
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No fue posible consultar la información del trabajador.");
+      setPerfil(null);
+      return;
+    }
+    setPerfil(respuesta.data);
+    setMensaje(respuesta.message || "Información del trabajador cargada correctamente.");
+    setError(null);
   }, [id]);
+
+  useEffect(() => {
+    void cargarPerfil();
+  }, [cargarPerfil]);
 
   if (cargando) {
     return <ListaCargando />;
@@ -282,6 +287,20 @@ function Contenido() {
             <ListaEvidencias key={`s-${item.cumplimiento_id}`} soportes={item.soportes ?? []} />,
           ])}
         />
+        {puede("cumplimientos.crear") ? (
+          <FormularioHistorial
+            personaId={id}
+            onGuardado={async (msg) => {
+              setMensaje(msg);
+              setError(null);
+              await cargarPerfil();
+            }}
+            onError={(msg) => {
+              setError(msg);
+              setMensaje(null);
+            }}
+          />
+        ) : null}
       </Bloque>
 
       <Bloque titulo="Historial de sesiones">
@@ -339,5 +358,225 @@ function Contenido() {
         />
       </Bloque>
     </div>
+  );
+}
+
+function FormularioHistorial({
+  personaId,
+  onGuardado,
+  onError,
+}: {
+  personaId: number;
+  onGuardado: (mensaje: string) => void | Promise<void>;
+  onError: (mensaje: string) => void;
+}) {
+  const [caps, setCaps] = useState<Capacitacion[]>([]);
+  const [capacitacionId, setCapacitacionId] = useState("");
+  const [fecha, setFecha] = useState("");
+  const [nota, setNota] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const r = await apiGet<ListaPaginada<Capacitacion>>(
+        withQuery("/api/capacitaciones", { page: 1, per_page: 200 }),
+      );
+      if (r.success && r.data?.items) {
+        setCaps(r.data.items);
+      }
+    })();
+  }, []);
+
+  async function enviar(e: FormEvent) {
+    e.preventDefault();
+    if (!capacitacionId || !fecha) {
+      onError("Indique capacitación y fecha real de ejecución.");
+      return;
+    }
+    setEnviando(true);
+    const body: Record<string, string | number> = {
+      persona_id: personaId,
+      capacitacion_id: Number(capacitacionId),
+      fecha_realizacion: fecha,
+    };
+    if (nota.trim() !== "") {
+      body.nota_evaluacion = Number(nota.replace(",", "."));
+    }
+    const r = await apiPost<Cumplimiento>("/api/cumplimientos/historial", body);
+    setEnviando(false);
+    if (r.cancelada) {
+      return;
+    }
+    if (!r.success) {
+      onError(r.message || "No fue posible registrar el historial.");
+      return;
+    }
+    setCapacitacionId("");
+    setFecha("");
+    setNota("");
+    await onGuardado(r.message || "Historial registrado.");
+  }
+
+  return (
+    <form
+      onSubmit={(ev) => void enviar(ev)}
+      className="mt-6 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-4"
+    >
+      <p className="sm:col-span-2 lg:col-span-4 text-sm text-slate-600">
+        Registrar historial manual (misma lógica que la carga inicial). Fecha real de ejecución;
+        vigencia del catálogo. No crea asignación futura.
+      </p>
+      <Field etiqueta="Capacitación">
+        <select
+          className={inputClass}
+          value={capacitacionId}
+          onChange={(e) => setCapacitacionId(e.target.value)}
+          required
+        >
+          <option value="">Seleccione…</option>
+          {caps.map((c) => (
+            <option key={c.capacitacion_id} value={c.capacitacion_id}>
+              {c.codigo} — {c.nombre}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field etiqueta="Fecha real de ejecución">
+        <input
+          className={inputClass}
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          required
+        />
+      </Field>
+      <Field etiqueta="Nota (si aplica)">
+        <input
+          className={inputClass}
+          type="number"
+          min={0}
+          max={5}
+          step="0.01"
+          value={nota}
+          onChange={(e) => setNota(e.target.value)}
+          placeholder="Opcional"
+        />
+      </Field>
+      <div className="flex items-end">
+        <Button type="submit" disabled={enviando}>
+          {enviando ? "Guardando…" : "Registrar historial"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function FormularioHistorial({
+  personaId,
+  onGuardado,
+  onError,
+}: {
+  personaId: number;
+  onGuardado: (mensaje: string) => void | Promise<void>;
+  onError: (mensaje: string) => void;
+}) {
+  const [caps, setCaps] = useState<Capacitacion[]>([]);
+  const [capacitacionId, setCapacitacionId] = useState("");
+  const [fecha, setFecha] = useState("");
+  const [nota, setNota] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const r = await apiGet<ListaPaginada<Capacitacion>>(
+        withQuery("/api/capacitaciones", { page: 1, per_page: 200 }),
+      );
+      if (r.success && r.data?.items) {
+        setCaps(r.data.items);
+      }
+    })();
+  }, []);
+
+  async function enviar(e: FormEvent) {
+    e.preventDefault();
+    if (!capacitacionId || !fecha) {
+      onError("Indique capacitación y fecha real de ejecución.");
+      return;
+    }
+    setEnviando(true);
+    const body: Record<string, string | number> = {
+      persona_id: personaId,
+      capacitacion_id: Number(capacitacionId),
+      fecha_realizacion: fecha,
+    };
+    if (nota.trim() !== "") {
+      body.nota_evaluacion = Number(nota.replace(",", "."));
+    }
+    const r = await apiPost<Cumplimiento>("/api/cumplimientos/historial", body);
+    setEnviando(false);
+    if (r.cancelada) {
+      return;
+    }
+    if (!r.success) {
+      onError(r.message || "No fue posible registrar el historial.");
+      return;
+    }
+    setCapacitacionId("");
+    setFecha("");
+    setNota("");
+    await onGuardado(r.message || "Historial registrado.");
+  }
+
+  return (
+    <form
+      onSubmit={(ev) => void enviar(ev)}
+      className="mt-6 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-4"
+    >
+      <p className="sm:col-span-2 lg:col-span-4 text-sm text-slate-600">
+        Registrar historial manual (misma lógica que la carga inicial). Fecha real de ejecución;
+        vigencia del catálogo. No crea asignación futura.
+      </p>
+      <Field etiqueta="Capacitación">
+        <select
+          className={inputClass}
+          value={capacitacionId}
+          onChange={(e) => setCapacitacionId(e.target.value)}
+          required
+        >
+          <option value="">Seleccione…</option>
+          {caps.map((c) => (
+            <option key={c.capacitacion_id} value={c.capacitacion_id}>
+              {c.codigo} — {c.nombre}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field etiqueta="Fecha real de ejecución">
+        <input
+          className={inputClass}
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          required
+        />
+      </Field>
+      <Field etiqueta="Nota (si aplica)">
+        <input
+          className={inputClass}
+          type="number"
+          min={0}
+          max={5}
+          step="0.01"
+          value={nota}
+          onChange={(e) => setNota(e.target.value)}
+          placeholder="Opcional"
+        />
+      </Field>
+      <div className="flex items-end">
+        <Button type="submit" disabled={enviando}>
+          {enviando ? "Guardando…" : "Registrar historial"}
+        </Button>
+      </div>
+    </form>
   );
 }

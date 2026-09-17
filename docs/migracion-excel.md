@@ -1,40 +1,61 @@
-# Personal corporativo y Excel
+# Carga inicial de historial y Personal corporativo
 
-## Fuente única
+## Fuente única de personal
 
-El maestro de trabajadores es `meridian_personal.personas` (con `cargos` y `contratos`). HSEQ **escribe** altas individuales y cargas masivas en ese maestro. No se duplican personas en `meridian_capacitaciones`.
+El maestro de trabajadores es `meridian_personal.personas` (con `cargos` y `contratos`). HSEQ **no** crea personas desde la carga de historial. Las altas individuales y masivas viven en `/personal`.
 
-Las asignaciones siguen usando `persona_id_ext`. Un trabajador creado en `/personal` queda disponible de inmediato para asignar capacitaciones.
+Las asignaciones y cumplimientos usan `persona_id_ext`.
 
 ## Alta individual y carga masiva (módulo `/personal`)
 
 - Formulario: documento, nombre, correo (opcional), cargo (catálogo), proyecto (opcional), fecha de ingreso.
 - Carga masiva: Excel `.xlsx` / `.xls` y CSV. Plantilla en `GET /api/personal/plantilla`.
-- Cada fila se valida e inserta por separado. Un error no hace rollback de las filas válidas.
 - Duplicados: documento ya en BD, o repetido dentro del mismo archivo.
-- El cargo debe existir en `meridian_personal.cargos`. **No se crean cargos automáticamente.**
-- Fecha de ingreso se guarda en `contratos.fecha_inicio`.
-- Área/proceso **no** se persisten en el trabajador (son catálogos de matriz/asignaciones). Pendiente de decisión HSEQ.
+- El cargo debe existir en `meridian_personal.cargos`. **No se crean cargos automáticamente** en la carga de personal.
 
-## Carga inicial de la matriz Excel HSEQ (`/migracion`)
+## Carga inicial de historial (`/migracion`)
 
-La matriz histórica (formato HSEQ-PRG-10) se carga en **Carga inicial Excel**. El flujo es validar → revisar inconsistencias → confirmar. **No se escriben trabajadores, capacitaciones, matriz ni cumplimientos hasta confirmar.**
+Formato de archivo: plantilla HSEQ-PRG-10 (hojas CRONOGRAMA, MATRIZ POR CARGO, SEGUIMIENTO_PERSONAL).
 
-Cruce de documento (igual que en personal):
+Flujo: validar → revisar inconsistencias → confirmar.
 
-1. Normalizar documento (quitar espacios y puntos de miles; **no** quitar ceros a la izquierda).
-2. Buscar en `meridian_personal.personas.numero_documento`.
-3. Si hay coincidencia única: usar ese `persona_id`.
-4. Si no hay coincidencia: registrar primero en `/personal` (individual o carga masiva) o corregir el Excel y volver a validar.
-5. Cargos del Excel se cruzan con `meridian_personal.cargos` por nombre.
+**Qué importa**
+
+- Solo ejecuciones históricas con estado `E` (ejecutado).
+- Trabajador existente en Personal Corporativo (por documento). Inactivos sí pueden tener historial.
+- Capacitación existente en el catálogo (por código `HSEQ-NN` del cronograma).
+- Fecha **real completa** de ejecución (día/mes/año). No se inventa el día 01 a partir del solo nombre del mes.
+- Nota si la capacitación exige evaluación; vigencia calculada desde el catálogo.
+
+**Qué no hace**
+
+- No crea personas, cargos, capacitaciones ni reglas de matriz.
+- No importa pendientes `P` ni programa Fecha Desde/Hasta futuras.
+- No guarda el Excel en disco (queda el nombre del archivo + auditoría).
+- La hoja MATRIZ POR CARGO y las marcas `X` no se persisten.
+- Certificado SI/SÍ en Excel es solo advertencia (no hay PDF en el archivo).
+
+**Persistencia**
+
+Cada ejecución válida crea un cumplimiento y un contenedor de asignación (FK obligatoria del esquema) con `fecha_asignacion` = `fecha_limite_cumplimiento` = fecha de realización. Eso **no** es programación operativa ni “fuera de tiempo”. Observaciones marcan el origen (carga inicial o registro manual).
+
+**Duplicados**
+
+Misma persona + misma capacitación + misma fecha de realización → se omite.
+
+**Historial manual**
+
+En el perfil del trabajador (`/personal/{id}`), con permiso `cumplimientos.crear`, se puede registrar el mismo tipo de historial vía `POST /api/cumplimientos/historial` (misma lógica de vigencia y contenedor).
 
 ## Inconsistencias típicas
 
-- Documento ya registrado
-- Documento duplicado dentro del archivo
-- Cargo que no existe en el catálogo
-- Fechas ilegibles (`DD/MM/YYYY` en la plantilla)
+- Trabajador no encontrado
+- Capacitación no encontrada
+- Fecha incompleta o inválida
+- Nota requerida ausente / nota bajo la mínima
+- Código/letra de estado sin equivalencia (`E` / `P` / `N/A`)
+- Registro duplicado
 
-## Fixture de prueba
+## Fixture de prueba (personal, no migración)
 
-`docs/fixtures/carga_personal_50.csv`: 45 filas válidas y 5 inválidas (duplicado en archivo, documento vacío, nombre vacío, cargo vacío, fecha vacía). Documentos de prueba con prefijo `9000`.
+`docs/fixtures/carga_personal_50.csv`: 45 filas válidas y 5 inválidas. Documentos de prueba con prefijo `9000`.

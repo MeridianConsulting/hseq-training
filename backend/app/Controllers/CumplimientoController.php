@@ -169,6 +169,18 @@ class CumplimientoController extends Controller
         $this->created($creado, 'Cumplimiento registrado');
     }
 
+    public function storeHistorial(Request $request): void
+    {
+        $datos = $this->validate($request, $this->service->reglasHistorial(), $this->service->mensajes());
+        $creado = $this->service->registrarHistorial(
+            $datos,
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
+        );
+
+        $this->created($creado, 'Historial registrado. La vigencia se calcula con el catálogo; HSEQ programa el futuro a mano.');
+    }
+
     public function storeMasivo(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasMasivo(), $this->service->mensajes());

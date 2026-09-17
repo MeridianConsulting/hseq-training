@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Core\Env;
 use App\Core\Exceptions\HttpException;
 use App\Core\Logger;
-use App\Repositories\AsignacionRepository;
 use App\Repositories\CapacitacionRepository;
 use App\Repositories\CumplimientoRepository;
 use App\Repositories\MigracionRepository;
@@ -36,7 +35,6 @@ class MigracionService
     private MigracionPrg10Parser $parser;
     private PersonalService $personal;
     private CapacitacionRepository $capacitaciones;
-    private AsignacionRepository $asignaciones;
     private CumplimientoRepository $cumplimientos;
     private AuditoriaService $auditoria;
 
@@ -46,7 +44,6 @@ class MigracionService
         $this->parser = new MigracionPrg10Parser();
         $this->personal = new PersonalService();
         $this->capacitaciones = new CapacitacionRepository();
-        $this->asignaciones = new AsignacionRepository();
         $this->cumplimientos = new CumplimientoRepository();
         $this->auditoria = new AuditoriaService();
     }
@@ -436,6 +433,15 @@ class MigracionService
                 continue;
             }
             if ($estado !== 'E') {
+                $agregar(
+                    'SEGUIMIENTO_PERSONAL',
+                    $fila,
+                    'cumplimiento',
+                    $doc !== '' ? $doc : $codigo,
+                    'estado',
+                    $estado,
+                    'Código/letra sin equivalencia conocida. Solo se importan ejecuciones (E); P no se importa; N/A se omite.'
+                );
                 continue;
             }
             $eDetectados++;
@@ -463,8 +469,20 @@ class MigracionService
                 );
                 continue;
             }
-            $fecha = $this->fechaDesdeMes($s['mes'] ?? null, $anio);
-            if ($fecha === null) {
+            $fechaRes = $this->fechaRealizacionHistorica($s['mes'] ?? null);
+            if (($fechaRes['error'] ?? null) === 'incompleta') {
+                $agregar(
+                    'SEGUIMIENTO_PERSONAL',
+                    $fila,
+                    'cumplimiento',
+                    $doc,
+                    'mes',
+                    (string)($s['mes'] ?? ''),
+                    'Fecha incompleta: se requiere fecha real de ejecución (día/mes/año). No se inventa el día 01.'
+                );
+                continue;
+            }
+            if (($fechaRes['fecha'] ?? null) === null) {
                 $agregar(
                     'SEGUIMIENTO_PERSONAL',
                     $fila,
@@ -476,8 +494,21 @@ class MigracionService
                 );
                 continue;
             }
+            $fecha = (string)$fechaRes['fecha'];
             $cap = $planCaps[$codigo];
             $nota = $this->parsearNota($s['nota'] ?? null);
+            if (!empty($cap['evaluacion']) && $nota === null) {
+                $agregar(
+                    'SEGUIMIENTO_PERSONAL',
+                    $fila,
+                    'cumplimiento',
+                    $doc,
+                    'nota',
+                    (string)($s['nota'] ?? ''),
+                    'Información insuficiente: nota requerida (la capacitación exige evaluación).'
+                );
+                continue;
+            }
             if (!empty($cap['evaluacion']) && $nota !== null && $nota < (float)$cap['nota_minima']) {
                 $agregar(
                     'SEGUIMIENTO_PERSONAL',
@@ -566,6 +597,12 @@ class MigracionService
             'cumplimientos' => $this->bloqueConteo($eDetectados, $eOk, $eDetectados - $eOk - $eDuplicados, $eDuplicados),
             'omitidos_pendientes' => $pOmitidos,
             'omitidos_duplicado' => $eDuplicados,
+            'clasificacion' => [
+                'validos' => $eOk,
+                'requieren_revision' => $this->contarSeveridad($inconsistencias, 'Advertencia'),
+                'no_importables' => $this->contarSeveridad($inconsistencias, 'Error'),
+                'duplicados' => $eDuplicados,
+            ],
             'inconsistencias_total' => count($inconsistencias),
             'errores' => $this->contarSeveridad($inconsistencias, 'Error'),
             'advertencias' => $this->contarSeveridad($inconsistencias, 'Advertencia'),
@@ -589,6 +626,9 @@ class MigracionService
     }
 
     /**
+     * Contenedor FK: fecha_asignacion = fecha_limite = fecha_realizacion.
+     * No es programación operativa; no inventa Desde/Hasta ni “fuera de tiempo”.
+     *
      * @param array<string,mixed> $plan
      * @param array{usuario_id:?int,nombre:?string,ip:?string} $actor
      * @return array<string,mixed>
@@ -600,83 +640,42 @@ class MigracionService
         $cumpExistentes = 0;
         $docs = [];
         $codigos = [];
+        $historial = new CumplimientoService();
 
         foreach ($plan['cumplimientos'] ?? [] as $item) {
             $doc = (string)($item['documento'] ?? '');
             $codigo = (string)($item['codigo'] ?? '');
-            $fecha = (string)($item['fecha_realizacion'] ?? '');
-            $pid = (int)($item['persona_id'] ?? 0);
-            $capId = (int)($item['capacitacion_id'] ?? 0);
             if ($doc !== '') {
                 $docs[$doc] = true;
             }
             if ($codigo !== '') {
                 $codigos[$codigo] = true;
             }
-            if ($pid < 1) {
-                $pid = (int)($this->personal->repositorio()->buscarIdPorDocumento($doc) ?? 0);
-            }
-            if ($capId < 1 && $codigo !== '') {
-                $cap = $this->capacitaciones->buscarPorCodigo($codigo);
-                $capId = $cap !== null ? (int)$cap['capacitacion_id'] : 0;
-            }
-            if ($pid < 1 || $capId < 1 || $fecha === '') {
-                continue;
-            }
-            if ($this->cumplimientos->existeEjecucion($pid, $capId, $fecha)) {
-                $cumpExistentes++;
-                continue;
-            }
-
             try {
-                $persona = $this->personal->ver($pid);
+                $historial->registrarHistorial(
+                    [
+                        'persona_id' => (int)($item['persona_id'] ?? 0),
+                        'capacitacion_id' => (int)($item['capacitacion_id'] ?? 0),
+                        'fecha_realizacion' => (string)($item['fecha_realizacion'] ?? ''),
+                        'nota_evaluacion' => $item['nota'] ?? null,
+                        'horas_efectivas' => $item['horas'] ?? null,
+                        'origen_observacion' => self::ORIGEN_OBSERVACION . ' #' . $migracionId
+                            . '. Contenedor FK (fecha límite = realización); no programa el futuro.',
+                    ],
+                    $usuarioId,
+                    null
+                );
+                $cumpNuevos++;
+            } catch (HttpException $e) {
+                if ($e->getStatusCode() === 409) {
+                    $cumpExistentes++;
+                    continue;
+                }
+                // Fila ya validada en dry-run; omitir sin abortar el lote.
+                continue;
             } catch (Throwable $e) {
                 continue;
             }
-
-            $horas = $item['horas'] ?? null;
-            if ($horas === null || (float)$horas <= 0) {
-                $cap = $this->capacitaciones->buscarPorCodigo($codigo);
-                $horas = $cap !== null && $cap['duracion_estimada_horas'] !== null
-                    ? (float)$cap['duracion_estimada_horas']
-                    : 0;
-            }
-
-            $vence = VencimientoService::calcularFechaVencimiento(
-                $fecha,
-                isset($item['vigencia_cantidad']) ? (int)$item['vigencia_cantidad'] : null,
-                isset($item['vigencia_unidad']) ? (string)$item['vigencia_unidad'] : null
-            );
-
-            $asigId = $this->asignaciones->crear([
-                'persona_id_ext' => $pid,
-                'contrato_id_ext' => $persona['contrato_id'] ?? null,
-                'capacitacion_id' => $capId,
-                'matriz_aplicabilidad_id' => null,
-                'fecha_asignacion' => $fecha,
-                'fecha_limite_cumplimiento' => $fecha,
-                'origen' => 'MANUAL',
-                'cargo_id_ext' => $persona['cargo_id'] ?? null,
-                'area_id' => null,
-                'proceso_id' => null,
-                'ambito' => null,
-                'proyecto' => $persona['proyecto'] ?? null,
-                'creada_por_usuario_id_ext' => $usuarioId,
-            ]);
-
-            $this->cumplimientos->crear([
-                'asignacion_id' => $asigId,
-                'sesion_id' => null,
-                'fecha_realizacion' => $fecha,
-                'resultado' => CumplimientoService::RESULTADO_APROBADO,
-                'horas_efectivas' => (float)$horas,
-                'nota_evaluacion' => $item['nota'] ?? null,
-                'observaciones' => self::ORIGEN_OBSERVACION . ' #' . $migracionId
-                    . '. Historial real; no programa Fecha Desde/Hasta. HSEQ asigna el futuro manualmente.',
-                'fecha_vencimiento' => $vence,
-                'registrado_por_usuario_id_ext' => $usuarioId,
-            ]);
-            $cumpNuevos++;
         }
 
         $docsLista = array_keys($docs);
@@ -888,24 +887,35 @@ class MigracionService
         return ($n >= 0 && $n <= 5) ? $n : null;
     }
 
-    private function fechaDesdeMes(mixed $valor, int $anio): ?string
+    /**
+     * Solo acepta fecha real completa (Y-m-d / d/m/Y / serial Excel).
+     * Nombre de mes solo → incompleta (no se inventa día 01).
+     *
+     * @return array{fecha:?string,error:?string}
+     */
+    private function fechaRealizacionHistorica(mixed $valor): array
     {
-        $fecha = $this->personal->parsearFecha($valor);
-        if ($fecha !== null) {
-            return $fecha;
-        }
-        $texto = $this->clave((string)$valor);
-        $meses = [
-            'enero' => 1, 'febrero' => 2, 'marzo' => 3, 'abril' => 4, 'mayo' => 5, 'junio' => 6,
-            'julio' => 7, 'agosto' => 8, 'septiembre' => 9, 'setiembre' => 9, 'octubre' => 10,
-            'noviembre' => 11, 'diciembre' => 12, 'ene' => 1, 'feb' => 2, 'mar' => 3, 'abr' => 4,
-            'may' => 5, 'jun' => 6, 'jul' => 7, 'ago' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dic' => 12,
-        ];
-        if (isset($meses[$texto])) {
-            return sprintf('%04d-%02d-01', $anio, $meses[$texto]);
+        if ($valor === null || $valor === '') {
+            return ['fecha' => null, 'error' => 'invalida'];
         }
 
-        return null;
+        $textoClave = $this->clave((string)$valor);
+        $meses = [
+            'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+            'julio', 'agosto', 'septiembre', 'setiembre', 'octubre',
+            'noviembre', 'diciembre', 'ene', 'feb', 'mar', 'abr',
+            'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+        ];
+        if (in_array($textoClave, $meses, true)) {
+            return ['fecha' => null, 'error' => 'incompleta'];
+        }
+
+        $fecha = $this->personal->parsearFecha($valor);
+        if ($fecha !== null) {
+            return ['fecha' => $fecha, 'error' => null];
+        }
+
+        return ['fecha' => null, 'error' => 'invalida'];
     }
 
     /**

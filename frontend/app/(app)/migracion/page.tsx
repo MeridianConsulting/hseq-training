@@ -303,9 +303,21 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
     ["Capacitaciones (solo catálogo existente)", resumen?.capacitaciones],
     ["Historial ejecutado (E)", resumen?.cumplimientos],
   ];
+  const clas = resumen?.clasificacion;
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-800">Resumen de validación</h2>
+      {clas ? (
+        <p className="mb-3 text-sm text-slate-700">
+          Válidos: <span className="font-semibold">{clas.validos}</span>
+          {" · "}
+          Requieren revisión: <span className="font-semibold">{clas.requieren_revision}</span>
+          {" · "}
+          No importables: <span className="font-semibold">{clas.no_importables}</span>
+          {" · "}
+          Duplicados: <span className="font-semibold">{clas.duplicados}</span>
+        </p>
+      ) : null}
       <Table
         columnas={[
           { clave: "tipo", etiqueta: "Tipo" },
@@ -327,7 +339,9 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
         {resumen?.omitidos_pendientes
           ? ` Pendientes (P) no importados: ${resumen.omitidos_pendientes}.`
           : null}{" "}
-        La hoja de matriz no se persiste. Los soportes PDF no viajan en el Excel.
+        Solo fechas reales completas (no se inventa día 01). Matriz y PDF no se importan. El
+        contenedor de asignación usa la misma fecha de realización (no es programación ni fuera de
+        tiempo).
       </p>
     </div>
   );

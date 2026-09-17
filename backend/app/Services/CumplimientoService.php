@@ -8,6 +8,8 @@ use App\Core\Database;
 use App\Core\Exceptions\HttpException;
 use App\Core\Logger;
 use App\Repositories\AlertaRepository;
+use App\Repositories\AsignacionRepository;
+use App\Repositories\CapacitacionRepository;
 use App\Repositories\CumplimientoRepository;
 use App\Repositories\MatrizRepository;
 use App\Repositories\PersonalRepository;
@@ -743,6 +745,161 @@ class CumplimientoService
                         'resultado' => $normalizado['resultado'] ?? null,
                         'horas_efectivas' => $normalizado['horas_efectivas'] ?? null,
                         'fecha_vencimiento' => $normalizado['fecha_vencimiento'] ?? null,
+                    ]
+                );
+            }
+
+            return $normalizado;
+        });
+    }
+
+    public function reglasHistorial(): array
+    {
+        return [
+            'persona_id' => 'required|integer|min:1',
+            'capacitacion_id' => 'required|integer|min:1',
+            'fecha_realizacion' => 'required|date',
+            'nota_evaluacion' => 'nullable',
+            'horas_efectivas' => 'nullable|numeric|gt:0',
+            'observaciones' => 'nullable|string|max:500',
+        ];
+    }
+
+    /**
+     * Historial sin sesión: contenedor FK (fecha límite = realización) + cumplimiento.
+     * Misma lógica que carga inicial. No programa Fecha Desde/Hasta operativas.
+     *
+     * @param array<string,mixed> $datos
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     * @return array<string,mixed>
+     */
+    public function registrarHistorial(array $datos, ?int $usuarioId, ?array $actor = null): array
+    {
+        $personaId = (int)($datos['persona_id'] ?? 0);
+        $capId = (int)($datos['capacitacion_id'] ?? 0);
+        $fecha = trim((string)($datos['fecha_realizacion'] ?? ''));
+        if ($personaId < 1 || $capId < 1 || $fecha === '') {
+            throw new HttpException('Debe indicar trabajador, capacitación y fecha real de ejecución.', 422);
+        }
+
+        $caps = new CapacitacionRepository();
+        $cap = $caps->buscarPorId($capId);
+        if ($cap === null) {
+            throw new HttpException('Capacitación no encontrada.', 404);
+        }
+
+        $requiereEval = (int)($cap['evaluacion'] ?? 0) === 1;
+        $notaMinima = round((float)($cap['nota_minima'] ?? 0), 2);
+        $nota = null;
+        if (array_key_exists('nota_evaluacion', $datos) && $datos['nota_evaluacion'] !== null && $datos['nota_evaluacion'] !== '') {
+            $nota = $this->exigirNota($datos['nota_evaluacion']);
+        }
+        if ($requiereEval && $nota === null) {
+            throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
+        }
+        if ($requiereEval && $nota !== null && $nota < $notaMinima) {
+            throw new HttpException(self::MENSAJE_NOTA_MINIMA, 422);
+        }
+
+        if ($this->repo->existeEjecucion($personaId, $capId, $fecha)) {
+            throw new HttpException(
+                'Ya existe una ejecución histórica equivalente (trabajador + capacitación + fecha).',
+                409
+            );
+        }
+
+        $personal = new PersonalService();
+        try {
+            $persona = $personal->ver($personaId);
+        } catch (HttpException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new HttpException(self::MENSAJE_CORPORATIVA, $e instanceof PDOException ? 503 : 500);
+        }
+
+        $horas = $datos['horas_efectivas'] ?? null;
+        if ($horas === null || $horas === '' || (float)$horas <= 0) {
+            $horas = $cap['duracion_estimada_horas'] !== null
+                ? (float)$cap['duracion_estimada_horas']
+                : 0;
+        } else {
+            $horas = $this->exigirHoras($horas);
+        }
+        if ((float)$horas <= 0) {
+            throw new HttpException('Las horas efectivas deben ser mayores que cero. Defínalas en el catálogo o en el registro.', 422);
+        }
+
+        $vence = VencimientoService::calcularFechaVencimiento(
+            $fecha,
+            $cap['vigencia_cantidad'] !== null ? (int)$cap['vigencia_cantidad'] : null,
+            $cap['vigencia_unidad'] !== null ? (string)$cap['vigencia_unidad'] : null
+        );
+
+        $obs = trim((string)($datos['observaciones'] ?? ''));
+        $origenObs = trim((string)($datos['origen_observacion'] ?? ''));
+        if ($origenObs === '') {
+            $origenObs = 'Registro histórico manual. Contenedor FK (fecha límite = realización); no programa el futuro.';
+        }
+        if ($obs !== '') {
+            $origenObs .= ' ' . $obs;
+        }
+
+        return $this->repo->transaccion(function () use (
+            $personaId,
+            $capId,
+            $fecha,
+            $persona,
+            $horas,
+            $nota,
+            $vence,
+            $origenObs,
+            $usuarioId,
+            $actor
+        ): array {
+            $asigId = (new AsignacionRepository())->crear([
+                'persona_id_ext' => $personaId,
+                'contrato_id_ext' => $persona['contrato_id'] ?? null,
+                'capacitacion_id' => $capId,
+                'matriz_aplicabilidad_id' => null,
+                'fecha_asignacion' => $fecha,
+                'fecha_limite_cumplimiento' => $fecha,
+                'origen' => 'MANUAL',
+                'cargo_id_ext' => $persona['cargo_id'] ?? null,
+                'area_id' => null,
+                'proceso_id' => null,
+                'ambito' => null,
+                'proyecto' => $persona['proyecto'] ?? null,
+                'creada_por_usuario_id_ext' => $usuarioId,
+            ]);
+
+            $cumplimientoId = $this->repo->crear([
+                'asignacion_id' => $asigId,
+                'sesion_id' => null,
+                'fecha_realizacion' => $fecha,
+                'resultado' => self::RESULTADO_APROBADO,
+                'horas_efectivas' => (float)$horas,
+                'nota_evaluacion' => $nota,
+                'observaciones' => $origenObs,
+                'fecha_vencimiento' => $vence,
+                'registrado_por_usuario_id_ext' => $usuarioId,
+            ]);
+
+            $fila = $this->repo->buscarPorAsignacion($asigId);
+            $normalizado = $fila === null ? [] : $this->normalizarConSoportes([$fila])[0];
+            if ($actor !== null && $normalizado !== []) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'crear',
+                    'cumplimientos_capacitacion',
+                    $cumplimientoId,
+                    [
+                        'origen' => AuditoriaService::ORIGEN_USUARIO,
+                        'modo' => 'historial',
+                        'persona_id_ext' => $personaId,
+                        'capacitacion_id' => $capId,
+                        'fecha_realizacion' => $fecha,
+                        'fecha_vencimiento' => $vence,
+                        'nota' => 'Historial real. No programa Fecha Desde/Hasta.',
                     ]
                 );
             }
