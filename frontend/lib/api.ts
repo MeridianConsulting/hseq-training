@@ -5,6 +5,7 @@ export type ApiResponse<T> = {
   message: string;
   data: T | null;
   errors: ApiErrorMap | null;
+  cancelada?: boolean;
 };
 
 export type Paginacion = {

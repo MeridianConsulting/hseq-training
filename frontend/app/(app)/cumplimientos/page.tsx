@@ -396,7 +396,7 @@ function Contenido() {
                 {situacion.trabajador.documento ? ` · ${situacion.trabajador.documento}` : ""}
               </p>
               <Link
-                href={`/personal/${situacion.trabajador.persona_id_ext}`}
+                href={`/personal/detalle?id=${situacion.trabajador.persona_id_ext}`}
                 prefetch={false}
                 className="text-sm text-hseq-800 underline"
               >

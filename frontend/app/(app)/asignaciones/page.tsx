@@ -719,7 +719,7 @@ function Contenido() {
             filas={items.map((item) => [
               <span key="p" className="flex flex-col">
                 <Link
-                  href={`/personal/${item.persona_id_ext}`}
+                  href={`/personal/detalle?id=${item.persona_id_ext}`}
                   prefetch={false}
                   className="font-medium text-hseq-800 underline-offset-2 hover:underline"
                 >
@@ -861,7 +861,7 @@ function Contenido() {
             <div>
               <dt className="text-xs uppercase text-slate-500">Trabajador</dt>
               <dd>
-                <Link prefetch={false} className="text-hseq-800 underline" href={`/personal/${detalle.persona_id_ext}`}>
+                <Link prefetch={false} className="text-hseq-800 underline" href={`/personal/detalle?id=${detalle.persona_id_ext}`}>
                   {detalle.persona_nombre ?? detalle.persona_id_ext}
                 </Link>
               </dd>

@@ -1,0 +1,15 @@
+# Sitio estatico generado por "next build" (output: "export").
+# Cada ruta ya existe como carpeta/index.html gracias a trailingSlash: true,
+# asi que el DirectoryIndex por defecto de Apache la sirve sin reescrituras.
+
+Options -Indexes
+
+ErrorDocument 404 /404/
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/x-icon "access plus 1 year"
+</IfModule>

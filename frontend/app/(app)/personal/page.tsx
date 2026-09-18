@@ -245,7 +245,7 @@ function Contenido() {
             item.contrato_fecha_inicio ?? "—",
             <div key="a" className="flex justify-end">
               <Link
-                href={`/personal/${item.persona_id}`}
+                href={`/personal/detalle?id=${item.persona_id}`}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-hseq-700 hover:bg-hseq-50"
               >
                 <IdCard className="h-4 w-4" aria-hidden />

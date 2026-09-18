@@ -1,0 +1,17 @@
+# El document root del dominio apunta a la carpeta del frontend estatico,
+# y este backend/ vive como subcarpeta suya. Solo backend/public/ debe ser
+# alcanzable por HTTP (index.php + su propio .htaccess); todo lo demas aqui
+# se bloquea por carpeta (app/, config/, routes/, storage/, vendor/ tienen
+# su propio .htaccess con "Require all denied") y estos archivos sueltos
+# quedan bloqueados por extension:
+Options -Indexes
+
+<FilesMatch "(\.env(\..*)?|\.gitignore|composer\.(json|lock)|\.(md|sql|log|sh|bak))$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

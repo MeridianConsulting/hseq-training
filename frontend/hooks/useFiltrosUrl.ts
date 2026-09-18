@@ -3,18 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-type Valores = Record<string, string>;
-
-function leerDesdeUrl(defaults: Valores): Valores {
+function leerDesdeUrl<T extends Record<string, string>>(defaults: T): T {
   if (typeof window === "undefined") {
     return { ...defaults };
   }
   const params = new URLSearchParams(window.location.search);
-  const valores: Valores = { ...defaults };
-  for (const clave of Object.keys(defaults)) {
+  const valores = { ...defaults };
+  for (const clave of Object.keys(defaults) as (keyof T & string)[]) {
     const desdeUrl = params.get(clave);
     if (desdeUrl !== null) {
-      valores[clave] = desdeUrl;
+      valores[clave] = desdeUrl as T[keyof T & string];
     }
   }
   return valores;
@@ -32,8 +30,8 @@ function urlActual(): string {
  * Los cambios de texto se debouncean antes de escribir en la URL.
  * Nunca llama router.replace dentro del updater de setState.
  */
-export function useFiltrosUrl(
-  defaults: Valores,
+export function useFiltrosUrl<T extends Record<string, string>>(
+  defaults: T,
   opciones?: { debounceMs?: number; keysDebounce?: string[] },
 ) {
   const router = useRouter();
@@ -43,7 +41,7 @@ export function useFiltrosUrl(
   const keysDebounceSet = useRef(new Set(keysDebounce));
   keysDebounceSet.current = new Set(keysDebounce);
 
-  const [valores, setValores] = useState<Valores>(() => leerDesdeUrl(defaults));
+  const [valores, setValores] = useState<T>(() => leerDesdeUrl(defaults));
   const valoresRef = useRef(valores);
   valoresRef.current = valores;
 
@@ -52,7 +50,7 @@ export function useFiltrosUrl(
   defaultsRef.current = defaults;
 
   const escribirUrl = useCallback(
-    (siguiente: Valores) => {
+    (siguiente: T) => {
       const params = new URLSearchParams();
       if (typeof window !== "undefined") {
         const actuales = new URLSearchParams(window.location.search);
@@ -63,7 +61,7 @@ export function useFiltrosUrl(
         });
       }
       for (const [clave, valor] of Object.entries(siguiente)) {
-        const base = defaultsRef.current[clave] ?? "";
+        const base = defaultsRef.current[clave as keyof T & string] ?? "";
         if (valor !== "" && valor !== base) {
           params.set(clave, valor);
         }
@@ -79,7 +77,7 @@ export function useFiltrosUrl(
   );
 
   const programarEscritura = useCallback(
-    (siguiente: Valores, conDebounce: boolean) => {
+    (siguiente: T, conDebounce: boolean) => {
       if (timer.current !== null) {
         window.clearTimeout(timer.current);
         timer.current = null;
@@ -98,10 +96,10 @@ export function useFiltrosUrl(
 
   const setFiltro = useCallback(
     (clave: string, valor: string) => {
-      if (valoresRef.current[clave] === valor) {
+      if (valoresRef.current[clave as keyof T & string] === valor) {
         return;
       }
-      const siguiente = { ...valoresRef.current, [clave]: valor };
+      const siguiente = { ...valoresRef.current, [clave]: valor } as T;
       valoresRef.current = siguiente;
       setValores(siguiente);
       programarEscritura(siguiente, keysDebounceSet.current.has(clave));
@@ -110,7 +108,7 @@ export function useFiltrosUrl(
   );
 
   const setVarios = useCallback(
-    (parcial: Valores) => {
+    (parcial: Partial<T>) => {
       const siguiente = { ...valoresRef.current, ...parcial };
       valoresRef.current = siguiente;
       setValores(siguiente);

@@ -19,7 +19,7 @@ export async function subirSoportes(
       form,
     );
     if (r.cancelada) {
-      return;
+      return null;
     }
     if (!r.success) {
       return r.message || "No fue posible cargar el archivo.";
