@@ -122,7 +122,7 @@ return [
         'tabla' => 'ubicaciones',
         'pk' => 'ubicacion_id',
         'etiqueta' => 'Ubicaciones',
-        'mostrar_en_ui' => true,
+        'mostrar_en_ui' => false,
         'soft_delete' => true,
         'campos' => [
             'nombre' => 'required|string|max:150',
@@ -138,7 +138,7 @@ return [
         'tabla' => 'proveedores_capacitadores',
         'pk' => 'proveedor_id',
         'etiqueta' => 'Proveedores capacitadores',
-        'mostrar_en_ui' => true,
+        'mostrar_en_ui' => false,
         'soft_delete' => true,
         'campos' => [
             'nombre' => 'required|string|max:150',
