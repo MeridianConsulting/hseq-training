@@ -8,8 +8,10 @@ Las asignaciones y cumplimientos usan `persona_id_ext`.
 
 ## Alta individual y carga masiva (módulo `/personal`)
 
-- Formulario: documento, nombre, correo (opcional), cargo (catálogo), proyecto (opcional), fecha de ingreso.
-- Carga masiva: Excel `.xlsx` / `.xls` y CSV. Plantilla en `GET /api/personal/plantilla`.
+- En `/personal` no se dan de alta trabajadores: se consulta el maestro y se **edita** correo, cargo y el contexto HSEQ (proceso obligatorio; proyecto solo si el proceso es de proyectos).
+- El proceso/proyecto del trabajador se persisten en `meridian_capacitaciones.persona_contexto_hseq` (1:1 por documento/`persona_id_ext`) y se sincronizan al contrato (`contratos.proyecto`) cuando aplica.
+- Los procesos listados en personal = contexto HSEQ **más** los inferidos por matriz (cargo).
+- Carga masiva (si aplica): Excel `.xlsx` / `.xls` y CSV. Plantilla en `GET /api/personal/plantilla`.
 - Duplicados: documento ya en BD, o repetido dentro del mismo archivo.
 - El cargo debe existir en `meridian_personal.cargos`. **No se crean cargos automáticamente** en la carga de personal.
 

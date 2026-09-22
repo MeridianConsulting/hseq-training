@@ -473,6 +473,24 @@ CREATE TABLE historial_contexto_trabajador (
   KEY ix_hist_persona_abierto (persona_id_ext, vigente_hasta)
 ) ENGINE=InnoDB;
 
+-- Asociación HSEQ 1:1 por trabajador (documento): un proceso y, si aplica, un proyecto.
+-- Se suma a los procesos inferidos por matriz (cargo), no los reemplaza.
+-- El cargo sigue en meridian_personal.personas.cargo_id.
+CREATE TABLE persona_contexto_hseq (
+  persona_contexto_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  persona_id_ext INT UNSIGNED NOT NULL COMMENT 'meridian_personal.personas.persona_id',
+  numero_documento VARCHAR(30) NOT NULL COMMENT 'Documento normalizado para enlace con meridian_personal',
+  proceso_id INT UNSIGNED NOT NULL,
+  proyecto VARCHAR(120) NULL COMMENT 'Requerido solo si el proceso es de proyectos; alineado a catálogo proyectos',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_persona_contexto_persona (persona_id_ext),
+  UNIQUE KEY uq_persona_contexto_documento (numero_documento),
+  KEY ix_persona_contexto_proceso (proceso_id),
+  KEY ix_persona_contexto_proyecto (proyecto),
+  CONSTRAINT fk_persona_contexto_proceso FOREIGN KEY (proceso_id) REFERENCES procesos(proceso_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE migraciones (
   migracion_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   usuario_id_ext INT UNSIGNED NULL,

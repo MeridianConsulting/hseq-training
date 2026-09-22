@@ -9,6 +9,7 @@ use App\Core\Logger;
 use App\Repositories\AlertaRepository;
 use App\Repositories\HistorialContextoRepository;
 use App\Repositories\MatrizRepository;
+use App\Repositories\PersonaContextoRepository;
 use App\Repositories\PersonalRepository;
 use PDOException;
 use Throwable;
@@ -24,6 +25,7 @@ class PersonalService
 
     private PersonalRepository $repo;
     private HistorialContextoRepository $historial;
+    private PersonaContextoRepository $contexto;
     private AuditoriaService $auditoria;
     private ?MotorAsignacionService $motor = null;
     private ?MatrizRepository $matriz = null;
@@ -33,6 +35,7 @@ class PersonalService
     {
         $this->repo = new PersonalRepository();
         $this->historial = new HistorialContextoRepository();
+        $this->contexto = new PersonaContextoRepository();
         $this->auditoria = new AuditoriaService();
     }
 
@@ -59,12 +62,15 @@ class PersonalService
         }
 
         try {
+            $proyectoFiltro = $this->proyectoListado($procesoId, $proyecto);
             $cargoIds = null;
+            $personaIds = null;
             if ($procesoId !== null && $procesoId > 0) {
                 $cargoIds = $this->matriz()->cargoIdsActivosPorProceso($procesoId);
+                $personaIds = $proyectoFiltro !== null
+                    ? $this->contexto->personaIdsPorProcesoYProyecto($procesoId, $proyectoFiltro)
+                    : $this->contexto->personaIdsPorProceso($procesoId);
             }
-
-            $proyectoFiltro = $this->proyectoListado($procesoId, $proyecto);
 
             $items = $this->adjuntarProcesos(array_map(
                 [$this, 'normalizar'],
@@ -75,13 +81,21 @@ class PersonalService
                     $estado,
                     $cargoId,
                     $proyectoFiltro,
-                    $cargoIds
+                    $cargoIds,
+                    $personaIds
                 )
             ));
 
             return [
                 'items' => $items,
-                'total' => $this->repo->contar($buscar, $estado, $cargoId, $proyectoFiltro, $cargoIds),
+                'total' => $this->repo->contar(
+                    $buscar,
+                    $estado,
+                    $cargoId,
+                    $proyectoFiltro,
+                    $cargoIds,
+                    $personaIds
+                ),
                 'page' => $pagina,
                 'per_page' => $porPagina,
             ];
@@ -315,11 +329,11 @@ class PersonalService
             );
         }
 
-        $proyecto = $this->normalizarTexto($entrada['proyecto'] ?? '');
-        $proyecto = $proyecto === '' ? null : $proyecto;
+        $contexto = $this->resolverContextoHseq($entrada);
+        $proyecto = $contexto['proyecto'];
 
         try {
-            $this->repo->transaccion(function () use ($personaId, $actual, $correo, $cargoId, $proyecto): int {
+            $this->repo->transaccion(function () use ($personaId, $actual, $correo, $cargoId, $proyecto, $contexto): int {
                 $this->repo->actualizarPersona($personaId, [
                     'correo_corporativo' => $correo !== '' ? $correo : null,
                     'cargo_id' => $cargoId,
@@ -342,6 +356,13 @@ class PersonalService
                     ]);
                 }
 
+                $this->contexto->guardar(
+                    $personaId,
+                    (string)$actual['numero_documento'],
+                    $contexto['proceso_id'],
+                    $proyecto
+                );
+
                 return $personaId;
             });
         } catch (PDOException $e) {
@@ -354,7 +375,13 @@ class PersonalService
         $cargoCambio = (int)($actual['cargo_id'] ?? 0) !== $cargoId;
         $proyectoAntes = $this->normalizarTexto($actual['proyecto'] ?? '');
         $proyectoAhora = $proyecto ?? '';
-        if ($cargoCambio || strcasecmp($proyectoAntes, $proyectoAhora) !== 0) {
+        $procesoAntes = (int)($actual['proceso_id'] ?? 0);
+        $procesoAhora = $contexto['proceso_id'];
+        if (
+            $cargoCambio
+            || strcasecmp($proyectoAntes, $proyectoAhora) !== 0
+            || $procesoAntes !== $procesoAhora
+        ) {
             $this->historial->registrarCambio($personaId, $cargoId, $proyecto);
             $actualizado['sincronizacion'] = $this->sincronizarAsignaciones($actualizado);
         }
@@ -364,6 +391,7 @@ class PersonalService
                 'correo_corporativo' => 'Correo',
                 'cargo' => 'Cargo',
                 'proyecto' => 'Proyecto',
+                'proceso_nombre' => 'Proceso',
             ];
             $antes = $this->auditoria->recortePersonal($actual);
             $despues = $this->auditoria->recortePersonal($actualizado);
@@ -541,6 +569,16 @@ class PersonalService
         }
 
         $proyecto = $this->normalizarTexto($entrada['proyecto'] ?? '');
+        $contexto = null;
+        $procesoRaw = $entrada['proceso_id'] ?? null;
+        if ($procesoRaw !== null && $procesoRaw !== '') {
+            try {
+                $contexto = $this->resolverContextoHseq($entrada);
+                $proyecto = $contexto['proyecto'] ?? '';
+            } catch (HttpException $e) {
+                return $this->rechazo($e->getMessage());
+            }
+        }
 
         return [
             'ok' => true,
@@ -556,6 +594,7 @@ class PersonalService
                 'correo_corporativo' => $correo !== '' ? $correo : null,
                 'cargo_id' => $cargoId,
                 'proyecto' => $proyecto !== '' ? $proyecto : null,
+                'proceso_id' => $contexto['proceso_id'] ?? null,
                 'fecha_ingreso' => $fecha,
                 'fecha_nacimiento_texto' => self::FECHA_NACIMIENTO_TECNICA,
                 'estado' => 'Activo',
@@ -588,6 +627,15 @@ class PersonalService
                     'fecha_inicio' => $datos['fecha_ingreso'],
                     'proyecto' => $datos['proyecto'],
                 ]);
+
+                if (!empty($datos['proceso_id'])) {
+                    $this->contexto->guardar(
+                        $personaId,
+                        (string)$datos['numero_documento'],
+                        (int)$datos['proceso_id'],
+                        isset($datos['proyecto']) && is_string($datos['proyecto']) ? $datos['proyecto'] : null
+                    );
+                }
 
                 return $personaId;
             });
@@ -921,25 +969,113 @@ class PersonalService
     private function adjuntarProcesos(array $items): array
     {
         $cargoIds = [];
+        $personaIds = [];
         foreach ($items as $item) {
             $cargoId = isset($item['cargo_id']) ? (int)$item['cargo_id'] : 0;
             if ($cargoId > 0) {
                 $cargoIds[] = $cargoId;
             }
+            $personaId = isset($item['persona_id']) ? (int)$item['persona_id'] : 0;
+            if ($personaId > 0) {
+                $personaIds[] = $personaId;
+            }
         }
 
         $filas = $this->matriz()->procesosDeCargos($cargoIds);
+        $contextos = $this->contexto->mapaPorPersonaIds($personaIds);
         $salida = [];
         foreach ($items as $item) {
-            $item['procesos'] = $this->procesosDeItem(
+            $personaId = isset($item['persona_id']) ? (int)$item['persona_id'] : 0;
+            $ctx = $contextos[$personaId] ?? null;
+            $proyectoItem = is_string($item['proyecto'] ?? null) ? (string)$item['proyecto'] : null;
+            if ($ctx !== null && ($ctx['proyecto'] ?? null) !== null && $ctx['proyecto'] !== '') {
+                $proyectoItem = $ctx['proyecto'];
+                $item['proyecto'] = $ctx['proyecto'];
+            }
+            $procesos = $this->procesosDeItem(
                 $filas,
                 isset($item['cargo_id']) ? (int)$item['cargo_id'] : 0,
-                is_string($item['proyecto'] ?? null) ? (string)$item['proyecto'] : null
+                $proyectoItem
             );
+            if ($ctx !== null) {
+                $item['proceso_id'] = $ctx['proceso_id'];
+                $item['proceso_nombre'] = $ctx['proceso_nombre'];
+                $procesos = $this->sumarProcesoExplicito($procesos, $ctx['proceso_id'], $ctx['proceso_nombre']);
+            } else {
+                $item['proceso_id'] = null;
+                $item['proceso_nombre'] = null;
+            }
+            $item['procesos'] = $procesos;
             $salida[] = $item;
         }
 
         return $salida;
+    }
+
+    /**
+     * @param list<array{proceso_id:int,nombre:string}> $procesos
+     * @return list<array{proceso_id:int,nombre:string}>
+     */
+    private function sumarProcesoExplicito(array $procesos, int $procesoId, string $nombre): array
+    {
+        foreach ($procesos as $proceso) {
+            if ((int)$proceso['proceso_id'] === $procesoId) {
+                return $procesos;
+            }
+        }
+        $procesos[] = [
+            'proceso_id' => $procesoId,
+            'nombre' => $nombre,
+        ];
+
+        return $procesos;
+    }
+
+    /**
+     * @param array<string,mixed> $entrada
+     * @return array{proceso_id:int,proyecto:?string}
+     */
+    private function resolverContextoHseq(array $entrada): array
+    {
+        $procesoId = isset($entrada['proceso_id']) ? (int)$entrada['proceso_id'] : 0;
+        if ($procesoId < 1) {
+            throw new HttpException('El proceso es obligatorio.', 422);
+        }
+
+        $procesos = $this->alertasRepo()->procesosActivos();
+        $encontrado = null;
+        foreach ($procesos as $proceso) {
+            if ((int)$proceso['proceso_id'] === $procesoId) {
+                $encontrado = $proceso;
+                break;
+            }
+        }
+        if ($encontrado === null) {
+            throw new HttpException('El proceso no existe o no está activo.', 422);
+        }
+
+        $requiereProyecto = $this->alertasRepo()->procesoEsGestionProyectos($procesoId);
+        $proyectoBruto = $this->normalizarTexto($entrada['proyecto'] ?? '');
+
+        if ($requiereProyecto) {
+            if ($proyectoBruto === '') {
+                throw new HttpException('El proyecto es obligatorio para este proceso.', 422);
+            }
+            $canonico = $this->alertasRepo()->resolverProyecto($proyectoBruto, false);
+            if ($canonico === null) {
+                throw new HttpException('El proyecto no es válido.', 422);
+            }
+
+            return [
+                'proceso_id' => $procesoId,
+                'proyecto' => $canonico,
+            ];
+        }
+
+        return [
+            'proceso_id' => $procesoId,
+            'proyecto' => null,
+        ];
     }
 
     /**
@@ -1022,6 +1158,8 @@ class PersonalService
             'proyecto' => $fila['proyecto'],
             'contrato_fecha_inicio' => $fila['contrato_fecha_inicio'],
             'contrato_fecha_terminacion' => $fila['contrato_fecha_terminacion'],
+            'proceso_id' => null,
+            'proceso_nombre' => null,
             'procesos' => [],
         ];
     }

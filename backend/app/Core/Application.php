@@ -37,6 +37,7 @@ class Application
         VistasEsquema::asegurar();
         PersonalEsquema::asegurar();
         PlanEsquema::asegurar();
+        PersonaContextoEsquema::asegurar();
         $this->router = new Router();
         $this->loadRoutes();
     }

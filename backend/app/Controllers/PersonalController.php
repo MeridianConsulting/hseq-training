@@ -158,6 +158,7 @@ class PersonalController extends Controller
                 'correo' => 'nullable|email|max:100',
                 'correo_corporativo' => 'nullable|email|max:100',
                 'cargo_id' => 'required|integer',
+                'proceso_id' => 'required|integer',
                 'proyecto' => 'nullable|string|max:120',
             ];
         }
@@ -168,6 +169,7 @@ class PersonalController extends Controller
             'correo' => 'nullable|email|max:100',
             'correo_corporativo' => 'nullable|email|max:100',
             'cargo_id' => 'required|integer',
+            'proceso_id' => 'required|integer',
             'proyecto' => 'nullable|string|max:120',
             'fecha_ingreso' => 'required|date',
             'tipo_documento_id' => 'nullable|integer',
@@ -181,6 +183,7 @@ class PersonalController extends Controller
             'numero_documento.required' => 'El documento es obligatorio.',
             'nombre_completo.required' => 'El nombre es obligatorio.',
             'cargo_id.required' => 'El cargo es obligatorio.',
+            'proceso_id.required' => 'El proceso es obligatorio.',
             'fecha_ingreso.required' => 'La fecha de ingreso es obligatoria.',
             'fecha_ingreso.date' => 'La fecha de ingreso no es válida.',
             'correo.email' => 'El correo no tiene un formato válido.',

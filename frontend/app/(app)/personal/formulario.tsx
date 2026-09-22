@@ -3,14 +3,21 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
+import { procesoRequiereProyecto } from "@/lib/catalogos";
 import type { ApiErrorMap } from "@/lib/api";
-import type { CargoCorporativo, PersonaCorporativa, TipoDocumentoCorporativo } from "@/lib/tipos";
+import type {
+  CargoCorporativo,
+  PersonaCorporativa,
+  ProcesoCronograma,
+  TipoDocumentoCorporativo,
+} from "@/lib/tipos";
 
 export type DatosTrabajador = {
   numero_documento: string;
   nombre_completo: string;
   correo: string;
   cargo_id: string;
+  proceso_id: string;
   proyecto: string;
   fecha_ingreso: string;
   tipo_documento_id: string;
@@ -24,6 +31,7 @@ function vacio(): DatosTrabajador {
     nombre_completo: "",
     correo: "",
     cargo_id: "",
+    proceso_id: "",
     proyecto: "",
     fecha_ingreso: "",
     tipo_documento_id: "1",
@@ -36,13 +44,18 @@ function desdeItem(item: PersonaCorporativa): DatosTrabajador {
     nombre_completo: item.nombre_completo,
     correo: item.correo_corporativo ?? "",
     cargo_id: item.cargo_id ? String(item.cargo_id) : "",
+    proceso_id: item.proceso_id ? String(item.proceso_id) : "",
     proyecto: item.proyecto ?? "",
     fecha_ingreso: item.contrato_fecha_inicio ?? "",
     tipo_documento_id: item.tipo_documento_id ? String(item.tipo_documento_id) : "1",
   };
 }
 
-export function validarDatosTrabajador(datos: DatosTrabajador, esEdicion = false): ErroresTrabajador {
+export function validarDatosTrabajador(
+  datos: DatosTrabajador,
+  procesos: ProcesoCronograma[],
+  esEdicion = false,
+): ErroresTrabajador {
   const errores: ErroresTrabajador = {};
   const correo = datos.correo.trim();
 
@@ -73,6 +86,12 @@ export function validarDatosTrabajador(datos: DatosTrabajador, esEdicion = false
     errores.cargo_id = "El cargo es obligatorio.";
   }
 
+  if (!datos.proceso_id) {
+    errores.proceso_id = "El proceso es obligatorio.";
+  } else if (procesoRequiereProyecto(datos.proceso_id, procesos) && !datos.proyecto.trim()) {
+    errores.proyecto = "El proyecto es obligatorio para este proceso.";
+  }
+
   return errores;
 }
 
@@ -84,6 +103,8 @@ function primerError(mapa: ApiErrorMap | null, campo: string): string | undefine
 export function FormularioTrabajador({
   inicial,
   cargos,
+  procesos,
+  proyectos,
   tiposDocumento,
   erroresApi,
   onCancelar,
@@ -91,6 +112,8 @@ export function FormularioTrabajador({
 }: {
   inicial: PersonaCorporativa | null;
   cargos: CargoCorporativo[];
+  procesos: ProcesoCronograma[];
+  proyectos: string[];
   tiposDocumento: TipoDocumentoCorporativo[];
   erroresApi: ApiErrorMap | null;
   onCancelar: () => void;
@@ -105,13 +128,20 @@ export function FormularioTrabajador({
   }, [inicial]);
 
   function set<K extends keyof DatosTrabajador>(campo: K, valor: DatosTrabajador[K]) {
-    setDatos((prev) => ({ ...prev, [campo]: valor }));
+    setDatos((prev) => {
+      const siguiente = { ...prev, [campo]: valor };
+      if (campo === "proceso_id" && !procesoRequiereProyecto(String(valor), procesos)) {
+        siguiente.proyecto = "";
+      }
+      return siguiente;
+    });
   }
 
   const esEdicion = inicial !== null;
+  const muestraProyecto = procesoRequiereProyecto(datos.proceso_id, procesos);
 
   function enviar(evento: FormEvent) {
-    const locales = validarDatosTrabajador(datos, esEdicion);
+    const locales = validarDatosTrabajador(datos, procesos, esEdicion);
     setErrores(locales);
     if (Object.keys(locales).length > 0) {
       evento.preventDefault();
@@ -124,7 +154,8 @@ export function FormularioTrabajador({
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={enviar}>
       {esEdicion ? (
         <p className="sm:col-span-2 text-sm text-slate-600">
-          En edición solo se pueden modificar correo, cargo y proyecto.
+          Puede modificar correo, cargo, proceso HSEQ y proyecto (si el proceso lo exige). Documento y
+          nombre no se cambian aquí.
         </p>
       ) : null}
       <Field
@@ -190,13 +221,38 @@ export function FormularioTrabajador({
           ))}
         </select>
       </Field>
-      <Field etiqueta="Proyecto">
-        <input
+      <Field etiqueta="Proceso" error={errores.proceso_id ?? primerError(erroresApi, "proceso_id")}>
+        <select
           className={inputClass}
-          value={datos.proyecto}
-          onChange={(e) => set("proyecto", e.target.value)}
-        />
+          value={datos.proceso_id}
+          onChange={(e) => set("proceso_id", e.target.value)}
+          required
+        >
+          <option value="">Seleccione un proceso</option>
+          {procesos.map((proceso) => (
+            <option key={proceso.proceso_id} value={proceso.proceso_id}>
+              {proceso.nombre}
+            </option>
+          ))}
+        </select>
       </Field>
+      {muestraProyecto ? (
+        <Field etiqueta="Proyecto" error={errores.proyecto ?? primerError(erroresApi, "proyecto")}>
+          <select
+            className={inputClass}
+            value={datos.proyecto}
+            onChange={(e) => set("proyecto", e.target.value)}
+            required
+          >
+            <option value="">Seleccione un proyecto</option>
+            {proyectos.map((proyecto) => (
+              <option key={proyecto} value={proyecto}>
+                {proyecto}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
       <Field
         etiqueta="Fecha de ingreso"
         error={errores.fecha_ingreso ?? primerError(erroresApi, "fecha_ingreso")}
@@ -214,7 +270,7 @@ export function FormularioTrabajador({
         <Button type="button" variante="secondary" onClick={onCancelar}>
           Cancelar
         </Button>
-        <Button type="submit">{inicial ? "Guardar cambios" : "Guardar trabajador"}</Button>
+        <Button type="submit">Guardar cambios</Button>
       </div>
     </form>
   );

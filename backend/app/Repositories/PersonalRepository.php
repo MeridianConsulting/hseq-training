@@ -23,6 +23,7 @@ class PersonalRepository
 
     /**
      * @param list<int>|null $cargoIds
+     * @param list<int>|null $personaIds
      */
     public function listar(
         int $limite,
@@ -31,13 +32,14 @@ class PersonalRepository
         ?string $estado,
         ?int $cargoId,
         ?string $proyecto = null,
-        ?array $cargoIds = null
+        ?array $cargoIds = null,
+        ?array $personaIds = null
     ): array {
-        if ($cargoIds !== null && $cargoIds === []) {
+        if ($this->filtroAlcanceVacio($cargoIds, $personaIds)) {
             return [];
         }
 
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds);
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds);
 
         $sql = $this->selectPersona()
             . " {$where}
@@ -49,19 +51,21 @@ class PersonalRepository
 
     /**
      * @param list<int>|null $cargoIds
+     * @param list<int>|null $personaIds
      */
     public function contar(
         ?string $buscar,
         ?string $estado,
         ?int $cargoId,
         ?string $proyecto = null,
-        ?array $cargoIds = null
+        ?array $cargoIds = null,
+        ?array $personaIds = null
     ): int {
-        if ($cargoIds !== null && $cargoIds === []) {
+        if ($this->filtroAlcanceVacio($cargoIds, $personaIds)) {
             return 0;
         }
 
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds);
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds);
         $personas = Database::personalTable('personas');
         $contratos = Database::personalTable('contratos');
 
@@ -553,12 +557,47 @@ class PersonalRepository
      * @param list<int>|null $cargoIds
      * @return array{0:string,1:list<mixed>}
      */
+    /**
+     * @param list<int>|null $cargoIds
+     * @param list<int>|null $personaIds
+     */
+    private function filtroAlcanceVacio(?array $cargoIds, ?array $personaIds): bool
+    {
+        if ($cargoIds === null && $personaIds === null) {
+            return false;
+        }
+
+        $cargos = $cargoIds === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
+        $personas = $personaIds === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $personaIds))));
+
+        $sinCargos = $cargos !== null && $cargos === [];
+        $sinPersonas = $personas !== null && $personas === [];
+
+        if ($cargoIds !== null && $personaIds !== null) {
+            return $sinCargos && $sinPersonas;
+        }
+        if ($cargoIds !== null) {
+            return $sinCargos;
+        }
+
+        return $sinPersonas;
+    }
+
+    /**
+     * @param list<int>|null $cargoIds
+     * @param list<int>|null $personaIds
+     */
     private function filtros(
         ?string $buscar,
         ?string $estado,
         ?int $cargoId,
         ?string $proyecto = null,
-        ?array $cargoIds = null
+        ?array $cargoIds = null,
+        ?array $personaIds = null
     ): array {
         $condiciones = [];
         $params = [];
@@ -584,15 +623,26 @@ class PersonalRepository
             $params[] = $cargoId;
         }
 
-        if ($cargoIds !== null) {
-            $ids = array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
-            if ($ids === []) {
-                $condiciones[] = '1 = 0';
-            } else {
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $condiciones[] = "p.cargo_id IN ({$placeholders})";
-                array_push($params, ...$ids);
+        $idsCargo = $cargoIds === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $cargoIds))));
+        $idsPersona = $personaIds === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $personaIds))));
+
+        if ($idsCargo !== null || $idsPersona !== null) {
+            $partes = [];
+            if ($idsCargo !== null && $idsCargo !== []) {
+                $placeholders = implode(',', array_fill(0, count($idsCargo), '?'));
+                $partes[] = "p.cargo_id IN ({$placeholders})";
+                array_push($params, ...$idsCargo);
             }
+            if ($idsPersona !== null && $idsPersona !== []) {
+                $placeholders = implode(',', array_fill(0, count($idsPersona), '?'));
+                $partes[] = "p.persona_id IN ({$placeholders})";
+                array_push($params, ...$idsPersona);
+            }
+            $condiciones[] = $partes === [] ? '1 = 0' : '(' . implode(' OR ', $partes) . ')';
         }
 
         if ($proyecto !== null && $proyecto !== '') {

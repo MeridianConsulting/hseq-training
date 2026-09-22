@@ -27,6 +27,9 @@ function formatoFecha(valor: string | null | undefined): string {
 }
 
 function etiquetaProcesos(ficha: PersonaCorporativa): string {
+  if (ficha.proceso_nombre) {
+    return ficha.proceso_nombre;
+  }
   const nombres = (ficha.procesos ?? []).map((p) => p.nombre).filter(Boolean);
   return nombres.length > 0 ? nombres.join(", ") : "—";
 }

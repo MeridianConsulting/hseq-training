@@ -338,6 +338,8 @@ class AuditoriaService
             'cargo_id' => $persona['cargo_id'] ?? null,
             'cargo' => $persona['cargo'] ?? null,
             'proyecto' => $persona['proyecto'] ?? null,
+            'proceso_id' => $persona['proceso_id'] ?? null,
+            'proceso_nombre' => $persona['proceso_nombre'] ?? null,
         ];
     }
 

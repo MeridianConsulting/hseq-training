@@ -781,6 +781,9 @@ export type PersonaCorporativa = {
   proyecto: string | null;
   contrato_fecha_inicio: string | null;
   contrato_fecha_terminacion: string | null;
+  /** Proceso HSEQ explícito (persona_contexto_hseq). */
+  proceso_id?: number | null;
+  proceso_nombre?: string | null;
   procesos?: ProcesoPersona[];
   sincronizacion?: {
     creadas: number;
