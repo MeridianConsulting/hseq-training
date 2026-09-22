@@ -18,11 +18,14 @@ use Throwable;
 
 /**
  * Carga inicial de historial: Excel → ejecuciones reales → vigencia de catálogo → Alertas.
- * No crea personas, capacitaciones, matriz ni asignaciones pendientes.
+ * Al confirmar: crea capacitaciones faltantes y actualiza las que diferan del Excel.
+ * No crea personas, matriz ni asignaciones pendientes.
  * Cada cumplimiento requiere un contenedor de asignación (FK); fecha_limite = fecha_realizacion.
  */
 class MigracionService
 {
+    private const TIPO_CAPACITACION_DEFAULT = 'CAPACITACION GENERAL';
+
     public const MSG_ARCHIVO = 'No fue posible procesar el archivo. Verifique que corresponde a la matriz HSEQ requerida.';
     public const MSG_PERSONAL = 'No fue posible consultar el maestro de personal corporativo. No se importará el archivo.';
     public const ACCION_AUDITORIA = 'migracion_inicial';
@@ -199,7 +202,7 @@ class MigracionService
                         'anio_programa' => (int)($fila['anio_programa'] ?? 0),
                         'conteos' => $conteos,
                         'estado' => 'CONFIRMADA',
-                        'nota' => 'Registra el pasado. No programa Fecha Desde/Hasta ni asignaciones futuras.',
+                        'nota' => 'Registra el pasado; sincroniza capacitaciones del Excel. No programa Fecha Desde/Hasta ni asignaciones futuras.',
                     ]
                 );
 
@@ -292,6 +295,14 @@ class MigracionService
         $planCaps = [];
         $capsOk = 0;
         $capsExistentes = 0;
+        $capsACrear = 0;
+        $capsAActualizar = 0;
+        $planCrear = [];
+        $planActualizar = [];
+        $tipoGeneral = $this->repo->buscarTipoCapacitacionPorNombre(self::TIPO_CAPACITACION_DEFAULT);
+        $tipoGeneralId = $tipoGeneral !== null ? (int)$tipoGeneral['tipo_capacitacion_id'] : null;
+        $modalidadesPorNombre = $this->mapaModalidadesPorNombre();
+
         foreach ($caps as $cap) {
             $codigo = trim((string)($cap['codigo'] ?? ''));
             $nombre = trim((string)($cap['nombre'] ?? ''));
@@ -300,8 +311,52 @@ class MigracionService
                 $agregar('CRONOGRAMA', $fila, 'capacitacion', $codigo, 'nombre', $nombre, 'Capacitación no encontrada.');
                 continue;
             }
+
+            $objetivo = trim((string)($cap['objetivo'] ?? ''));
+            if ($objetivo === '') {
+                $objetivo = $nombre;
+            }
+            $temario = trim((string)($cap['temario'] ?? ''));
+            $horasExcel = $this->horasDesdeExcel($cap['horas'] ?? null);
+            $modalidadId = $this->modalidadIdDesdeMetodologia(
+                (string)($cap['metodologia'] ?? ''),
+                $modalidadesPorNombre
+            );
+            if ($modalidadId === null) {
+                $agregar(
+                    'CRONOGRAMA',
+                    $fila,
+                    'capacitacion',
+                    $codigo,
+                    'metodologia',
+                    (string)($cap['metodologia'] ?? ''),
+                    'No hay modalidad activa en el catálogo para mapear la metodología del Excel.'
+                );
+                continue;
+            }
+
+            $payloadExcel = [
+                'nombre' => $nombre,
+                'objetivo' => $objetivo,
+                'descripcion_temario' => $temario !== '' ? $temario : null,
+                'duracion_estimada_horas' => $horasExcel,
+                'modalidad_default_id' => $modalidadId,
+            ];
+
             $existente = $this->capacitaciones->buscarPorCodigo($codigo);
             if ($existente === null) {
+                if ($tipoGeneralId === null) {
+                    $agregar(
+                        'CRONOGRAMA',
+                        $fila,
+                        'capacitacion',
+                        $codigo,
+                        'tipo',
+                        self::TIPO_CAPACITACION_DEFAULT,
+                        'No existe el tipo activo «' . self::TIPO_CAPACITACION_DEFAULT . '» en el catálogo.'
+                    );
+                    continue;
+                }
                 $agregar(
                     'CRONOGRAMA',
                     $fila,
@@ -309,19 +364,72 @@ class MigracionService
                     $codigo,
                     'codigo',
                     $codigo,
-                    'Capacitación no encontrada. Créela en el catálogo antes de importar el historial.'
+                    'Se creará al confirmar con valores por defecto.',
+                    'Advertencia'
                 );
+                $capsACrear++;
+                $capsOk++;
+                $alta = $payloadExcel + [
+                    'codigo' => $codigo,
+                    'tipo_capacitacion_id' => $tipoGeneralId,
+                    'evaluacion' => 0,
+                    'nota_minima' => 0,
+                    'vigencia_id' => null,
+                    'categoria_id' => null,
+                    'periodicidad_default_id' => null,
+                    'certificado' => 0,
+                    'es_tarea_critica' => 0,
+                    'requiere_listado_asistencia' => 0,
+                    'criticidad' => 'MEDIA',
+                    'proveedor_default_id' => null,
+                    'responsable' => null,
+                    'fuente_normativa_id' => null,
+                    'estado' => 'ACTIVA',
+                ];
+                $planCrear[] = $alta;
+                $planCaps[$codigo] = [
+                    'codigo' => $codigo,
+                    'accion' => 'crear',
+                    'capacitacion_id' => 0,
+                    'horas' => $horasExcel,
+                    'evaluacion' => false,
+                    'nota_minima' => 0.0,
+                    'vigencia_cantidad' => null,
+                    'vigencia_unidad' => null,
+                    'estado' => 'ACTIVA',
+                ];
                 continue;
             }
-            $capsExistentes++;
+
+            $capId = (int)$existente['capacitacion_id'];
+            if ($this->capacitacionDifiereDelExcel($existente, $payloadExcel)) {
+                $agregar(
+                    'CRONOGRAMA',
+                    $fila,
+                    'capacitacion',
+                    $codigo,
+                    'codigo',
+                    $codigo,
+                    'Se actualizará al confirmar con datos del Excel (nombre, objetivo, horas, temario, modalidad).',
+                    'Advertencia'
+                );
+                $capsAActualizar++;
+                $planActualizar[] = [
+                    'capacitacion_id' => $capId,
+                    'codigo' => $codigo,
+                    'datos' => $payloadExcel,
+                ];
+                $accion = 'actualizar';
+            } else {
+                $capsExistentes++;
+                $accion = 'existente';
+            }
             $capsOk++;
             $planCaps[$codigo] = [
                 'codigo' => $codigo,
-                'accion' => 'existente',
-                'capacitacion_id' => (int)$existente['capacitacion_id'],
-                'horas' => $existente['duracion_estimada_horas'] !== null
-                    ? (float)$existente['duracion_estimada_horas']
-                    : null,
+                'accion' => $accion,
+                'capacitacion_id' => $capId,
+                'horas' => $horasExcel,
                 'evaluacion' => (int)($existente['evaluacion'] ?? 0) === 1,
                 'nota_minima' => round((float)($existente['nota_minima'] ?? 0), 2),
                 'vigencia_cantidad' => $existente['vigencia_cantidad'] !== null
@@ -522,9 +630,10 @@ class MigracionService
                 continue;
             }
             $pid = (int)$personaIds[$doc];
-            $capId = (int)$cap['capacitacion_id'];
-            $clave = $pid . '|' . $capId . '|' . $fecha;
-            if (isset($clavesArchivo[$clave])) {
+            $capId = (int)($cap['capacitacion_id'] ?? 0);
+            $claveCap = $capId > 0 ? (string)$capId : ('c:' . $codigo);
+            $claveArchivo = $pid . '|' . $claveCap . '|' . $fecha;
+            if (isset($clavesArchivo[$claveArchivo])) {
                 $agregar(
                     'SEGUIMIENTO_PERSONAL',
                     $fila,
@@ -538,20 +647,23 @@ class MigracionService
                 $eDuplicados++;
                 continue;
             }
-            $clavesArchivo[$clave] = true;
-            if (isset($mapaExistentes[$clave])) {
-                $agregar(
-                    'SEGUIMIENTO_PERSONAL',
-                    $fila,
-                    'cumplimiento',
-                    $doc,
-                    'fecha_realizacion',
-                    $fecha,
-                    'Registro duplicado. Ya existe una ejecución equivalente.',
-                    'Advertencia'
-                );
-                $eDuplicados++;
-                continue;
+            $clavesArchivo[$claveArchivo] = true;
+            if ($capId > 0) {
+                $claveSistema = $pid . '|' . $capId . '|' . $fecha;
+                if (isset($mapaExistentes[$claveSistema])) {
+                    $agregar(
+                        'SEGUIMIENTO_PERSONAL',
+                        $fila,
+                        'cumplimiento',
+                        $doc,
+                        'fecha_realizacion',
+                        $fecha,
+                        'Registro duplicado. Ya existe una ejecución equivalente.',
+                        'Advertencia'
+                    );
+                    $eDuplicados++;
+                    continue;
+                }
             }
             $cert = strtoupper(trim((string)($s['certificado'] ?? '')));
             if ($cert === 'SI' || $cert === 'SÍ') {
@@ -592,7 +704,14 @@ class MigracionService
                 count($trabajadores) - $personasOk,
                 $personasExistentes
             ),
-            'capacitaciones' => $this->bloqueConteo(count($caps), $capsOk, count($caps) - $capsOk, $capsExistentes),
+            'capacitaciones' => $this->bloqueConteo(
+                count($caps),
+                $capsOk,
+                count($caps) - $capsOk,
+                $capsExistentes,
+                $capsACrear,
+                $capsAActualizar
+            ),
             'matriz' => $this->bloqueConteo(count($matrizFilas), 0, 0, 0),
             'cumplimientos' => $this->bloqueConteo($eDetectados, $eOk, $eDetectados - $eOk - $eDuplicados, $eDuplicados),
             'omitidos_pendientes' => $pOmitidos,
@@ -607,6 +726,8 @@ class MigracionService
             'errores' => $this->contarSeveridad($inconsistencias, 'Error'),
             'advertencias' => $this->contarSeveridad($inconsistencias, 'Advertencia'),
             'plan' => [
+                'capacitaciones_crear' => $planCrear,
+                'capacitaciones_actualizar' => $planActualizar,
                 'cumplimientos' => $planE,
             ],
         ];
@@ -640,7 +761,48 @@ class MigracionService
         $cumpExistentes = 0;
         $docs = [];
         $codigos = [];
+        $capsCreadas = 0;
+        $capsActualizadas = 0;
+        $idsPorCodigo = [];
+        $capService = new CapacitacionService();
         $historial = new CumplimientoService();
+
+        foreach ($plan['capacitaciones_crear'] ?? [] as $alta) {
+            if (!is_array($alta)) {
+                continue;
+            }
+            $codigo = trim((string)($alta['codigo'] ?? ''));
+            if ($codigo === '') {
+                continue;
+            }
+            $codigos[$codigo] = true;
+            $ya = $this->capacitaciones->buscarPorCodigo($codigo);
+            if ($ya !== null) {
+                $idsPorCodigo[$codigo] = (int)$ya['capacitacion_id'];
+                continue;
+            }
+            $creada = $capService->crear($alta, (int)($usuarioId ?? 0), $actor);
+            $idsPorCodigo[$codigo] = (int)$creada['capacitacion_id'];
+            $capsCreadas++;
+        }
+
+        foreach ($plan['capacitaciones_actualizar'] ?? [] as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $codigo = trim((string)($item['codigo'] ?? ''));
+            $capId = (int)($item['capacitacion_id'] ?? 0);
+            $datos = is_array($item['datos'] ?? null) ? $item['datos'] : [];
+            if ($codigo !== '') {
+                $codigos[$codigo] = true;
+            }
+            if ($capId <= 0 || $datos === []) {
+                continue;
+            }
+            $capService->actualizar($capId, $datos, $actor);
+            $idsPorCodigo[$codigo] = $capId;
+            $capsActualizadas++;
+        }
 
         foreach ($plan['cumplimientos'] ?? [] as $item) {
             $doc = (string)($item['documento'] ?? '');
@@ -651,11 +813,22 @@ class MigracionService
             if ($codigo !== '') {
                 $codigos[$codigo] = true;
             }
+            $capId = (int)($item['capacitacion_id'] ?? 0);
+            if ($capId <= 0 && $codigo !== '' && isset($idsPorCodigo[$codigo])) {
+                $capId = $idsPorCodigo[$codigo];
+            }
+            if ($capId <= 0 && $codigo !== '') {
+                $encontrada = $this->capacitaciones->buscarPorCodigo($codigo);
+                if ($encontrada !== null) {
+                    $capId = (int)$encontrada['capacitacion_id'];
+                    $idsPorCodigo[$codigo] = $capId;
+                }
+            }
             try {
                 $historial->registrarHistorial(
                     [
                         'persona_id' => (int)($item['persona_id'] ?? 0),
-                        'capacitacion_id' => (int)($item['capacitacion_id'] ?? 0),
+                        'capacitacion_id' => $capId,
                         'fecha_realizacion' => (string)($item['fecha_realizacion'] ?? ''),
                         'nota_evaluacion' => $item['nota'] ?? null,
                         'horas_efectivas' => $item['horas'] ?? null,
@@ -680,6 +853,7 @@ class MigracionService
 
         $docsLista = array_keys($docs);
         $codigosLista = array_keys($codigos);
+        $capsImportadas = $capsCreadas + $capsActualizadas;
 
         return [
             'trabajadores' => [
@@ -690,8 +864,8 @@ class MigracionService
             ],
             'capacitaciones' => [
                 'procesados' => count($codigosLista),
-                'importados' => 0,
-                'existentes' => $this->contarCodigosEnSistema($codigosLista),
+                'importados' => $capsImportadas,
+                'existentes' => max(0, $this->contarCodigosEnSistema($codigosLista) - $capsCreadas),
                 'sistema' => $this->contarCodigosEnSistema($codigosLista),
             ],
             'matriz' => [
@@ -919,16 +1093,116 @@ class MigracionService
     }
 
     /**
-     * @return array{detectados:int,validos:int,inconsistencias:int,existentes:int}
+     * @return array{detectados:int,validos:int,inconsistencias:int,existentes:int,a_crear:int,a_actualizar:int}
      */
-    private function bloqueConteo(int $detectados, int $validos, int $inc, int $existentes): array
-    {
+    private function bloqueConteo(
+        int $detectados,
+        int $validos,
+        int $inc,
+        int $existentes,
+        int $aCrear = 0,
+        int $aActualizar = 0
+    ): array {
         return [
             'detectados' => $detectados,
             'validos' => $validos,
             'inconsistencias' => max(0, $inc),
             'existentes' => $existentes,
+            'a_crear' => $aCrear,
+            'a_actualizar' => $aActualizar,
         ];
+    }
+
+    /** @return array<string,int> */
+    private function mapaModalidadesPorNombre(): array
+    {
+        $mapa = [];
+        foreach ($this->repo->listarModalidades() as $fila) {
+            $nombre = strtoupper(trim((string)($fila['nombre'] ?? '')));
+            if ($nombre === '') {
+                continue;
+            }
+            $mapa[$nombre] = (int)$fila['modalidad_id'];
+        }
+
+        return $mapa;
+    }
+
+    /** @param array<string,int> $modalidadesPorNombre */
+    private function modalidadIdDesdeMetodologia(string $metodologia, array $modalidadesPorNombre): ?int
+    {
+        $texto = $this->normalizarTextoComparacion($metodologia);
+        $virtual = str_contains($texto, 'virtual');
+        $presencial = str_contains($texto, 'presencial');
+        $mixta = str_contains($texto, 'mixta') || ($virtual && $presencial);
+
+        if ($mixta) {
+            $clave = 'MIXTA';
+        } elseif ($virtual) {
+            $clave = 'VIRTUAL';
+        } elseif ($presencial) {
+            $clave = 'PRESENCIAL';
+        } else {
+            $clave = 'VIRTUAL';
+        }
+
+        return $modalidadesPorNombre[$clave] ?? null;
+    }
+
+    private function horasDesdeExcel(mixed $valor): float
+    {
+        if (is_int($valor) || is_float($valor)) {
+            $horas = (float)$valor;
+
+            return $horas > 0 ? $horas : 1.0;
+        }
+        $texto = trim(str_replace(',', '.', (string)$valor));
+        if ($texto !== '' && is_numeric($texto)) {
+            $horas = (float)$texto;
+
+            return $horas > 0 ? $horas : 1.0;
+        }
+
+        return 1.0;
+    }
+
+    /**
+     * @param array<string,mixed> $existente
+     * @param array<string,mixed> $payloadExcel
+     */
+    private function capacitacionDifiereDelExcel(array $existente, array $payloadExcel): bool
+    {
+        if (trim((string)($existente['nombre'] ?? '')) !== trim((string)($payloadExcel['nombre'] ?? ''))) {
+            return true;
+        }
+        if (trim((string)($existente['objetivo'] ?? '')) !== trim((string)($payloadExcel['objetivo'] ?? ''))) {
+            return true;
+        }
+        $temarioBd = trim((string)($existente['descripcion_temario'] ?? ''));
+        $temarioExcel = trim((string)($payloadExcel['descripcion_temario'] ?? ''));
+        if ($temarioBd !== $temarioExcel) {
+            return true;
+        }
+        $horasBd = (float)($existente['duracion_estimada_horas'] ?? 0);
+        $horasExcel = (float)($payloadExcel['duracion_estimada_horas'] ?? 0);
+        if (abs($horasBd - $horasExcel) > 0.001) {
+            return true;
+        }
+        $modalidadBd = (int)($existente['modalidad_default_id'] ?? 0);
+        $modalidadExcel = (int)($payloadExcel['modalidad_default_id'] ?? 0);
+
+        return $modalidadBd !== $modalidadExcel;
+    }
+
+    private function normalizarTextoComparacion(string $texto): string
+    {
+        $texto = mb_strtolower(trim($texto), 'UTF-8');
+        $texto = strtr($texto, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+            'ñ' => 'n',
+        ]);
+
+        return preg_replace('/\s+/', ' ', $texto) ?? $texto;
     }
 
     /** @param list<array<string,mixed>> $items */

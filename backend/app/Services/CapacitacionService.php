@@ -379,6 +379,15 @@ class CapacitacionService
      */
     private function aplicarReglasEvaluacion(array $datos, ?array $antes = null): array
     {
+        // Actualización parcial sin tocar evaluación: no reescribir nota_minima.
+        if (
+            $antes !== null
+            && !array_key_exists('evaluacion', $datos)
+            && !array_key_exists('nota_minima', $datos)
+        ) {
+            return $datos;
+        }
+
         $evaluacion = 0;
         if (array_key_exists('evaluacion', $datos)) {
             $evaluacion = (int)$datos['evaluacion'];

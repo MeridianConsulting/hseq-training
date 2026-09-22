@@ -130,6 +130,7 @@ class MigracionPrg10Parser
             if ($tema === '') {
                 continue;
             }
+            $temario = $this->celda($hoja, 6, $fila);
             $horas = $this->celda($hoja, 7, $fila);
             $objetivo = $this->celda($hoja, 8, $fila);
             $metodologia = $this->celda($hoja, 9, $fila);
@@ -140,6 +141,7 @@ class MigracionPrg10Parser
                 'codigo' => $codigo,
                 'nombre' => $tema,
                 'objetivo' => $objetivo !== '' ? $objetivo : $tema,
+                'temario' => $temario,
                 'horas' => $horas,
                 'metodologia' => $metodologia,
             ];

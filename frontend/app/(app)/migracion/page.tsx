@@ -143,7 +143,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Carga inicial de historial"
-        descripcion="Incorpora capacitaciones ya realizadas (fecha real + vigencia del catálogo) para alimentar alertas. No crea trabajadores, capacitaciones, matriz ni asignaciones futuras. HSEQ programa Fecha Desde/Hasta a mano."
+        descripcion="Incorpora capacitaciones ya realizadas (fecha real + vigencia del catálogo) para alimentar alertas. Al confirmar crea capacitaciones faltantes y actualiza las que diferan del Excel. No crea trabajadores, matriz ni asignaciones futuras. HSEQ programa Fecha Desde/Hasta a mano."
       />
       {error ? <Alert tono="error">{error}</Alert> : null}
       {mensaje ? <Alert tono="ok">{mensaje}</Alert> : null}
@@ -298,9 +298,10 @@ function Hojas({ resumen }: { resumen: Migracion["resumen"] }) {
 }
 
 function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
+  const caps = resumen?.capacitaciones;
   const filas: [string, ConteoMigracion | undefined][] = [
     ["Trabajadores (solo consulta a Personal Corporativo)", resumen?.trabajadores],
-    ["Capacitaciones (solo catálogo existente)", resumen?.capacitaciones],
+    ["Capacitaciones (crear / actualizar / sin cambio)", caps],
     ["Historial ejecutado (E)", resumen?.cumplimientos],
   ];
   const clas = resumen?.clasificacion;
@@ -316,6 +317,15 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
           No importables: <span className="font-semibold">{clas.no_importables}</span>
           {" · "}
           Duplicados: <span className="font-semibold">{clas.duplicados}</span>
+        </p>
+      ) : null}
+      {caps ? (
+        <p className="mb-3 text-sm text-slate-700">
+          Capacitaciones — a crear: <span className="font-semibold">{caps.a_crear ?? 0}</span>
+          {" · "}
+          a actualizar: <span className="font-semibold">{caps.a_actualizar ?? 0}</span>
+          {" · "}
+          sin cambio: <span className="font-semibold">{caps.existentes ?? 0}</span>
         </p>
       ) : null}
       <Table
@@ -350,7 +360,7 @@ function ResumenValidacion({ resumen }: { resumen: Migracion["resumen"] }) {
 function ConteosFinales({ conteos }: { conteos: Record<string, ConteoMigracion> }) {
   const filas: [string, string][] = [
     ["Trabajadores identificados", "trabajadores"],
-    ["Capacitaciones identificadas", "capacitaciones"],
+    ["Capacitaciones creadas/actualizadas", "capacitaciones"],
     ["Historial importado", "cumplimientos"],
   ];
   return (
@@ -378,8 +388,9 @@ function ConteosFinales({ conteos }: { conteos: Record<string, ConteoMigracion> 
         })}
       />
       <p className="mt-2 text-sm text-slate-500">
-        El historial alimenta vigencias y alertas. HSEQ asigna el futuro de forma manual. No se crearon
-        personas, capacitaciones, matriz ni programaciones pendientes.
+        El historial alimenta vigencias y alertas. Las capacitaciones faltantes se crearon y las
+        divergentes se actualizaron con datos del Excel. HSEQ asigna el futuro de forma manual. No se
+        crearon personas, matriz ni programaciones pendientes.
       </p>
     </div>
   );

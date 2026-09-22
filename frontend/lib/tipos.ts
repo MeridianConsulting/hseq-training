@@ -1068,6 +1068,8 @@ export type ConteoMigracion = {
   validos?: number;
   inconsistencias?: number;
   existentes?: number;
+  a_crear?: number;
+  a_actualizar?: number;
   excel?: number;
   importados?: number;
   rechazados?: number;

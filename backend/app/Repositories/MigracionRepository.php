@@ -55,4 +55,14 @@ class MigracionRepository
     {
         return $this->db->fetchAll('SELECT modalidad_id, nombre FROM modalidades WHERE activo = 1');
     }
+
+    public function buscarTipoCapacitacionPorNombre(string $nombre): ?array
+    {
+        return $this->db->fetch(
+            'SELECT tipo_capacitacion_id, nombre FROM tipos_capacitacion
+             WHERE activo = 1 AND UPPER(TRIM(nombre)) = UPPER(TRIM(?))
+             LIMIT 1',
+            [$nombre]
+        );
+    }
 }
