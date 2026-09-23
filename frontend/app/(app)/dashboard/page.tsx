@@ -131,25 +131,6 @@ function Contenido() {
       <PageHeader
         titulo="Panel de control"
         descripcion="Vista ejecutiva del programa: Asignaciones definen lo programado, Cronograma registra lo ejecutado, Cumplimientos consolida y el Panel presenta indicadores. Solo consulta."
-        acciones={
-          resumen ? (
-            <Card className="min-w-[11rem] py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Empleados
-              </p>
-              <dl className="mt-2 space-y-1 text-sm">
-                <div className="flex justify-between gap-6">
-                  <dt className="text-slate-600">Activos</dt>
-                  <dd className="font-semibold text-hseq-900">{resumen.poblacion.activos}</dd>
-                </div>
-                <div className="flex justify-between gap-6">
-                  <dt className="text-slate-600">Inactivos</dt>
-                  <dd className="font-semibold text-slate-700">{resumen.poblacion.inactivos}</dd>
-                </div>
-              </dl>
-            </Card>
-          ) : null
-        }
       />
 
       <BotonExportarFlotante
@@ -161,13 +142,6 @@ function Contenido() {
         {exportando ? "Generando…" : "Exportar PDF"}
       </BotonExportarFlotante>
 
-      <FiltroPeriodo
-        valor={filtro}
-        onChange={setFiltro}
-        procesos={resumen?.opciones.procesos ?? []}
-        proyectos={resumen?.opciones.proyectos ?? []}
-      />
-
       {error ? <Alert tono="error">{error}</Alert> : null}
 
       {cargando && !resumen ? (
@@ -176,8 +150,16 @@ function Contenido() {
 
       {resumen && cobertura && eficacia && horas ? (
         <>
-          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-            <div>
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-1.5 [&_.mb-3]:mb-0">
+                <FiltroPeriodo
+                  valor={filtro}
+                  onChange={setFiltro}
+                  procesos={resumen.opciones.procesos}
+                  proyectos={resumen.opciones.proyectos}
+                />
+              </div>
               <h1 className="text-lg font-semibold uppercase tracking-wide text-hseq-900">
                 Cumplimiento general
               </h1>
@@ -187,25 +169,48 @@ function Contenido() {
                 {cargando ? " · Actualizando…" : null}
               </p>
             </div>
-            {alertas ? (
-              <Card className="py-3 px-4">
+
+            <div className="flex flex-wrap items-stretch gap-3">
+              <Card className="min-w-[11rem] py-3 px-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Empleados
+                </p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between gap-6">
+                    <dt className="text-slate-600">Activos</dt>
+                    <dd className="font-semibold text-hseq-900">{resumen.poblacion.activos}</dd>
+                  </div>
+                  <div className="flex justify-between gap-6">
+                    <dt className="text-slate-600">Inactivos</dt>
+                    <dd className="font-semibold text-slate-700">{resumen.poblacion.inactivos}</dd>
+                  </div>
+                </dl>
+              </Card>
+
+              <Card className="min-w-[11rem] py-3 px-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Alertas (resumen)
                 </p>
-                <p className="mt-1 text-sm text-slate-700">
-                  <span className="font-semibold text-amber-700">{alertas.proximas}</span> próximas
-                  {" · "}
-                  <span className="font-semibold text-red-700">{alertas.vencidas}</span> vencidas
-                </p>
-                <Link
-                  href="/alertas"
-                  prefetch={false}
-                  className="mt-1 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
-                >
-                  Ver alertas
-                </Link>
+                {alertas ? (
+                  <>
+                    <p className="mt-2 text-sm text-slate-700">
+                      <span className="font-semibold text-amber-700">{alertas.proximas}</span> próximas
+                      {" · "}
+                      <span className="font-semibold text-red-700">{alertas.vencidas}</span> vencidas
+                    </p>
+                    <Link
+                      href="/alertas"
+                      prefetch={false}
+                      className="mt-1 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
+                    >
+                      Ver alertas
+                    </Link>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">Sin datos</p>
+                )}
               </Card>
-            ) : null}
+            </div>
           </div>
 
           <section className="mb-8">
