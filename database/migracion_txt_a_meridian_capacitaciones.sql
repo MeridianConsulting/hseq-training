@@ -977,12 +977,12 @@ INSERT IGNORE INTO `schema_migrations` (`migration`, `applied_at`) VALUES
 
 -- Datos: tipos_capacitacion
 INSERT INTO `tipos_capacitacion` (`tipo_capacitacion_id`, `nombre`, `descripcion`, `activo`, `created_at`, `updated_at`) VALUES
-(1, 'INDUCCION', 'Inducción al cargo / ingreso', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
-(2, 'REINDUCCION', 'Reinducción periódica', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
+(1, 'INDUCCION/REINDUCCION', 'Inducción / reinducción', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
+(2, 'REINDUCCION', 'Reinducción periódica', 0, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
 (3, 'OBLIGATORIA', 'Capacitación obligatoria del programa HSEQ', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
-(4, 'TECNICA', 'Capacitación técnica', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
+(4, 'TECNICA', 'Capacitación técnica', 0, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
 (5, 'TAREA CRITICA', 'Asociada a una tarea de alto riesgo', 0, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
-(6, 'BIENESTAR', 'Capacitación de bienestar', 1, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
+(6, 'BIENESTAR', 'Capacitación de bienestar', 0, '2026-08-27 19:01:25', '2026-09-10 20:00:15'),
 (7, 'CAPACITACION GENERAL', 'Capacitación general del programa HSEQ', 1, '2026-09-08 14:37:53', '2026-09-08 14:37:53')
 ON DUPLICATE KEY UPDATE
   `nombre` = VALUES(`nombre`),

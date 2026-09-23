@@ -710,9 +710,11 @@ class ReporteRepository
         } elseif ($tipo === 'tareas_criticas') {
             $condiciones[] = 'cap.es_tarea_critica = 1';
         } elseif ($tipo === 'inducciones') {
-            $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'INDUCCION' OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci = 'INDUCCION')";
+            $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'INDUCCION'"
+                . " OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci IN ('INDUCCION', 'INDUCCION/REINDUCCION'))";
         } elseif ($tipo === 'reinducciones') {
-            $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'REINDUCCION' OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci = 'REINDUCCION')";
+            $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'REINDUCCION'"
+                . " OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci IN ('REINDUCCION', 'INDUCCION/REINDUCCION'))";
         }
 
         $estado = isset($filtros['estado']) ? trim((string)$filtros['estado']) : '';

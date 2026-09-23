@@ -32,7 +32,7 @@ function siNo(valor: boolean): string {
   return valor ? "Sí" : "No";
 }
 
-function recortar(texto: string, max = 80): string {
+function recortar(texto: string, max = 120): string {
   const limpio = texto.trim();
   if (limpio.length <= max) return limpio || "—";
   return `${limpio.slice(0, max).trimEnd()}…`;
@@ -366,49 +366,62 @@ function Contenido() {
         <ListaCargando />
       ) : (
         <Table
+          compacta
           columnas={[
-            { clave: "codigo", etiqueta: "Código" },
-            { clave: "nombre", etiqueta: "Nombre" },
-            { clave: "objetivo", etiqueta: "Objetivo" },
-            { clave: "duracion", etiqueta: "Duración (h)" },
-            { clave: "tipo", etiqueta: "Tipo" },
-            { clave: "modalidad", etiqueta: "Modalidad" },
-            { clave: "vigencia", etiqueta: "Vigencia" },
-            { clave: "critica", etiqueta: "Tarea crítica" },
-            { clave: "evaluacion", etiqueta: "Evaluación" },
-            { clave: "nota", etiqueta: "Nota mínima" },
-            { clave: "asistencia", etiqueta: "Asistencia" },
-            { clave: "certificado", etiqueta: "Certificado" },
-            { clave: "estado", etiqueta: "Estado" },
-            { clave: "acciones", etiqueta: "" },
+            { clave: "codigo", etiqueta: "Código", clase: "w-[6.5rem]" },
+            { clave: "nombre", etiqueta: "Capacitación", clase: "w-[15rem] max-w-[15rem]" },
+            { clave: "duracion", etiqueta: "Horas", clase: "w-[3.5rem]" },
+            { clave: "tipo", etiqueta: "Tipo", clase: "whitespace-nowrap" },
+            { clave: "modalidad", etiqueta: "Modalidad", clase: "whitespace-nowrap" },
+            { clave: "vigencia", etiqueta: "Vigencia", clase: "whitespace-nowrap" },
+            { clave: "flags", etiqueta: "Requisitos", clase: "min-w-[8rem]" },
+            { clave: "estado", etiqueta: "Estado", clase: "whitespace-nowrap" },
+            { clave: "acciones", etiqueta: "", clase: "w-[1%]" },
           ]}
           filas={items.map((item) => [
-            item.codigo,
-            item.nombre,
-            recortar(item.objetivo ?? ""),
-            item.duracion_estimada_horas,
+            <span key="c" className="font-mono text-xs text-slate-800">
+              {item.codigo}
+            </span>,
+            <div key="n" className="max-w-[15rem]">
+              <p className="font-medium leading-snug text-slate-900">{item.nombre}</p>
+              <p className="mt-0.5 break-words text-xs leading-snug text-slate-500 line-clamp-2">
+                {recortar(item.objetivo ?? "", 110)}
+              </p>
+              {item.es_tarea_critica ? (
+                <span className="mt-1 inline-block">
+                  <Badge tono="alto">Tarea crítica</Badge>
+                </span>
+              ) : null}
+            </div>,
+            item.duracion_estimada_horas ?? "—",
             item.tipo_nombre ?? "—",
             item.modalidad_nombre ?? "—",
             humanizarNombreUnidad(item.vigencia_nombre) || "No vence",
-            siNo(item.es_tarea_critica),
-            siNo(item.evaluacion),
-            item.evaluacion ? (item.nota_minima ?? "—") : "No aplica",
-            siNo(item.requiere_listado_asistencia),
-            siNo(item.certificado),
+            <span key="f" className="block max-w-[9rem] text-xs leading-snug text-slate-600">
+              Eval. {siNo(item.evaluacion)}
+              {item.evaluacion ? ` · nota ${item.nota_minima ?? "—"}` : ""}
+              <br />
+              Asist. {siNo(item.requiere_listado_asistencia)} · Cert. {siNo(item.certificado)}
+            </span>,
             <Badge key="e" tono={item.estado === "ACTIVA" ? "ok" : "neutral"}>
               {item.estado === "ACTIVA" ? "Activa" : "Inactiva"}
             </Badge>,
-            <div key="a" className="flex justify-end gap-2">
+            <div key="a" className="flex justify-end gap-1">
               {puede("capacitaciones.editar") ? (
-                <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)}>
+                <Button type="button" variante="ghost" onClick={() => abrirEdicion(item)} title="Editar">
                   <Pencil className="h-4 w-4" aria-hidden />
-                  Editar
+                  <span className="sr-only">Editar</span>
                 </Button>
               ) : null}
               {puede("capacitaciones.eliminar") ? (
-                <Button type="button" variante="ghost" onClick={() => void eliminar(item)}>
+                <Button
+                  type="button"
+                  variante="ghost"
+                  onClick={() => void eliminar(item)}
+                  title="Eliminar / desactivar"
+                >
                   <Trash2 className="h-4 w-4" aria-hidden />
-                  Eliminar / desactivar
+                  <span className="sr-only">Eliminar / desactivar</span>
                 </Button>
               ) : null}
             </div>,

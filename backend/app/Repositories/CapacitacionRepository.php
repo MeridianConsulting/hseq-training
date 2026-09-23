@@ -144,6 +144,20 @@ class CapacitacionRepository
         return $fila !== null && (int)($fila['activo'] ?? 0) === 1;
     }
 
+    public function nombreTipoCapacitacion(int $tipoId): ?string
+    {
+        if ($tipoId <= 0) {
+            return null;
+        }
+
+        $fila = $this->db->fetch(
+            'SELECT nombre FROM tipos_capacitacion WHERE tipo_capacitacion_id = ? LIMIT 1',
+            [$tipoId]
+        );
+
+        return $fila !== null && isset($fila['nombre']) ? (string)$fila['nombre'] : null;
+    }
+
     public function crear(array $datos): int
     {
         return (int)$this->db->insert('capacitaciones', $datos);
@@ -178,7 +192,7 @@ class CapacitacionRepository
     }
 
     /**
-     * Cursos ACTIVA cuyo tipo normalizado es INDUCCION o REINDUCCION.
+     * Cursos ACTIVA cuyo tipo normalizado es INDUCCION, REINDUCCION o INDUCCION/REINDUCCION.
      *
      * @return list<array{
      *   capacitacion_id:int,
@@ -229,6 +243,9 @@ class CapacitacionRepository
     private function origenEspecial(mixed $nombre): ?string
     {
         $tipo = self::normalizarTipoNombre(is_string($nombre) ? $nombre : null);
+        if ($tipo === 'INDUCCION/REINDUCCION') {
+            return 'INDUCCION';
+        }
         if ($tipo === 'INDUCCION' || $tipo === 'REINDUCCION') {
             return $tipo;
         }

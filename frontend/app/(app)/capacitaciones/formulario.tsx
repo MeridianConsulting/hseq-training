@@ -61,6 +61,53 @@ function desdeItem(item: Capacitacion): DatosCapacitacion {
   };
 }
 
+function normalizarTipoNombre(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Tipos del formulario: inducción/reinducción, obligatoria y capacitación general.
+ * Bienestar, técnica, reinducción suelta y tarea crítica quedan en BD (no se borran);
+ * no se listan aquí para no ofrecerlos al crear/editar.
+ */
+function tiposCapacitacionFormulario(items: ItemCatalogo[]): ItemCatalogo[] {
+  const salida: ItemCatalogo[] = [];
+  let yaInduccion = false;
+
+  for (const item of items) {
+    const n = normalizarTipoNombre(String(item.nombre ?? ""));
+    if (n === "CAPACITACION GENERAL" || n === "OBLIGATORIA") {
+      salida.push(item);
+      continue;
+    }
+    if (n === "INDUCCION/REINDUCCION" || n === "INDUCCION") {
+      if (yaInduccion) {
+        continue;
+      }
+      yaInduccion = true;
+      salida.push({ ...item, nombre: "INDUCCION/REINDUCCION" });
+    }
+  }
+
+  return salida;
+}
+
+function nombreTipoSeleccionado(tipoId: string, tipos: ItemCatalogo[]): string {
+  const item = tipos.find((t) => String(t.tipo_capacitacion_id) === tipoId);
+  return item ? normalizarTipoNombre(String(item.nombre ?? "")) : "";
+}
+
+/** Vigencia solo se oculta en capacitación general. */
+function tipoMuestraVigencia(tipoId: string, tipos: ItemCatalogo[]): boolean {
+  const n = nombreTipoSeleccionado(tipoId, tipos);
+  return n !== "" && n !== "CAPACITACION GENERAL";
+}
+
 function opciones(items: ItemCatalogo[], pk: string) {
   return items.map((item) => (
     <option key={String(item[pk])} value={String(item[pk])}>
@@ -135,14 +182,18 @@ export function FormularioCapacitacion({
   const [errores, setErrores] = useState<ErroresCapacitacion>({});
 
   const catalogosVisibles = useMemo(() => {
+    const tiposBase = tiposCapacitacionFormulario(catalogos["tipos-capacitacion"] ?? []);
     if (!inicial) {
-      return catalogos;
+      return {
+        ...catalogos,
+        "tipos-capacitacion": tiposBase,
+      };
     }
 
     return {
       ...catalogos,
       "tipos-capacitacion": conValorHistorico(
-        catalogos["tipos-capacitacion"] ?? [],
+        tiposBase,
         "tipo_capacitacion_id",
         inicial.tipo_capacitacion_id,
         inicial.tipo_nombre,
@@ -161,6 +212,9 @@ export function FormularioCapacitacion({
       ),
     };
   }, [catalogos, inicial]);
+
+  const tiposVisibles = catalogosVisibles["tipos-capacitacion"] ?? [];
+  const muestraVigencia = tipoMuestraVigencia(datos.tipo_capacitacion_id, tiposVisibles);
 
   useEffect(() => {
     if (!erroresApi) {
@@ -184,14 +238,28 @@ export function FormularioCapacitacion({
     setErrores((prev) => ({ ...prev, [clave]: undefined }));
   }
 
+  function cambiarTipo(tipoId: string) {
+    setDatos((prev) => {
+      const siguiente = { ...prev, tipo_capacitacion_id: tipoId };
+      if (!tipoMuestraVigencia(tipoId, tiposVisibles)) {
+        siguiente.vigencia_id = "";
+      }
+      return siguiente;
+    });
+    setErrores((prev) => ({ ...prev, tipo_capacitacion_id: undefined, vigencia_id: undefined }));
+  }
+
   function enviar(evento: FormEvent) {
-    const locales = validarDatosCapacitacion(datos);
+    const payload: DatosCapacitacion = muestraVigencia
+      ? datos
+      : { ...datos, vigencia_id: "" };
+    const locales = validarDatosCapacitacion(payload);
     setErrores(locales);
     if (Object.keys(locales).length > 0) {
       evento.preventDefault();
       return;
     }
-    void onGuardar(evento, datos);
+    void onGuardar(evento, payload);
   }
 
   return (
@@ -230,10 +298,10 @@ export function FormularioCapacitacion({
         <select
           className={inputClass}
           value={datos.tipo_capacitacion_id}
-          onChange={(e) => set("tipo_capacitacion_id", e.target.value)}
+          onChange={(e) => cambiarTipo(e.target.value)}
         >
           <option value="">Seleccione…</option>
-          {opciones(catalogosVisibles["tipos-capacitacion"] ?? [], "tipo_capacitacion_id")}
+          {opciones(tiposVisibles, "tipo_capacitacion_id")}
         </select>
       </Field>
       <Field etiqueta="Modalidad" error={errores.modalidad_default_id}>
@@ -246,12 +314,14 @@ export function FormularioCapacitacion({
           {opciones(catalogosVisibles.modalidades ?? [], "modalidad_id")}
         </select>
       </Field>
-      <Field etiqueta="Vigencia" error={errores.vigencia_id}>
-        <select className={inputClass} value={datos.vigencia_id} onChange={(e) => set("vigencia_id", e.target.value)}>
-          <option value="">No vence</option>
-          {opciones(catalogosVisibles.vigencias ?? [], "vigencia_id")}
-        </select>
-      </Field>
+      {muestraVigencia ? (
+        <Field etiqueta="Vigencia" error={errores.vigencia_id}>
+          <select className={inputClass} value={datos.vigencia_id} onChange={(e) => set("vigencia_id", e.target.value)}>
+            <option value="">No vence</option>
+            {opciones(catalogosVisibles.vigencias ?? [], "vigencia_id")}
+          </select>
+        </Field>
+      ) : null}
       <Field etiqueta="Tarea crítica">
         <select
           className={inputClass}
@@ -288,17 +358,7 @@ export function FormularioCapacitacion({
           />
         </Field>
       ) : null}
-      <Field etiqueta="Requiere lista de asistencia">
-        <select
-          className={inputClass}
-          value={datos.requiere_listado_asistencia ? "1" : "0"}
-          onChange={(e) => set("requiere_listado_asistencia", e.target.value === "1")}
-        >
-          <option value="0">No</option>
-          <option value="1">Sí</option>
-        </select>
-      </Field>
-      <Field etiqueta="Requiere certificado">
+      <Field etiqueta="Certificado">
         <select
           className={inputClass}
           value={datos.certificado ? "1" : "0"}
@@ -308,23 +368,32 @@ export function FormularioCapacitacion({
           <option value="1">Sí</option>
         </select>
       </Field>
-      {inicial ? (
-        <Field etiqueta="Estado" error={errores.estado}>
-          <select
-            className={inputClass}
-            value={datos.estado}
-            onChange={(e) => set("estado", e.target.value as DatosCapacitacion["estado"])}
-          >
-            <option value="ACTIVA">Activa</option>
-            <option value="INACTIVA">Inactiva</option>
-          </select>
-        </Field>
-      ) : null}
-      <div className="flex justify-end gap-2 sm:col-span-2">
-        <Button type="button" variante="secondary" onClick={onCancelar}>
+      <Field etiqueta="Requiere listado de asistencia">
+        <select
+          className={inputClass}
+          value={datos.requiere_listado_asistencia ? "1" : "0"}
+          onChange={(e) => set("requiere_listado_asistencia", e.target.value === "1")}
+        >
+          <option value="0">No</option>
+          <option value="1">Sí</option>
+        </select>
+      </Field>
+      <Field etiqueta="Estado" error={errores.estado}>
+        <select
+          className={inputClass}
+          value={datos.estado}
+          onChange={(e) => set("estado", e.target.value as DatosCapacitacion["estado"])}
+        >
+          <option value="ACTIVA">Activa</option>
+          <option value="INACTIVA">Inactiva</option>
+        </select>
+      </Field>
+
+      <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
+        <Button type="button" variante="secundario" onClick={onCancelar}>
           Cancelar
         </Button>
-        <Button type="submit">Guardar capacitación</Button>
+        <Button type="submit">Guardar</Button>
       </div>
     </form>
   );

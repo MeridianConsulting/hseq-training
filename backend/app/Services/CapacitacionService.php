@@ -153,6 +153,7 @@ class CapacitacionService
 
         $this->validarFks($datos);
         $this->exigirTipoYModalidad($datos);
+        $datos = $this->aplicarVigenciaSegunTipo($datos);
         $datos = $this->aplicarReglasEvaluacion($datos);
 
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
@@ -191,6 +192,7 @@ class CapacitacionService
 
         $this->validarFks($datos);
         $this->exigirTipoYModalidad($datos);
+        $datos = $this->aplicarVigenciaSegunTipo($datos, $antes);
         $datos = $this->aplicarReglasEvaluacion($datos, $antes);
 
         if ($datos === []) {
@@ -416,6 +418,35 @@ class CapacitacionService
         if (array_key_exists('modalidad_default_id', $datos) && empty($datos['modalidad_default_id'])) {
             throw new HttpException('La modalidad es obligatoria.', 422);
         }
+    }
+
+    /**
+     * Capacitación general no lleva vigencia: fuerza null aunque venga en el payload.
+     *
+     * @param array<string,mixed> $datos
+     * @param array<string,mixed>|null $antes
+     * @return array<string,mixed>
+     */
+    private function aplicarVigenciaSegunTipo(array $datos, ?array $antes = null): array
+    {
+        $tipoId = null;
+        if (array_key_exists('tipo_capacitacion_id', $datos) && $datos['tipo_capacitacion_id'] !== null && $datos['tipo_capacitacion_id'] !== '') {
+            $tipoId = (int)$datos['tipo_capacitacion_id'];
+        } elseif ($antes !== null && !empty($antes['tipo_capacitacion_id'])) {
+            $tipoId = (int)$antes['tipo_capacitacion_id'];
+        }
+
+        if ($tipoId === null || $tipoId <= 0) {
+            return $datos;
+        }
+
+        $nombre = $this->repo->nombreTipoCapacitacion($tipoId);
+        $normalizado = CapacitacionRepository::normalizarTipoNombre($nombre);
+        if ($normalizado === 'CAPACITACION GENERAL') {
+            $datos['vigencia_id'] = null;
+        }
+
+        return $datos;
     }
 
     private function validarFks(array $datos): void
