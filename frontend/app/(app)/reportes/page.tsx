@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { BotonExportarFlotante } from "@/components/ui/boton-exportar-flotante";
 import { Button } from "@/components/ui/button";
 import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
@@ -45,14 +46,11 @@ const TIPOS_DETALLE = [
   "cumplimiento_general",
   "vencidas",
   "pendientes",
-  "inducciones",
-  "reinducciones",
   "tareas_criticas",
 ];
 
 const TIPOS_AGREGADOS = [
   "cumplimiento_trabajador",
-  "cumplimiento_cargo",
   "cumplimiento_proceso",
   "cumplimiento_proyecto",
 ];
@@ -159,9 +157,8 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
       { clave: "porcentaje", etiqueta: "% cumplimiento" },
     ];
   }
-  if (tipo === "cumplimiento_cargo" || tipo === "cumplimiento_proceso" || tipo === "cumplimiento_proyecto") {
-    const grupo =
-      tipo === "cumplimiento_cargo" ? "Cargo" : tipo === "cumplimiento_proceso" ? "Proceso" : "Proyecto";
+  if (tipo === "cumplimiento_proceso" || tipo === "cumplimiento_proyecto") {
+    const grupo = tipo === "cumplimiento_proceso" ? "Proceso" : "Proyecto";
     return [
       { clave: "grupo", etiqueta: grupo },
       { clave: "programadas", etiqueta: "Programadas" },
@@ -181,18 +178,6 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
       { clave: "proyecto", etiqueta: "Proyecto" },
       { clave: "fecha_realizacion", etiqueta: "Fecha de realización" },
       { clave: "horas_efectivas", etiqueta: "Horas" },
-    ];
-  }
-  if (tipo === "asistencia") {
-    return [
-      { clave: "documento", etiqueta: "Documento" },
-      { clave: "trabajador", etiqueta: "Trabajador" },
-      { clave: "capacitacion", etiqueta: "Capacitación" },
-      { clave: "fecha", etiqueta: "Fecha" },
-      { clave: "hora", etiqueta: "Hora" },
-      { clave: "modalidad", etiqueta: "Modalidad" },
-      { clave: "estado_asistencia", etiqueta: "Asistencia" },
-      { clave: "motivo_ausencia", etiqueta: "Motivo" },
     ];
   }
   if (tipo === "evidencias_faltantes") {
@@ -232,12 +217,6 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
     { clave: "oportunidad", etiqueta: "Oportunidad" },
     { clave: "fecha_vencimiento", etiqueta: "Vencimiento" },
   ];
-  if (tipo === "inducciones") {
-    cols.splice(2, 0, { clave: "fecha_ingreso", etiqueta: "Ingreso" });
-  }
-  if (tipo === "reinducciones") {
-    cols.push({ clave: "periodicidad", etiqueta: "Periodicidad" });
-  }
   if (tipo === "tareas_criticas" || tipo === "cumplimiento_general") {
     cols.push({ clave: "es_tarea_critica", etiqueta: "Crítica" });
   }
@@ -492,9 +471,6 @@ function Contenido() {
     if (tipo === "cumplimiento_trabajador" && item.persona_id_ext) {
       extras.persona_id = Number(item.persona_id_ext);
       tituloDrill = `Detalle — ${texto(item.trabajador)}`;
-    } else if (tipo === "cumplimiento_cargo" && item.grupo_id != null && item.grupo_id !== "") {
-      extras.cargo_id_ext = Number(item.grupo_id);
-      tituloDrill = `Detalle — ${texto(item.grupo)}`;
     } else if (tipo === "cumplimiento_proceso" && item.grupo_id != null && item.grupo_id !== "") {
       extras.proceso_id = Number(item.grupo_id);
       tituloDrill = `Detalle — ${texto(item.grupo)}`;
@@ -571,8 +547,6 @@ function Contenido() {
     "cumplimiento_general",
     "cumplimiento_trabajador",
     "tareas_criticas",
-    "inducciones",
-    "reinducciones",
     "historial_trabajador",
   ].includes(tipo);
   const muestraPeriodo = tipo !== "proximas";
@@ -582,13 +556,15 @@ function Contenido() {
       <PageHeader
         titulo="Reportes"
         descripcion={titulo}
-        acciones={
-          <Button onClick={() => void exportar()} disabled={exportando || total === 0}>
-            <Download className="h-4 w-4" aria-hidden />
-            {exportando ? "Exportando…" : "Exportar Excel"}
-          </Button>
-        }
       />
+      <BotonExportarFlotante
+        onClick={() => void exportar()}
+        disabled={exportando || total === 0}
+        title="Exportar reporte a Excel"
+      >
+        <Download className="h-4 w-4 shrink-0" aria-hidden />
+        {exportando ? "Exportando…" : "Exportar Excel"}
+      </BotonExportarFlotante>
       {error ? <Alert tono="error">{error}</Alert> : null}
       {aviso ? <Alert tono="aviso">{aviso}</Alert> : null}
 
@@ -855,13 +831,6 @@ function Contenido() {
             <>
               <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
               <Tarjeta etiqueta="Total horas" valor={totales.horas.toFixed(2)} />
-            </>
-          ) : tipo === "asistencia" ? (
-            <>
-              <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />
-              <Tarjeta etiqueta="Asistieron" valor={String(totales.asistieron ?? 0)} />
-              <Tarjeta etiqueta="Tarde" valor={String(totales.tarde ?? 0)} />
-              <Tarjeta etiqueta="Ausentes" valor={String(totales.ausentes ?? 0)} />
             </>
           ) : tipo === "evidencias_faltantes" || tipo === "proximas" ? (
             <Tarjeta etiqueta="Registros" valor={String(totales.asignadas)} />

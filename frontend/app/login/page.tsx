@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -101,15 +102,16 @@ export default function LoginPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 pr-28 text-sm outline-none transition focus:border-hseq-600 focus:ring-2 focus:ring-hseq-100"
                   placeholder="••••••••"
                 />
-                <button
+                <Button
                   type="button"
+                  variante="ghost"
                   onClick={() => setMostrarPassword((valor) => !valor)}
-                  className="absolute inset-y-0 right-2 my-auto inline-flex items-center gap-1 rounded-md px-2 text-xs font-medium text-hseq-700 hover:bg-hseq-50"
+                  className="absolute inset-y-0 right-2 my-auto !px-2 !py-1 text-xs"
                   aria-label={mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {mostrarPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
                   {mostrarPassword ? "Ocultar" : "Mostrar"}
-                </button>
+                </Button>
               </div>
             </label>
 
@@ -119,14 +121,14 @@ export default function LoginPage() {
               </p>
             ) : null}
 
-            <button
+            <Button
               type="submit"
               disabled={enviando || !listo}
-              className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-hseq-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-hseq-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-auto w-full py-3"
             >
               <LogIn className="h-4 w-4" aria-hidden />
               {enviando ? "Ingresando..." : "Ingresar"}
-            </button>
+            </Button>
           </form>
         </div>
       </div>

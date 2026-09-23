@@ -26,6 +26,21 @@ class PermisoMiddleware
             $permisos = [];
         }
 
+        $rol = strtolower(trim((string)($usuario['rol'] ?? '')));
+        if (in_array($rol, ['admin', 'administrador', 'administrador hseq'], true)) {
+            return;
+        }
+
+        $roles = $usuario['roles'] ?? [];
+        if (is_array($roles)) {
+            foreach ($roles as $r) {
+                $nombre = strtolower(trim((string)(is_array($r) ? ($r['nombre'] ?? '') : $r)));
+                if ($nombre === 'administrador hseq' || $nombre === 'admin') {
+                    return;
+                }
+            }
+        }
+
         if (!in_array($this->permiso, $permisos, true)) {
             Response::forbidden('No tiene permiso para realizar esta acción.');
         }

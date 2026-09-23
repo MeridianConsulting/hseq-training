@@ -10,12 +10,10 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const clases: Record<Variante, string> = {
-  primary:
-    "bg-hseq-800 text-white hover:bg-hseq-700 disabled:opacity-60",
-  secondary:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60",
-  ghost: "text-hseq-700 hover:bg-hseq-50 disabled:opacity-60",
-  danger: "bg-red-700 text-white hover:bg-red-800 disabled:opacity-60",
+  primary: "btn-ui btn-ui-primary",
+  secondary: "btn-ui btn-ui-secondary",
+  ghost: "btn-ui btn-ui-ghost",
+  danger: "btn-ui btn-ui-danger",
 };
 
 export function Button({ variante = "primary", className = "", children, ...rest }: Props) {

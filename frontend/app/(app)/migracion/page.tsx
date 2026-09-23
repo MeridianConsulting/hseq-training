@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { BotonExportarFlotante } from "@/components/ui/boton-exportar-flotante";
 import { Button } from "@/components/ui/button";
 import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
@@ -202,10 +203,6 @@ function Contenido() {
           ) : null}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variante="secondary" onClick={() => void descargarReporte()}>
-              <Download className="h-4 w-4" aria-hidden />
-              Descargar reporte de inconsistencias
-            </Button>
             {pendiente ? (
               <>
                 <Button type="button" variante="danger" disabled={cancelando} onClick={() => void cancelar()}>
@@ -231,6 +228,15 @@ function Contenido() {
               </>
             ) : null}
           </div>
+
+          <BotonExportarFlotante
+            type="button"
+            onClick={() => void descargarReporte()}
+            title="Descargar reporte de inconsistencias"
+          >
+            <Download className="h-4 w-4 shrink-0" aria-hidden />
+            Descargar reporte
+          </BotonExportarFlotante>
 
           {!estructuraOk && pendiente ? (
             <Alert tono="aviso">

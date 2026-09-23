@@ -13,7 +13,9 @@ use App\Repositories\SoporteRepository;
 use DateTimeImmutable;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ReporteService
@@ -24,16 +26,12 @@ class ReporteService
     public const TIPOS = [
         'cumplimiento_general',
         'cumplimiento_trabajador',
-        'cumplimiento_cargo',
         'cumplimiento_proceso',
         'cumplimiento_proyecto',
         'vencidas',
         'proximas',
         'pendientes',
         'horas',
-        'asistencia',
-        'inducciones',
-        'reinducciones',
         'tareas_criticas',
         'evidencias_faltantes',
         'historial_trabajador',
@@ -173,6 +171,12 @@ class ReporteService
         }
         $fila++;
 
+        $fila = $this->escribirBloqueResumen(
+            $hoja,
+            $fila,
+            $this->paresResumenExcel($tipo, $total, $totales)
+        );
+
         $colIndex = 1;
         foreach ($columnas as $col) {
             $hoja->setCellValueByColumnAndRow($colIndex, $fila, $col['etiqueta']);
@@ -180,7 +184,6 @@ class ReporteService
         }
         $ultimaCol = Coordinate::stringFromColumnIndex(count($columnas));
         $hoja->getStyle('A' . $fila . ':' . $ultimaCol . $fila)->getFont()->setBold(true);
-        $inicioDatos = $fila + 1;
 
         foreach ($items as $item) {
             $fila++;
@@ -208,53 +211,12 @@ class ReporteService
             }
         }
 
-        $fila += 2;
-        $hoja->setCellValue('A' . $fila, 'TOTAL REGISTROS');
-        $hoja->setCellValue('B' . $fila, $total);
-        $fila++;
-        if ($tipo === 'horas') {
-            $hoja->setCellValue('A' . $fila, 'TOTAL HORAS');
-            $hoja->setCellValue('B' . $fila, $totales['horas']);
-            $hoja->getStyle('B' . $fila)->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_00);
-        } elseif ($tipo === 'asistencia') {
-            $hoja->setCellValue('A' . $fila, 'ASISTIERON');
-            $hoja->setCellValue('B' . $fila, $totales['asistieron'] ?? 0);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'TARDE');
-            $hoja->setCellValue('B' . $fila, $totales['tarde'] ?? 0);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'AUSENTES');
-            $hoja->setCellValue('B' . $fila, $totales['ausentes'] ?? 0);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'CONVOCADOS');
-            $hoja->setCellValue('B' . $fila, $totales['convocados'] ?? 0);
-        } elseif (!in_array($tipo, ['evidencias_faltantes', 'proximas'], true)) {
-            $hoja->setCellValue('A' . $fila, 'PROGRAMADAS');
-            $hoja->setCellValue('B' . $fila, $totales['programadas'] ?? $totales['asignadas']);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'EJECUTADAS');
-            $hoja->setCellValue('B' . $fila, $totales['ejecutadas'] ?? $totales['completadas']);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'PENDIENTES');
-            $hoja->setCellValue('B' . $fila, $totales['pendientes']);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'VENCIDAS / FUERA DE PLAZO');
-            $hoja->setCellValue('B' . $fila, $totales['vencidas']);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, 'EJECUTADAS FUERA DE TIEMPO');
-            $hoja->setCellValue('B' . $fila, $totales['ejecutadas_fuera_de_tiempo'] ?? 0);
-            $fila++;
-            $hoja->setCellValue('A' . $fila, '% CUMPLIMIENTO');
-            $hoja->setCellValue('B' . $fila, $totales['porcentaje'] === null ? '—' : $totales['porcentaje']);
-        }
-
         $hoja->getColumnDimension('A')->setWidth(28);
         $hoja->getColumnDimension('B')->setWidth(36);
         for ($i = 3; $i <= max(3, count($columnas)); $i++) {
             $hoja->getColumnDimensionByColumn($i)->setWidth(18);
         }
 
-        unset($inicioDatos);
         $escritor = new Xlsx($libro);
         ob_start();
         $escritor->save('php://output');
@@ -1056,6 +1018,17 @@ class ReporteService
         }
         $fila++;
 
+        $totales = $resultado['totales'];
+        $fila = $this->escribirBloqueResumen(
+            $hoja,
+            $fila,
+            $this->paresResumenExcel(
+                'historial_trabajador',
+                (int)($totales['asignadas'] ?? 0),
+                $totales
+            )
+        );
+
         $hoja->setCellValue('A' . $fila, 'HISTORIAL DE CARGO');
         $hoja->getStyle('A' . $fila)->getFont()->setBold(true);
         $fila++;
@@ -1117,29 +1090,6 @@ class ReporteService
                 $colIndex++;
             }
         }
-
-        $totales = $resultado['totales'];
-        $fila += 2;
-        $hoja->setCellValue('A' . $fila, 'TOTAL REGISTROS');
-        $hoja->setCellValue('B' . $fila, $totales['asignadas']);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, 'PROGRAMADAS');
-        $hoja->setCellValue('B' . $fila, $totales['programadas'] ?? $totales['asignadas']);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, 'EJECUTADAS');
-        $hoja->setCellValue('B' . $fila, $totales['ejecutadas'] ?? $totales['completadas']);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, 'PENDIENTES');
-        $hoja->setCellValue('B' . $fila, $totales['pendientes']);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, 'VENCIDAS / FUERA DE PLAZO');
-        $hoja->setCellValue('B' . $fila, $totales['vencidas']);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, 'EJECUTADAS FUERA DE TIEMPO');
-        $hoja->setCellValue('B' . $fila, $totales['ejecutadas_fuera_de_tiempo'] ?? 0);
-        $fila++;
-        $hoja->setCellValue('A' . $fila, '% CUMPLIMIENTO');
-        $hoja->setCellValue('B' . $fila, $totales['porcentaje'] === null ? '—' : $totales['porcentaje']);
 
         $hoja->getColumnDimension('A')->setWidth(28);
         $hoja->getColumnDimension('B')->setWidth(36);
@@ -1440,5 +1390,97 @@ class ReporteService
         }
 
         return $p[2] . '/' . $p[1] . '/' . $p[0];
+    }
+
+    /**
+     * @param array<string,mixed> $totales
+     * @return list<array{etiqueta:string,valor:mixed,decimal?:bool}>
+     */
+    private function paresResumenExcel(string $tipo, int $totalRegistros, array $totales): array
+    {
+        if ($tipo === 'horas') {
+            return [
+                ['etiqueta' => 'Total registros', 'valor' => $totalRegistros],
+                ['etiqueta' => 'Total horas', 'valor' => $totales['horas'] ?? 0, 'decimal' => true],
+            ];
+        }
+
+        if ($tipo === 'asistencia') {
+            return [
+                ['etiqueta' => 'Total registros', 'valor' => $totalRegistros],
+                ['etiqueta' => 'Asistieron', 'valor' => $totales['asistieron'] ?? 0],
+                ['etiqueta' => 'Tarde', 'valor' => $totales['tarde'] ?? 0],
+                ['etiqueta' => 'Ausentes', 'valor' => $totales['ausentes'] ?? 0],
+                ['etiqueta' => 'Convocados', 'valor' => $totales['convocados'] ?? 0],
+            ];
+        }
+
+        if (in_array($tipo, ['evidencias_faltantes', 'proximas'], true)) {
+            return [
+                ['etiqueta' => 'Total registros', 'valor' => $totalRegistros],
+            ];
+        }
+
+        return [
+            ['etiqueta' => 'Total registros', 'valor' => $totalRegistros],
+            ['etiqueta' => 'Programadas', 'valor' => $totales['programadas'] ?? $totales['asignadas'] ?? 0],
+            ['etiqueta' => 'Ejecutadas', 'valor' => $totales['ejecutadas'] ?? $totales['completadas'] ?? 0],
+            ['etiqueta' => 'Pendientes', 'valor' => $totales['pendientes'] ?? 0],
+            ['etiqueta' => 'Vencidas / fuera de plazo', 'valor' => $totales['vencidas'] ?? 0],
+            ['etiqueta' => 'Ejecutadas fuera de tiempo', 'valor' => $totales['ejecutadas_fuera_de_tiempo'] ?? 0],
+            [
+                'etiqueta' => '% cumplimiento',
+                'valor' => $totales['porcentaje'] === null ? '—' : $totales['porcentaje'],
+                'decimal' => $totales['porcentaje'] !== null,
+            ],
+        ];
+    }
+
+    /**
+     * Bloque RESUMEN horizontal (etiquetas + valores) sobre la tabla.
+     *
+     * @param list<array{etiqueta:string,valor:mixed,decimal?:bool}> $pares
+     */
+    private function escribirBloqueResumen(Worksheet $hoja, int $fila, array $pares): int
+    {
+        if ($pares === []) {
+            return $fila;
+        }
+
+        $hoja->setCellValue('A' . $fila, 'RESUMEN');
+        $hoja->getStyle('A' . $fila)->getFont()->setBold(true)->setSize(12);
+        $fila++;
+
+        $col = 1;
+        foreach ($pares as $par) {
+            $hoja->setCellValueByColumnAndRow($col, $fila, $par['etiqueta']);
+            $col++;
+        }
+        $ultima = Coordinate::stringFromColumnIndex(count($pares));
+        $rangoEtiquetas = 'A' . $fila . ':' . $ultima . $fila;
+        $hoja->getStyle($rangoEtiquetas)->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $hoja->getStyle($rangoEtiquetas)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('0F4C5C');
+
+        $fila++;
+        $col = 1;
+        foreach ($pares as $par) {
+            $hoja->setCellValueByColumnAndRow($col, $fila, $par['valor']);
+            if (!empty($par['decimal']) && is_numeric($par['valor'])) {
+                $coord = Coordinate::stringFromColumnIndex($col) . $fila;
+                $hoja->getStyle($coord)
+                    ->getNumberFormat()
+                    ->setFormatCode(NumberFormat::FORMAT_NUMBER_00);
+            }
+            $col++;
+        }
+        $rangoValores = 'A' . $fila . ':' . $ultima . $fila;
+        $hoja->getStyle($rangoValores)->getFont()->setBold(true);
+        $hoja->getStyle($rangoValores)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('E6F7F4');
+
+        return $fila + 2;
     }
 }

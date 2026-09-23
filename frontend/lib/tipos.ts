@@ -737,7 +737,6 @@ export type GrupoHistorial = {
 export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
   { id: "cumplimiento_general", etiqueta: "Cumplimiento general" },
   { id: "cumplimiento_trabajador", etiqueta: "Cumplimiento por trabajador" },
-  { id: "cumplimiento_cargo", etiqueta: "Cumplimiento por cargo" },
   { id: "cumplimiento_proceso", etiqueta: "Cumplimiento por proceso" },
   { id: "historial_trabajador", etiqueta: "Historial del trabajador" },
   { id: "cumplimiento_proyecto", etiqueta: "Cumplimiento por proyecto" },
@@ -745,9 +744,6 @@ export const TIPOS_REPORTE: { id: string; etiqueta: string }[] = [
   { id: "proximas", etiqueta: "Próximas a vencer" },
   { id: "pendientes", etiqueta: "Capacitaciones pendientes" },
   { id: "horas", etiqueta: "Horas de capacitación" },
-  { id: "asistencia", etiqueta: "Asistencia" },
-  { id: "inducciones", etiqueta: "Inducciones" },
-  { id: "reinducciones", etiqueta: "Reinducciones" },
   { id: "tareas_criticas", etiqueta: "Tareas críticas" },
   { id: "evidencias_faltantes", etiqueta: "Evidencias faltantes" },
 ];
@@ -1031,6 +1027,18 @@ export type TipoCatalogo = {
   etiqueta: string;
   permite_inactivar: boolean;
   campos: string[];
+};
+
+export type UsuarioSistema = {
+  usuario_id: number;
+  nombre_usuario: string;
+  correo: string;
+  rol: string;
+  estado: "Activo" | "Inactivo" | string;
+  roles: { role_id: number; nombre: string }[];
+  ultimo_acceso: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type ItemCatalogo = {

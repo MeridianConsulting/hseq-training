@@ -39,6 +39,8 @@ return [
         'cumplimientos.editar',
         'catalogos.ver',
         'catalogos.gestionar',
+        'usuarios.ver',
+        'usuarios.gestionar',
         'auditoria.ver',
         'migracion.ejecutar',
     ],

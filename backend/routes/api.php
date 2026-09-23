@@ -18,6 +18,7 @@ use App\Controllers\PlanAnualController;
 use App\Controllers\CumplimientoController;
 use App\Controllers\ReporteController;
 use App\Controllers\SesionController;
+use App\Controllers\UsuarioController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\PermisoMiddleware;
 
@@ -42,6 +43,14 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->post('/catalogs/{tipo}', [CatalogController::class, 'store']);
         $router->put('/catalogs/{tipo}/{id}', [CatalogController::class, 'update']);
         $router->delete('/catalogs/{tipo}/{id}', [CatalogController::class, 'destroy']);
+    });
+
+    $router->group(['prefix' => '/usuarios'], function ($router) {
+        $router->get('', [UsuarioController::class, 'index'], [[PermisoMiddleware::class, 'usuarios.ver']]);
+        $router->get('/{id}', [UsuarioController::class, 'show'], [[PermisoMiddleware::class, 'usuarios.ver']]);
+        $router->post('', [UsuarioController::class, 'store'], [[PermisoMiddleware::class, 'usuarios.gestionar']]);
+        $router->put('/{id}', [UsuarioController::class, 'update'], [[PermisoMiddleware::class, 'usuarios.gestionar']]);
+        $router->delete('/{id}', [UsuarioController::class, 'destroy'], [[PermisoMiddleware::class, 'usuarios.gestionar']]);
     });
 
     $router->get('/dashboard', [DashboardController::class, 'show'], [[PermisoMiddleware::class, 'dashboard.ver']]);

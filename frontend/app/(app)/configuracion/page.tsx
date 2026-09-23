@@ -19,8 +19,10 @@ import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } fro
 import { detalleItemCatalogo, humanizarNombreUnidad } from "@/lib/catalogos";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
+import { PanelUsuarios } from "./panel-usuarios";
 
 type FiltroEstado = "todos" | "activos" | "inactivos";
+type Pestana = "catalogo" | "usuarios";
 
 const ETIQUETAS_ESTADO: Record<FiltroEstado, string> = {
   todos: "Todos",
@@ -40,6 +42,7 @@ function Contenido() {
   const { puede } = useAuth();
   const [tipos, setTipos] = useState<TipoCatalogo[]>([]);
   const [tipo, setTipo] = useState<TipoCatalogo | null>(null);
+  const [pestana, setPestana] = useState<Pestana>("catalogo");
   const [items, setItems] = useState<ItemCatalogo[]>([]);
   const [buscar, setBuscar] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("todos");
@@ -96,11 +99,11 @@ function Contenido() {
   }
 
   useDebouncedCallback(() => {
-    if (!tipo) {
+    if (!tipo || pestana !== "catalogo") {
       return;
     }
     void cargar(tipo.tipo, filtroEstado, 1, buscar);
-  }, [tipo?.tipo, filtroEstado, buscar]);
+  }, [tipo?.tipo, filtroEstado, buscar, pestana]);
 
   function limpiarFiltros() {
     setBuscar("");
@@ -144,9 +147,10 @@ function Contenido() {
     }
 
     const id = editando ? pkDe(tipo, editando) : null;
-    const respuesta = editando && id
-      ? await apiPut<ItemCatalogo>(`/api/catalogs/${tipo.tipo}/${id}`, datos)
-      : await apiPost<ItemCatalogo>(`/api/catalogs/${tipo.tipo}`, datos);
+    const respuesta =
+      editando && id
+        ? await apiPut<ItemCatalogo>(`/api/catalogs/${tipo.tipo}/${id}`, datos)
+        : await apiPost<ItemCatalogo>(`/api/catalogs/${tipo.tipo}`, datos);
 
     if (respuesta.cancelada) {
       return;
@@ -205,13 +209,16 @@ function Contenido() {
     await cargar(tipo.tipo);
   }
 
+  const veUsuarios =
+    puede("usuarios.ver") || puede("usuarios.gestionar") || puede("catalogos.gestionar");
+
   return (
     <>
       <PageHeader
         titulo="Catálogos"
-        descripcion="Parámetros oficiales del Sistema HSEQ. Los inactivos se conservan en históricos y no aparecen en altas nuevas. Cargos y personal corporativo no se administran aquí."
+        descripcion="Parámetros oficiales del Sistema HSEQ y usuarios de acceso. Los inactivos se conservan en históricos. Cargos y personal corporativo no se administran aquí."
         acciones={
-          puede("catalogos.gestionar") && tipo ? (
+          pestana === "catalogo" && puede("catalogos.gestionar") && tipo ? (
             <Button
               type="button"
               onClick={() => {
@@ -235,122 +242,149 @@ function Contenido() {
             key={t.tipo}
             type="button"
             onClick={() => {
+              setPestana("catalogo");
               setTipo(t);
               setPagina(1);
+              setMensaje(null);
             }}
             className={`rounded-full px-3 py-1 text-sm ${
-              tipo?.tipo === t.tipo ? "bg-hseq-800 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"
+              pestana === "catalogo" && tipo?.tipo === t.tipo
+                ? "bg-hseq-800 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-200"
             }`}
           >
             {t.etiqueta}
           </button>
         ))}
+        {veUsuarios ? (
+          <button
+            type="button"
+            onClick={() => {
+              setPestana("usuarios");
+              setMensaje(null);
+              setError(null);
+            }}
+            className={`rounded-full px-3 py-1 text-sm ${
+              pestana === "usuarios"
+                ? "bg-hseq-800 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-200"
+            }`}
+          >
+            Usuarios del sistema
+          </button>
+        ) : null}
       </div>
 
-      <Filters>
-        <Field etiqueta="Buscar">
-          <input
-            className={inputClass}
-            value={buscar}
-            onChange={(e) => setBuscar(e.target.value)}
-            placeholder="Nombre"
-          />
-        </Field>
-        <Field etiqueta="Estado">
-          <select
-            className={inputClass}
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value as FiltroEstado)}
-          >
-            <option value="todos">Todos</option>
-            <option value="activos">Activos</option>
-            <option value="inactivos">Inactivos</option>
-          </select>
-        </Field>
-      </Filters>
-
-      <FiltrosActivos chips={chips} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
-
-      {cargando ? (
-        <ListaCargando />
+      {pestana === "usuarios" ? (
+        <PanelUsuarios onError={setError} onMensaje={setMensaje} />
       ) : (
-        <Table
-          columnas={[
-            { clave: "nombre", etiqueta: "Nombre" },
-            { clave: "extra", etiqueta: "Detalle" },
-            { clave: "estado", etiqueta: "Estado" },
-            { clave: "creado", etiqueta: "Creado" },
-            { clave: "actualizado", etiqueta: "Actualizado" },
-            { clave: "acciones", etiqueta: "" },
-          ]}
-          filas={items.map((item) => [
-            humanizarNombreUnidad(String(item.nombre ?? "")),
-            detalleItemCatalogo(item),
-            item.activo === undefined ? (
-              "—"
-            ) : (
-              <Badge tono={Number(item.activo) === 1 ? "ok" : "neutral"}>
-                {Number(item.activo) === 1 ? "Activo" : "Inactivo"}
-              </Badge>
-            ),
-            formatoFecha(item.created_at),
-            formatoFecha(item.updated_at),
-            <div key="a" className="flex justify-end gap-2">
-              {puede("catalogos.gestionar") ? (
-                <>
-                  <Button
-                    type="button"
-                    variante="ghost"
-                    onClick={() => {
-                      setEditando(item);
-                      setAbierto(true);
-                    }}
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden />
-                    Editar
-                  </Button>
-                  {Number(item.activo) === 0 ? (
-                    <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
-                      <RotateCcw className="h-4 w-4" aria-hidden />
-                      Reactivar
-                    </Button>
-                  ) : (
-                    <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
-                      <UserMinus className="h-4 w-4" aria-hidden />
-                      Inactivar
-                    </Button>
-                  )}
-                </>
-              ) : null}
-            </div>,
-          ])}
-        />
+        <>
+          <Filters>
+            <Field etiqueta="Buscar">
+              <input
+                className={inputClass}
+                value={buscar}
+                onChange={(e) => setBuscar(e.target.value)}
+                placeholder="Nombre"
+              />
+            </Field>
+            <Field etiqueta="Estado">
+              <select
+                className={inputClass}
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value as FiltroEstado)}
+              >
+                <option value="todos">Todos</option>
+                <option value="activos">Activos</option>
+                <option value="inactivos">Inactivos</option>
+              </select>
+            </Field>
+          </Filters>
+
+          <FiltrosActivos chips={chips} onQuitar={quitarChip} onLimpiar={limpiarFiltros} />
+
+          {cargando ? (
+            <ListaCargando />
+          ) : (
+            <Table
+              columnas={[
+                { clave: "nombre", etiqueta: "Nombre" },
+                { clave: "extra", etiqueta: "Detalle" },
+                { clave: "estado", etiqueta: "Estado" },
+                { clave: "creado", etiqueta: "Creado" },
+                { clave: "actualizado", etiqueta: "Actualizado" },
+                { clave: "acciones", etiqueta: "" },
+              ]}
+              filas={items.map((item) => [
+                humanizarNombreUnidad(String(item.nombre ?? "")),
+                detalleItemCatalogo(item),
+                item.activo === undefined ? (
+                  "—"
+                ) : (
+                  <Badge tono={Number(item.activo) === 1 ? "ok" : "neutral"}>
+                    {Number(item.activo) === 1 ? "Activo" : "Inactivo"}
+                  </Badge>
+                ),
+                formatoFecha(item.created_at),
+                formatoFecha(item.updated_at),
+                <div key="a" className="flex justify-end gap-2">
+                  {puede("catalogos.gestionar") ? (
+                    <>
+                      <Button
+                        type="button"
+                        variante="ghost"
+                        onClick={() => {
+                          setEditando(item);
+                          setAbierto(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden />
+                        Editar
+                      </Button>
+                      {Number(item.activo) === 0 ? (
+                        <Button type="button" variante="ghost" onClick={() => void reactivar(item)}>
+                          <RotateCcw className="h-4 w-4" aria-hidden />
+                          Reactivar
+                        </Button>
+                      ) : (
+                        <Button type="button" variante="ghost" onClick={() => void inactivar(item)}>
+                          <UserMinus className="h-4 w-4" aria-hidden />
+                          Inactivar
+                        </Button>
+                      )}
+                    </>
+                  ) : null}
+                </div>,
+              ])}
+            />
+          )}
+
+          {tipo ? (
+            <Pagination
+              pagina={pagina}
+              ultima={ultima}
+              onCambiar={(p) => void cargar(tipo.tipo, filtroEstado, p)}
+            />
+          ) : null}
+
+          {tipo ? (
+            <Modal
+              abierto={abierto}
+              titulo={editando ? `Editar ${tipo.etiqueta}` : `Nuevo en ${tipo.etiqueta}`}
+              onCerrar={() => setAbierto(false)}
+            >
+              <FormularioCatalogo
+                key={editando ? "editar" : "nuevo"}
+                campos={tipo.campos}
+                permiteActivo={tipo.permite_inactivar && Boolean(editando)}
+                inicial={editando}
+                onCancelar={() => setAbierto(false)}
+                onGuardar={guardar}
+              />
+            </Modal>
+          ) : null}
+        </>
       )}
-
-      {tipo ? (
-        <Pagination
-          pagina={pagina}
-          ultima={ultima}
-          onCambiar={(p) => void cargar(tipo.tipo, filtroEstado, p)}
-        />
-      ) : null}
-
-      {tipo ? (
-        <Modal
-          abierto={abierto}
-          titulo={editando ? `Editar ${tipo.etiqueta}` : `Nuevo en ${tipo.etiqueta}`}
-          onCerrar={() => setAbierto(false)}
-        >
-          <FormularioCatalogo
-            key={editando ? "editar" : "nuevo"}
-            campos={tipo.campos}
-            permiteActivo={tipo.permite_inactivar && Boolean(editando)}
-            inicial={editando}
-            onCancelar={() => setAbierto(false)}
-            onGuardar={guardar}
-          />
-        </Modal>
-      ) : null}
     </>
   );
 }

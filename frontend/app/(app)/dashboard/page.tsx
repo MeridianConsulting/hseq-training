@@ -14,10 +14,13 @@ import {
 } from "@/components/dashboard/grafica-cumplimiento";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
+import { BotonExportarFlotante } from "@/components/ui/boton-exportar-flotante";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet, withQuery } from "@/lib/api";
+import { exportarDashboardPdf } from "@/lib/dashboard-pdf";
 import type { ResumenDashboard } from "@/lib/tipos";
+import { Download } from "lucide-react";
 
 function filtroInicial(): FiltroDashboardValor {
   const hoy = new Date();
@@ -46,6 +49,7 @@ function Contenido() {
   const [resumen, setResumen] = useState<ResumenDashboard | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
 
   useEffect(() => {
     const abortado = { actual: false };
@@ -97,6 +101,26 @@ function Contenido() {
     };
   }, [filtro]);
 
+  function exportarPdf() {
+    if (!resumen) return;
+    setExportando(true);
+    try {
+      const procesoEtiqueta =
+        filtro.proceso === "todos"
+          ? "Todos"
+          : (resumen.opciones.procesos.find((p) => String(p.proceso_id) === filtro.proceso)?.nombre ??
+            resumen.alcance.proceso);
+      exportarDashboardPdf(resumen, {
+        procesoEtiqueta,
+        proyectoEtiqueta: filtro.proyecto !== "" ? filtro.proyecto : null,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No fue posible generar el PDF.");
+    } finally {
+      setExportando(false);
+    }
+  }
+
   const cobertura = resumen?.cobertura;
   const eficacia = resumen?.eficacia;
   const horas = resumen?.horas;
@@ -127,6 +151,15 @@ function Contenido() {
           ) : null
         }
       />
+
+      <BotonExportarFlotante
+        onClick={() => exportarPdf()}
+        disabled={!resumen || cargando || exportando}
+        title="Exportar panel a PDF"
+      >
+        <Download className="h-4 w-4 shrink-0" aria-hidden />
+        {exportando ? "Generando…" : "Exportar PDF"}
+      </BotonExportarFlotante>
 
       <FiltroPeriodo
         valor={filtro}
