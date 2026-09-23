@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 /**
- * Cargos por proceso según la hoja MATRIZ POR CARGO del programa HSEQ-PRG-10.
- * El nombre visible es el del Excel. Los alias cruzan meridian_personal.cargos
- * (no se infiere la lista desde quién está contratado hoy).
+ * Referencia histórica: cargos por proceso según la hoja MATRIZ POR CARGO
+ * del programa HSEQ-PRG-10 (nombres Excel + alias hacia meridian_personal.cargos).
+ *
+ * La vista de Matriz ya no usa esta lista: los cargos salen de trabajadores
+ * Activos con el mismo proceso/proyecto en persona_contexto_hseq (Personal Corporativo).
  *
  * @return array{por_proceso: array<string, list<string|array{nombre:string, alias?:list<string>}>>}
  */

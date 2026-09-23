@@ -8,7 +8,7 @@ use App\Core\Exceptions\HttpException;
 use App\Repositories\AlertaRepository;
 use App\Repositories\CapacitacionRepository;
 use App\Repositories\MatrizRepository;
-use App\Repositories\PersonalRepository;
+use App\Repositories\PersonaContextoRepository;
 
 class MatrizService
 {
@@ -26,6 +26,7 @@ class MatrizService
     private MatrizRepository $repo;
     private CapacitacionRepository $capacitaciones;
     private PersonalService $personal;
+    private PersonaContextoRepository $contexto;
     private AlertaRepository $alertas;
     private AuditoriaService $auditoria;
 
@@ -34,6 +35,7 @@ class MatrizService
         $this->repo = new MatrizRepository();
         $this->capacitaciones = new CapacitacionRepository();
         $this->personal = new PersonalService();
+        $this->contexto = new PersonaContextoRepository();
         $this->alertas = new AlertaRepository();
         $this->auditoria = new AuditoriaService();
     }
@@ -176,7 +178,7 @@ class MatrizService
             'proceso_nombre' => $proceso['nombre'],
             'proyecto' => $proyectoNorm,
             'consulta' => false,
-            'cargos' => $this->cargosDeVista($filas, $catalogo, $proceso['nombre']),
+            'cargos' => $this->cargosDeVista($procesoId, $proyectoNorm),
             'cargos_catalogo' => $catalogo,
             'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
             'celdas' => array_values($celdas),
@@ -651,155 +653,14 @@ class MatrizService
     }
 
     /**
-     * Unión: cargos del Excel para el proceso + cargos con marca activa en esta hoja.
-     * No se arma la lista con la nómina ni con filas inactivas.
-     *
-     * @param list<array<string,mixed>> $filasContexto
-     * @param list<array{cargo_id:int,nombre_cargo:string}> $catalogo
-     * @return list<array{cargo_id:int,nombre_cargo:string}>
-     */
-    private function cargosDeVista(array $filasContexto, array $catalogo, string $nombreProceso): array
-    {
-        $porId = [];
-        foreach ($catalogo as $cargo) {
-            $porId[(int)$cargo['cargo_id']] = $cargo;
-        }
-
-        $salida = [];
-        $ids = [];
-        foreach ($this->cargosDelProcesoExcel($nombreProceso) as $cargo) {
-            $id = (int)$cargo['cargo_id'];
-            $ids[$id] = true;
-            $salida[] = $cargo;
-        }
-
-        $extras = [];
-        foreach ($filasContexto as $fila) {
-            $id = (int)($fila['cargo_id_ext'] ?? 0);
-            if ($id > 0 && (int)($fila['activa'] ?? 0) === 1 && !isset($ids[$id])) {
-                $extras[$id] = true;
-                $ids[$id] = true;
-            }
-        }
-
-        $faltantes = [];
-        foreach (array_keys($extras) as $id) {
-            if (!isset($porId[$id])) {
-                $faltantes[] = $id;
-            }
-        }
-        if ($faltantes !== []) {
-            foreach ($this->personal->nombresCargosPorIds($faltantes) as $id => $nombre) {
-                $porId[$id] = [
-                    'cargo_id' => $id,
-                    'nombre_cargo' => $nombre,
-                ];
-            }
-        }
-
-        foreach (array_keys($extras) as $id) {
-            if (isset($porId[$id])) {
-                $salida[] = $porId[$id];
-            }
-        }
-
-        return $salida;
-    }
-
-    /**
-     * Filas de la hoja MATRIZ POR CARGO, con el nombre del Excel.
+     * Cargos de trabajadores Activos con el mismo proceso (y proyecto si aplica)
+     * en persona_contexto_hseq. No usa la lista fija del Excel HSEQ-PRG-10.
      *
      * @return list<array{cargo_id:int,nombre_cargo:string}>
      */
-    private function cargosDelProcesoExcel(string $nombreProceso): array
+    private function cargosDeVista(int $procesoId, ?string $proyecto): array
     {
-        $repo = $this->personal->repositorio();
-        $mapa = $repo->mapaCargos();
-        $usados = [];
-        $salida = [];
-
-        foreach ($this->filasCargosExcel($nombreProceso) as $fila) {
-            $id = $this->resolverCargoPorAlias($fila['alias'], $repo, $mapa);
-            if ($id === null || isset($usados[$id])) {
-                continue;
-            }
-            $usados[$id] = true;
-            $salida[] = [
-                'cargo_id' => $id,
-                'nombre_cargo' => $fila['nombre'],
-            ];
-        }
-
-        return $salida;
-    }
-
-    /**
-     * @return list<array{nombre:string, alias:list<string>}>
-     */
-    private function filasCargosExcel(string $nombreProceso): array
-    {
-        $porProceso = config('matriz_cargos.por_proceso', []);
-        $items = $porProceso[$this->claveProcesoExcel($nombreProceso)] ?? [];
-        if (!is_array($items)) {
-            return [];
-        }
-
-        $filas = [];
-        foreach ($items as $item) {
-            if (is_string($item)) {
-                $nombre = trim($item);
-                if ($nombre === '') {
-                    continue;
-                }
-                $filas[] = ['nombre' => $nombre, 'alias' => [$nombre]];
-                continue;
-            }
-            if (!is_array($item)) {
-                continue;
-            }
-            $nombre = trim((string)($item['nombre'] ?? ''));
-            if ($nombre === '') {
-                continue;
-            }
-            $alias = $item['alias'] ?? [$nombre];
-            if (!is_array($alias) || $alias === []) {
-                $alias = [$nombre];
-            }
-            $filas[] = [
-                'nombre' => $nombre,
-                'alias' => array_values(array_filter(array_map('strval', $alias))),
-            ];
-        }
-
-        return $filas;
-    }
-
-    /**
-     * @param list<string> $alias
-     * @param array{por_nombre: array<string,int>, por_id: array<int,string>} $mapa
-     */
-    private function resolverCargoPorAlias(array $alias, PersonalRepository $repo, array $mapa): ?int
-    {
-        foreach ($alias as $nombre) {
-            $clave = $repo->claveCargo((string)$nombre);
-            if ($clave !== '' && isset($mapa['por_nombre'][$clave])) {
-                return (int)$mapa['por_nombre'][$clave];
-            }
-        }
-
-        return null;
-    }
-
-    private function claveProcesoExcel(string $nombre): string
-    {
-        $nombre = mb_strtoupper(trim($nombre), 'UTF-8');
-        $nombre = strtr($nombre, [
-            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
-            'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
-            'Ñ' => 'N',
-        ]);
-
-        return preg_replace('/\s+/', ' ', $nombre) ?? $nombre;
+        return $this->contexto->cargosPorProceso($procesoId, $proyecto);
     }
 
     /**

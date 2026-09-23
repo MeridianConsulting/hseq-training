@@ -13,6 +13,8 @@ En `persona_contexto_hseq` (base capacitaciones) se guarda **1 proceso** y, si a
 
 Eso describe el contexto laboral del trabajador (y se **suma** a los procesos inferidos por matriz/cargo). **No** restringe qué pantallas ve el admin.
 
+La vista de Matriz (con proceso —y proyecto si aplica— filtrado) lista solo los **cargos** de trabajadores Activos con ese mismo contexto en `persona_contexto_hseq`; no usa la lista fija del Excel HSEQ-PRG-10.
+
 ## Decisión pendiente (si aparecen más roles)
 
 Antes de filtrar por alcance habría que definir:

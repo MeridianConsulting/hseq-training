@@ -99,6 +99,52 @@ class PersonaContextoRepository
         return array_map(static fn (array $f): int => (int)$f['persona_id_ext'], $filas);
     }
 
+    /**
+     * Cargos distintos de trabajadores Activos con este proceso (y proyecto si aplica).
+     *
+     * @return list<array{cargo_id:int,nombre_cargo:string}>
+     */
+    public function cargosPorProceso(int $procesoId, ?string $proyecto = null): array
+    {
+        if ($procesoId < 1) {
+            return [];
+        }
+
+        $personas = Database::personalTable('personas');
+        $cargos = Database::personalTable('cargos');
+
+        $sql = "SELECT DISTINCT p.cargo_id, c.nombre_cargo
+                FROM persona_contexto_hseq ctx
+                INNER JOIN {$personas} p ON p.persona_id = ctx.persona_id_ext
+                INNER JOIN {$cargos} c ON c.cargo_id = p.cargo_id
+                WHERE ctx.proceso_id = ?
+                  AND p.estado = 'Activo'
+                  AND p.cargo_id IS NOT NULL";
+        $params = [$procesoId];
+
+        if ($proyecto !== null && $proyecto !== '') {
+            $sql .= ' AND ctx.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $params[] = $proyecto;
+        }
+
+        $sql .= ' ORDER BY c.nombre_cargo ASC';
+
+        $filas = $this->db->fetchAll($sql, $params);
+        $salida = [];
+        foreach ($filas as $fila) {
+            $id = (int)($fila['cargo_id'] ?? 0);
+            if ($id < 1) {
+                continue;
+            }
+            $salida[] = [
+                'cargo_id' => $id,
+                'nombre_cargo' => (string)($fila['nombre_cargo'] ?? ''),
+            ];
+        }
+
+        return $salida;
+    }
+
     public function guardar(
         int $personaId,
         string $numeroDocumento,
