@@ -15,6 +15,7 @@ import type {
   ParticipanteSesion,
   PersonaCorporativa,
   SesionCronograma,
+  TrabajadorCronograma,
 } from "@/lib/tipos";
 
 export type DatosSesion = {
@@ -49,15 +50,30 @@ function mesPadded(mes: number): string {
   return String(mes).padStart(2, "0");
 }
 
-function vacio(item: ItemCronograma): DatosSesion {
+function vacio(item: ItemCronograma, preferirHoySiPasada = false): DatosSesion {
+  let fecha = item.fecha_hasta ?? item.fecha_programada ?? `${item.anio}-${mesPadded(item.mes)}-01`;
+  if (preferirHoySiPasada) {
+    const hoy = new Date();
+    const iso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+    if (fecha < iso) {
+      fecha = iso;
+    }
+  }
   return {
-    fecha: item.fecha_hasta ?? item.fecha_programada ?? `${item.anio}-${mesPadded(item.mes)}-01`,
+    fecha,
     hora: "08:00",
     modalidad_id: "",
     ubicacion_id: "",
     enlace_virtual: "",
     proveedor_id: "",
-    cupo_maximo: String(Math.max(item.cantidad_programada || 1, 1)),
+    cupo_maximo: String(
+      Math.max(
+        preferirHoySiPasada
+          ? (item.pendientes_sin_cumplimiento ?? item.cantidad_programada ?? 1)
+          : (item.cantidad_programada || 1),
+        1,
+      ),
+    ),
   };
 }
 
@@ -123,16 +139,21 @@ export function validarDatosSesion(
 export function FormularioSesion({
   item,
   sesion,
+  soloPendientes = false,
   onCancelar,
   onGuardado,
 }: {
   item: ItemCronograma;
   sesion?: SesionCronograma | null;
+  /** Al reabrir tras finalizar: solo convoca a quienes aún no tienen cumplimiento. */
+  soloPendientes?: boolean;
   onCancelar: () => void;
   onGuardado: (detalle?: DetalleSesion) => void;
 }) {
   const esEdicion = Boolean(sesion);
-  const [datos, setDatos] = useState<DatosSesion>(sesion ? desdeSesion(sesion) : vacio(item));
+  const [datos, setDatos] = useState<DatosSesion>(
+    sesion ? desdeSesion(sesion) : vacio(item, soloPendientes),
+  );
   const [errores, setErrores] = useState<ErroresSesion>({});
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -140,6 +161,43 @@ export function FormularioSesion({
   const [buscar, setBuscar] = useState("");
   const [seleccionados, setSeleccionados] = useState<number[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [idsPendientes, setIdsPendientes] = useState<number[] | null>(null);
+
+  useEffect(() => {
+    if (esEdicion || !soloPendientes) {
+      setIdsPendientes(null);
+      return;
+    }
+    const abortado = { actual: false };
+    void (async () => {
+      const respuesta = item.plan_detalle_id
+        ? await apiGet<{ items: TrabajadorCronograma[] }>(
+            `/api/cronograma/${item.plan_detalle_id}/trabajadores`,
+          )
+        : await apiGet<{ items: TrabajadorCronograma[] }>(
+            withQuery("/api/cronograma/grupo/trabajadores", {
+              capacitacion_id: item.capacitacion_id,
+              anio: item.anio,
+              mes: item.mes,
+            }),
+          );
+      if (abortado.actual) return;
+      if (!respuesta.success || !respuesta.data) {
+        setIdsPendientes([]);
+        return;
+      }
+      const ids = (respuesta.data.items ?? [])
+        .filter((t) => {
+          const est = (t.estado_asignacion ?? "").toUpperCase();
+          return est === "" || est.startsWith("PENDIENTE");
+        })
+        .map((t) => t.asignacion_id);
+      setIdsPendientes(ids);
+    })();
+    return () => {
+      abortado.actual = true;
+    };
+  }, [esEdicion, soloPendientes, item.plan_detalle_id, item.capacitacion_id, item.anio, item.mes]);
 
   useEffect(() => {
     const abortado = { actual: false };
@@ -173,6 +231,24 @@ export function FormularioSesion({
       abortado.actual = true;
     };
   }, [item.plan_detalle_id, item.capacitacion_id, sesion, buscar]);
+
+  useEffect(() => {
+    if (esEdicion || !soloPendientes || idsPendientes === null || !contexto) {
+      return;
+    }
+    const disponibles = new Set((contexto.items ?? []).map((c) => c.asignacion_id));
+    const pre = idsPendientes.filter((id) => disponibles.has(id));
+    setSeleccionados(pre);
+    if (pre.length > 0) {
+      setDatos((prev) => {
+        const cupoActual = Number.parseInt(prev.cupo_maximo, 10);
+        if (Number.isInteger(cupoActual) && cupoActual >= pre.length) {
+          return prev;
+        }
+        return { ...prev, cupo_maximo: String(Math.max(pre.length, 1)) };
+      });
+    }
+  }, [esEdicion, soloPendientes, idsPendientes, contexto]);
 
   const tipo = useMemo(() => {
     const modalidad = (contexto?.modalidades ?? []).find(
@@ -251,13 +327,28 @@ export function FormularioSesion({
     onGuardado(r.data ?? undefined);
   }
 
-  const convocables = contexto?.items ?? [];
+  const convocables = useMemo(() => {
+    const items = contexto?.items ?? [];
+    if (!soloPendientes || idsPendientes === null) {
+      return items;
+    }
+    const set = new Set(idsPendientes);
+    return items.filter((c) => set.has(c.asignacion_id));
+  }, [contexto?.items, soloPendientes, idsPendientes]);
 
   return (
     <form className="space-y-4" noValidate onSubmit={enviar}>
       <p className="text-sm text-slate-600">
         Plan {item.anio} · {item.codigo} — {item.tema}
       </p>
+
+      {soloPendientes ? (
+        <Alert tono="aviso">
+          Nueva sesión: se preseleccionan quienes siguen pendientes (ausentes o reprobados). Se reutiliza
+          la misma asignación; no se crea una nueva. Si solo falta aprobar una nota ya suficiente, use
+          «Completar» en el cronograma.
+        </Alert>
+      ) : null}
 
       {errorGeneral ? <Alert tono="error">{errorGeneral}</Alert> : null}
 

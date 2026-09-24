@@ -83,6 +83,8 @@ class CronogramaRepository
                     g.cantidad_programada,
                     g.ejecutadas_fuera_de_tiempo,
                     g.pendientes_fuera_plazo,
+                    g.pendientes_sin_cumplimiento,
+                    g.pendientes_incompletos,
                     COALESCE(d.estado_programacion, 'PROGRAMADA') AS estado_programacion,
                     COALESCE(d.ambito, g.ambito) AS ambito,
                     COALESCE(d.proyecto, g.proyecto) AS proyecto,
@@ -125,11 +127,21 @@ class CronogramaRepository
                            THEN 1 ELSE 0
                          END
                        ) AS pendientes_fuera_plazo,
+                       SUM(
+                         CASE WHEN cump.cumplimiento_id IS NULL THEN 1 ELSE 0 END
+                       ) AS pendientes_sin_cumplimiento,
+                       SUM(
+                         CASE
+                           WHEN e.estado_calculado COLLATE utf8mb4_unicode_ci LIKE 'PENDIENTE%'
+                           THEN 1 ELSE 0
+                         END
+                       ) AS pendientes_incompletos,
                        MIN(a.proceso_id) AS proceso_id,
                        MIN(a.ambito) AS ambito,
                        MIN(a.proyecto) AS proyecto
                 FROM asignaciones_capacitacion a
                 LEFT JOIN cumplimientos_capacitacion cump ON cump.asignacion_id = a.asignacion_id
+                LEFT JOIN vw_estado_asignaciones e ON e.asignacion_id = a.asignacion_id
                 WHERE YEAR(a.fecha_limite_cumplimiento) = ?
                   AND MONTH(a.fecha_limite_cumplimiento) IN ({$inMeses})
                 GROUP BY a.capacitacion_id, MONTH(a.fecha_limite_cumplimiento)

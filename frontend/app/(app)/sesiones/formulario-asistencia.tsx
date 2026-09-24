@@ -78,6 +78,7 @@ export function FormularioAsistencia({
   const [seleccionAusentes, setSeleccionAusentes] = useState<number[]>([]);
   const [destinoId, setDestinoId] = useState("");
   const [destinos, setDestinos] = useState<SesionCronograma[]>([]);
+  const [destinosCargados, setDestinosCargados] = useState(false);
   const [reprogramando, setReprogramando] = useState(false);
   const { puede } = useAuth();
   const [seleccionCump, setSeleccionCump] = useState<number[]>([]);
@@ -149,15 +150,17 @@ export function FormularioAsistencia({
   async function cargarDestinos() {
     if (!sesion.plan_detalle_id) {
       setDestinos([]);
+      setDestinosCargados(true);
       return;
     }
     const respuesta = await apiGet<{ sesiones: SesionCronograma[] }>(
       withQuery("/api/sesiones", { plan_detalle_id: sesion.plan_detalle_id }),
     );
     const lista = (respuesta.data?.sesiones ?? []).filter(
-      (s) => s.sesion_id !== sesion.sesion_id && s.estado !== "CANCELADA",
+      (s) => s.sesion_id !== sesion.sesion_id && s.estado === "PROGRAMADA",
     );
     setDestinos(lista);
+    setDestinosCargados(true);
   }
 
   async function reprogramar(evento: FormEvent) {
@@ -206,6 +209,14 @@ export function FormularioAsistencia({
       (p.estado_asistencia === "ASISTIO" || p.estado_asistencia === "TARDE") &&
       p.cumplimiento_resultado !== "APROBADO",
   );
+
+  useEffect(() => {
+    if (modoOperativo || cerrada || ausentesGuardados.length < 1) {
+      return;
+    }
+    void cargarDestinos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoOperativo, cerrada, sesion.sesion_id, sesion.plan_detalle_id, ausentesGuardados.length]);
 
   useEffect(() => {
     setNotasEval((prev) => {
@@ -456,90 +467,115 @@ export function FormularioAsistencia({
       ) : null}
       </form>
 
-      {!modoOperativo && ausentesGuardados.length > 0 && puedeEditar && !cerrada ? (
+      {!modoOperativo && ausentesGuardados.length > 0 ? (
         <div className="rounded-lg border border-slate-200 p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-hseq-900">
-              Disponibles para reprogramación ({ausentesGuardados.length})
-            </h3>
-            <Button
-              type="button"
-              variante="secondary"
-              onClick={() => {
-                const abrir = !reprogramarAbierto;
-                setReprogramarAbierto(abrir);
-                if (abrir) {
-                  void cargarDestinos();
-                }
-              }}
-            >
-              {reprogramarAbierto ? "Ocultar ausentes" : "Ver / reprogramar ausentes"}
-            </Button>
-          </div>
-
-          {reprogramarAbierto ? (
-            <form className="space-y-3" onSubmit={(e) => void reprogramar(e)}>
-              <ul className="space-y-2">
-                {ausentesGuardados.map((p) => (
-                  <li key={p.asignacion_id}>
-                    <label className="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={seleccionAusentes.includes(p.asignacion_id)}
-                        onChange={(e) => {
-                          setSeleccionAusentes((prev) =>
-                            e.target.checked
-                              ? [...prev, p.asignacion_id]
-                              : prev.filter((id) => id !== p.asignacion_id),
-                          );
-                        }}
-                      />
-                      <span>
-                        <span className="font-medium">{p.persona_nombre}</span>
-                        {p.numero_documento ? (
-                          <span className="ml-1 text-slate-500">{p.numero_documento}</span>
-                        ) : null}
-                        {p.motivo_ausencia ? (
-                          <span className="block text-xs text-slate-500">Razón: {p.motivo_ausencia}</span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              <Field etiqueta="Sesión destino">
-                <select
-                  className={inputClass}
-                  value={destinoId}
-                  onChange={(e) => setDestinoId(e.target.value)}
+          <h3 className="mb-3 text-sm font-semibold text-hseq-900">
+            Ausentes ({ausentesGuardados.length})
+          </h3>
+          {cerrada || (destinosCargados && destinos.length === 0) ? (
+            <Alert tono="aviso">
+              Para volver a convocar a estos trabajadores use{" "}
+              <strong>Nueva sesión</strong> en el Tablero de Cronograma. No se crea una asignación
+              nueva.
+            </Alert>
+          ) : puedeEditar ? (
+            <>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-slate-600">
+                  Puede moverlos a otra sesión abierta de la misma capacitación.
+                </p>
+                <Button
+                  type="button"
+                  variante="secondary"
+                  onClick={() => {
+                    const abrir = !reprogramarAbierto;
+                    setReprogramarAbierto(abrir);
+                    if (abrir) {
+                      void cargarDestinos();
+                    }
+                  }}
                 >
-                  <option value="">Seleccione una sesión existente</option>
-                  {destinos.map((d) => (
-                    <option key={d.sesion_id} value={d.sesion_id}>
-                      {d.fecha} {d.hora} · cupos {d.disponibles}/{d.cupo_maximo} · {d.estado}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <p className="text-xs text-slate-500">
-                Si necesita una sesión nueva, créela en el Tablero de Cronograma y vuelva a reprogramar.
-                No se crea una asignación nueva.
-              </p>
-              <Button type="submit" disabled={reprogramando}>
-                {reprogramando ? "Reprogramando…" : "Reprogramar seleccionados"}
-              </Button>
-            </form>
-          ) : null}
+                  {reprogramarAbierto ? "Ocultar" : "Ver / reprogramar ausentes"}
+                </Button>
+              </div>
+              {reprogramarAbierto ? (
+                <form className="space-y-3" onSubmit={(e) => void reprogramar(e)}>
+                  <ul className="space-y-2">
+                    {ausentesGuardados.map((p) => (
+                      <li key={p.asignacion_id}>
+                        <label className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={seleccionAusentes.includes(p.asignacion_id)}
+                            onChange={(e) => {
+                              setSeleccionAusentes((prev) =>
+                                e.target.checked
+                                  ? [...prev, p.asignacion_id]
+                                  : prev.filter((id) => id !== p.asignacion_id),
+                              );
+                            }}
+                          />
+                          <span>
+                            <span className="font-medium">{p.persona_nombre}</span>
+                            {p.numero_documento ? (
+                              <span className="ml-1 text-slate-500">{p.numero_documento}</span>
+                            ) : null}
+                            {p.motivo_ausencia ? (
+                              <span className="block text-xs text-slate-500">
+                                Razón: {p.motivo_ausencia}
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  <Field etiqueta="Sesión destino">
+                    <select
+                      className={inputClass}
+                      value={destinoId}
+                      onChange={(e) => setDestinoId(e.target.value)}
+                    >
+                      <option value="">Seleccione una sesión existente</option>
+                      {destinos.map((d) => (
+                        <option key={d.sesion_id} value={d.sesion_id}>
+                          {d.fecha} {d.hora} · cupos {d.disponibles}/{d.cupo_maximo}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="text-xs text-slate-500">
+                    Si necesita una sesión nueva, créela con <strong>Nueva sesión</strong> en el
+                    Tablero de Cronograma.
+                  </p>
+                  <Button type="submit" disabled={reprogramando || destinos.length < 1}>
+                    {reprogramando ? "Reprogramando…" : "Reprogramar seleccionados"}
+                  </Button>
+                </form>
+              ) : null}
+            </>
+          ) : (
+            <Alert tono="aviso">
+              Para volver a convocar a estos trabajadores use{" "}
+              <strong>Nueva sesión</strong> en el Tablero de Cronograma.
+            </Alert>
+          )}
         </div>
       ) : null}
 
-      {puede("cumplimientos.crear") && sesion.requiere_evaluacion && evaluables.length > 0 && !cerrada ? (
+      {puede("cumplimientos.crear") && sesion.requiere_evaluacion && evaluables.length > 0 ? (
         <div className="rounded-lg border border-slate-200 p-4">
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registro de evaluaciones</h3>
+          {cerrada ? (
+            <Alert tono="aviso">
+              La sesión está finalizada, pero aún puede registrar o corregir notas de quienes
+              asistieron y siguen pendientes.
+            </Alert>
+          ) : null}
           <p className="mb-3 text-sm text-slate-600">
             Nota mínima aprobatoria: {(sesion.nota_minima ?? 0).toFixed(2).replace(".", ",")} (escala 0 a 5).
-            Solo asistentes.
+            Solo asistentes. Si la nota alcanza el mínimo, el cumplimiento queda aprobado.
           </p>
           <form className="space-y-3" onSubmit={(e) => void guardarEvaluaciones(e)}>
             <Table
@@ -585,8 +621,13 @@ export function FormularioAsistencia({
 
       {extrasAntesDeCumplimiento}
 
-      {puede("cumplimientos.crear") && elegiblesCump.length > 0 && !cerrada ? (
+      {puede("cumplimientos.crear") && elegiblesCump.length > 0 ? (
         <div className="rounded-lg border border-slate-200 p-4">
+          {cerrada ? (
+            <Alert tono="aviso">
+              Sesión finalizada: aún puede registrar el cumplimiento de asistentes pendientes.
+            </Alert>
+          ) : null}
           <h3 className="mb-3 text-sm font-semibold text-hseq-900">Registrar cumplimiento</h3>
           {sesion.requiere_certificado ? (
             <Alert tono="aviso">

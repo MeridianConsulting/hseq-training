@@ -283,12 +283,12 @@ function Contenido() {
 
           <section className="mb-8">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Control de oportunidad y soportes
+              Control de plazo y soportes
             </h2>
             <div className="grid gap-4 lg:grid-cols-2">
               <Card className="py-4 transition duration-200 ease-out hover:-translate-y-1 hover:border-hseq-300 hover:shadow-md">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Control de oportunidad
+                  Control de plazo
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-700">Ejecutadas fuera de tiempo</p>
                 <p className="mt-1 text-3xl font-semibold text-hseq-900">

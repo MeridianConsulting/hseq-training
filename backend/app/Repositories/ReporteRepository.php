@@ -765,12 +765,33 @@ class ReporteRepository
     }
 
     /**
+     * Una fila por asignación: prioriza ASISTIO/TARDE más reciente; si no, la participación más reciente.
+     */
+    private function condicionParticipacionVigente(): string
+    {
+        return "sp.sesion_participante_id = (
+            SELECT sp2.sesion_participante_id
+            FROM sesion_participantes sp2
+            INNER JOIN sesiones_capacitacion s2 ON s2.sesion_id = sp2.sesion_id
+            WHERE sp2.asignacion_id = sp.asignacion_id
+            ORDER BY
+              CASE
+                WHEN sp2.estado_asistencia COLLATE utf8mb4_unicode_ci IN ('ASISTIO', 'TARDE') THEN 0
+                ELSE 1
+              END ASC,
+              s2.fecha_hora DESC,
+              sp2.sesion_participante_id DESC
+            LIMIT 1
+        )";
+    }
+
+    /**
      * @param array<string,mixed> $filtros
      * @return array{0:string,1:list<mixed>}
      */
     private function whereAsistencia(array $filtros): array
     {
-        $condiciones = [];
+        $condiciones = [$this->condicionParticipacionVigente()];
         $params = [];
         $this->aplicarComunes($condiciones, $params, $filtros, 'DATE(s.fecha_hora)', false);
 
@@ -780,7 +801,7 @@ class ReporteRepository
             $params[] = $asistencia;
         }
 
-        $where = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones);
+        $where = 'WHERE ' . implode(' AND ', $condiciones);
 
         return [$where, $params];
     }

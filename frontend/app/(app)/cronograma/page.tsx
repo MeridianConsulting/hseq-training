@@ -60,6 +60,33 @@ function etiquetaVigencia(item: ItemCronograma): string {
   return humanizarNombreUnidad(item.vigencia_nombre) || "No vence";
 }
 
+function etiquetaEstadoSesion(estado: string): string {
+  if (estado === "PROGRAMADA") return "En curso";
+  if (estado === "EJECUTADA") return "Finalizada";
+  if (estado === "CANCELADA") return "Cancelada";
+  return estado;
+}
+
+function tituloSesionCronograma(indice: number): string {
+  if (indice === 0) return "Sesión 1";
+  return `Sesión ${indice + 1} · reintento`;
+}
+
+function textoTrabajadores(item: ItemCronograma): string {
+  const total = item.cantidad_programada;
+  const base = `${total} trabajador${total === 1 ? "" : "es"}`;
+  const pendientes = item.pendientes_incompletos ?? item.pendientes_sin_cumplimiento ?? 0;
+  if (pendientes < 1) return base;
+  return `${base} · ${pendientes} pendiente${pendientes === 1 ? "" : "s"}`;
+}
+
+function sesionUltima(item: ItemCronograma): number | null {
+  const sesiones = item.sesiones ?? [];
+  if (sesiones.length < 1) return null;
+  const ultima = sesiones[sesiones.length - 1];
+  return ultima?.sesion_id ?? null;
+}
+
 function sesionActiva(item: ItemCronograma): number | null {
   const programada = (item.sesiones ?? []).find((s) => s.estado === "PROGRAMADA");
   if (programada) return programada.sesion_id;
@@ -219,7 +246,11 @@ function Contenido() {
       return;
     }
     setIniciarDe(null);
-    setMensaje(respuesta.message || "Capacitación iniciada correctamente.");
+    setMensaje(
+      (iniciarDe.pendientes_sin_cumplimiento ?? 0) > 0 && iniciarDe.estado_operativo === "FINALIZADA"
+        ? "Nueva sesión creada para los trabajadores pendientes."
+        : respuesta.message || "Capacitación iniciada correctamente.",
+    );
     setError(null);
     recargar();
     const sid = sesionActiva(respuesta.data);
@@ -230,6 +261,13 @@ function Contenido() {
 
   const programada = (item: ItemCronograma) => item.estado_operativo === "PROGRAMADA";
   const enEjecucion = (item: ItemCronograma) => item.estado_operativo === "EN_EJECUCION";
+  const finalizadaConPendientes = (item: ItemCronograma) =>
+    item.estado_operativo === "FINALIZADA" &&
+    ((item.pendientes_incompletos ?? 0) > 0 || (item.pendientes_sin_cumplimiento ?? 0) > 0);
+  const finalizadaPorCompletar = (item: ItemCronograma) =>
+    item.estado_operativo === "FINALIZADA" && (item.pendientes_incompletos ?? 0) > 0;
+  const puedeIniciar = (item: ItemCronograma) =>
+    puede("sesiones.crear") && (programada(item) || finalizadaConPendientes(item));
 
   return (
     <>
@@ -276,7 +314,7 @@ function Contenido() {
               { clave: "proyecto", etiqueta: "Proyecto" },
               { clave: "cargo", etiqueta: "Cargo" },
               { clave: "trab", etiqueta: "Trabajadores" },
-              { clave: "oportunidad", etiqueta: "Oportunidad" },
+              { clave: "oportunidad", etiqueta: "Plazo" },
               { clave: "estado", etiqueta: "Estado" },
               { clave: "acc", etiqueta: "Acciones" },
             ]}
@@ -291,7 +329,7 @@ function Contenido() {
               item.cargos_aplicables.length
                 ? item.cargos_aplicables.map((c) => c.nombre_cargo).join(", ")
                 : "—",
-              `${item.cantidad_programada} trabajador${item.cantidad_programada === 1 ? "" : "es"}`,
+              textoTrabajadores(item),
               <span key={`o-${item.capacitacion_id}-${item.mes}`} className="flex flex-col gap-0.5 text-xs">
                 {(item.ejecutadas_fuera_de_tiempo ?? 0) > 0 ? (
                   <span className="font-medium text-amber-700">
@@ -303,7 +341,19 @@ function Contenido() {
                     {item.pendientes_fuera_plazo} pendiente(s) fuera de plazo
                   </span>
                 ) : null}
-                {(item.ejecutadas_fuera_de_tiempo ?? 0) < 1 && (item.pendientes_fuera_plazo ?? 0) < 1
+                {(item.pendientes_incompletos ?? item.pendientes_sin_cumplimiento ?? 0) > 0 &&
+                (item.pendientes_fuera_plazo ?? 0) < 1 ? (
+                  <span className="font-medium text-slate-700">
+                    {item.pendientes_incompletos ?? item.pendientes_sin_cumplimiento} pendiente
+                    {(item.pendientes_incompletos ?? item.pendientes_sin_cumplimiento) === 1
+                      ? ""
+                      : "s"}{" "}
+                    sin completar
+                  </span>
+                ) : null}
+                {(item.ejecutadas_fuera_de_tiempo ?? 0) < 1 &&
+                (item.pendientes_fuera_plazo ?? 0) < 1 &&
+                (item.pendientes_incompletos ?? item.pendientes_sin_cumplimiento ?? 0) < 1
                   ? "—"
                   : null}
               </span>,
@@ -322,10 +372,10 @@ function Contenido() {
                     <Ban className="h-4 w-4" aria-hidden />
                   </Button>
                 ) : null}
-                {programada(item) && puede("sesiones.crear") ? (
+                {puedeIniciar(item) ? (
                   <Button type="button" variante="ghost" onClick={() => setIniciarDe(item)}>
                     <Play className="h-4 w-4" aria-hidden />
-                    Iniciar
+                    {finalizadaConPendientes(item) ? "Nueva sesión" : "Iniciar"}
                   </Button>
                 ) : null}
                 {enEjecucion(item) ? (
@@ -339,6 +389,19 @@ function Contenido() {
                   >
                     <ClipboardCheck className="h-4 w-4" aria-hidden />
                     Ejecutar
+                  </Button>
+                ) : null}
+                {finalizadaPorCompletar(item) ? (
+                  <Button
+                    type="button"
+                    variante="ghost"
+                    onClick={() => {
+                      const sid = sesionUltima(item) ?? sesionActiva(item);
+                      if (sid) setPanel({ item, sesionId: sid });
+                    }}
+                  >
+                    <ClipboardCheck className="h-4 w-4" aria-hidden />
+                    Completar
                   </Button>
                 ) : null}
               </span>,
@@ -390,7 +453,7 @@ function Contenido() {
                 <dd>{formatearFecha(detalle.fecha_hasta ?? detalle.fecha_programada)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Oportunidad</dt>
+                <dt className="text-xs uppercase text-slate-500">Plazo</dt>
                 <dd className="text-sm">
                   {(detalle.ejecutadas_fuera_de_tiempo ?? 0) > 0
                     ? `${detalle.ejecutadas_fuera_de_tiempo} ejecutada(s) fuera de tiempo`
@@ -421,6 +484,13 @@ function Contenido() {
                 <dd>
                   {detalle.cantidad_programada} trabajador
                   {detalle.cantidad_programada === 1 ? "" : "es"}
+                  {(detalle.pendientes_incompletos ?? detalle.pendientes_sin_cumplimiento ?? 0) > 0
+                    ? ` · ${detalle.pendientes_incompletos ?? detalle.pendientes_sin_cumplimiento} pendiente${
+                        (detalle.pendientes_incompletos ?? detalle.pendientes_sin_cumplimiento) === 1
+                          ? ""
+                          : "s"
+                      } sin completar`
+                    : ""}
                 </dd>
               </div>
             </dl>
@@ -429,14 +499,15 @@ function Contenido() {
               <div>
                 <p className="mb-2 text-sm font-medium text-slate-700">Ejecución</p>
                 <ul className="space-y-2">
-                  {detalle.sesiones.map((sesion) => (
+                  {detalle.sesiones.map((sesion, indice) => (
                     <li key={sesion.sesion_id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                       <p className="font-medium text-hseq-900">
-                        {formatearFecha(sesion.fecha)} {sesion.hora ?? ""}
+                        {tituloSesionCronograma(indice)} · {formatearFecha(sesion.fecha)}{" "}
+                        {sesion.hora ?? ""}
                       </p>
                       <p className="text-slate-600">
-                        {sesion.modalidad_nombre ?? "Sin modalidad"} · {sesion.convocados}/{sesion.cupo_maximo} convocados
-                        {sesion.estado === "EJECUTADA" ? " · Finalizada" : ""}
+                        {sesion.modalidad_nombre ?? "Sin modalidad"} · {sesion.convocados}/
+                        {sesion.cupo_maximo} convocados · {etiquetaEstadoSesion(sesion.estado)}
                       </p>
                     </li>
                   ))}
@@ -469,7 +540,7 @@ function Contenido() {
                 { clave: "car", etiqueta: "Cargo" },
                 { clave: "proy", etiqueta: "Proyecto" },
                 { clave: "est", etiqueta: "Estado" },
-                { clave: "opc", etiqueta: "Oportunidad" },
+                { clave: "opc", etiqueta: "Plazo" },
               ]}
               vacio="Nadie tiene esta capacitación asignada en el periodo. Cree la asignación en Asignaciones o agréguela al iniciar la ejecución."
               filas={trabajadores.map((t) => [
@@ -493,7 +564,11 @@ function Contenido() {
 
       <Modal
         abierto={iniciarDe !== null}
-        titulo="Iniciar capacitación"
+        titulo={
+          iniciarDe && finalizadaConPendientes(iniciarDe)
+            ? "Nueva sesión (pendientes)"
+            : "Iniciar capacitación"
+        }
         amplio={iniciarDe !== null && requiereFormularioInicio(iniciarDe)}
         onCerrar={() => setIniciarDe(null)}
       >
@@ -502,11 +577,16 @@ function Contenido() {
             <FormularioSesion
               key={`iniciar-${iniciarDe.capacitacion_id}-${iniciarDe.mes}`}
               item={iniciarDe}
+              soloPendientes={finalizadaConPendientes(iniciarDe)}
               onCancelar={() => setIniciarDe(null)}
               onGuardado={(detalle) => {
                 const item = iniciarDe;
                 setIniciarDe(null);
-                setMensaje("Sesión creada. Puede continuar con la ejecución.");
+                setMensaje(
+                  finalizadaConPendientes(item)
+                    ? "Nueva sesión creada para los trabajadores pendientes."
+                    : "Sesión creada. Puede continuar con la ejecución.",
+                );
                 setError(null);
                 recargar();
                 if (detalle?.sesion_id) {
@@ -517,17 +597,37 @@ function Contenido() {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} con fecha de sesión{" "}
-                {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00,
-                convocando a las personas asignadas en el periodo{" "}
-                {formatearFecha(iniciarDe.fecha_desde)} → {formatearFecha(iniciarDe.fecha_hasta)}.
+                {finalizadaConPendientes(iniciarDe) ? (
+                  <>
+                    Se creará una nueva sesión de {iniciarDe.codigo} — {iniciarDe.tema} para los{" "}
+                    {iniciarDe.pendientes_incompletos ?? iniciarDe.pendientes_sin_cumplimiento} trabajador
+                    {(iniciarDe.pendientes_incompletos ??
+                      iniciarDe.pendientes_sin_cumplimiento) === 1
+                      ? ""
+                      : "es"}{" "}
+                    que siguen pendientes (ausentes o reprobados), reutilizando la misma asignación. Fecha{" "}
+                    {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00
+                    (o hoy si esa fecha ya pasó). Si solo falta aprobar una nota, use «Completar».
+                  </>
+                ) : (
+                  <>
+                    Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} con fecha de sesión{" "}
+                    {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00,
+                    convocando a las personas asignadas en el periodo{" "}
+                    {formatearFecha(iniciarDe.fecha_desde)} → {formatearFecha(iniciarDe.fecha_hasta)}.
+                  </>
+                )}
               </p>
               <div className="flex justify-end gap-2">
                 <Button type="button" variante="secondary" onClick={() => setIniciarDe(null)}>
                   Cancelar
                 </Button>
                 <Button type="button" onClick={() => void confirmarInicio()} disabled={guardando}>
-                  {guardando ? "Iniciando…" : "Iniciar capacitación"}
+                  {guardando
+                    ? "Iniciando…"
+                    : finalizadaConPendientes(iniciarDe)
+                      ? "Crear nueva sesión"
+                      : "Iniciar capacitación"}
                 </Button>
               </div>
             </div>

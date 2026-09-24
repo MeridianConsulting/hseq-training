@@ -685,7 +685,7 @@ class CumplimientoService
      */
     public function previsualizar(int $sesionId, array $asignacionIds, ?string $fechaRealizacion): array
     {
-        $sesion = $this->exigirSesion($sesionId);
+        $sesion = $this->exigirSesion($sesionId, true);
         $fecha = $this->fechaRealizacion($fechaRealizacion, $sesion);
         $ids = $this->normalizarIds($asignacionIds);
 
@@ -918,7 +918,7 @@ class CumplimientoService
         $datos = $this->ignorarCliente($datos);
         unset($datos['fecha_vencimiento']);
         $sesionId = (int)($datos['sesion_id'] ?? 0);
-        $sesion = $this->exigirSesion($sesionId);
+        $sesion = $this->exigirSesion($sesionId, true);
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
         $resultado = $this->exigirResultado($datos['resultado'] ?? null);
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
@@ -1152,7 +1152,7 @@ class CumplimientoService
     public function registrarEvaluaciones(array $datos, ?int $usuarioId, ?array $actor = null): array
     {
         $sesionId = (int)($datos['sesion_id'] ?? 0);
-        $sesion = $this->exigirSesion($sesionId);
+        $sesion = $this->exigirSesion($sesionId, true);
         $requiere = (int)($sesion['capacitacion_evaluacion'] ?? 0) === 1;
         if (!$requiere) {
             throw new HttpException(self::MENSAJE_NOTA_NO_REQUERIDA, 422);
@@ -1202,12 +1202,23 @@ class CumplimientoService
 
         $filas = [];
         try {
-            $this->repo->transaccion(function () use ($preparados, $usuarioId, $actor, $sesionId, &$filas): void {
+            $this->repo->transaccion(function () use ($preparados, $usuarioId, $actor, $sesionId, $sesion, &$filas): void {
+                $minima = round((float)($sesion['capacitacion_nota_minima'] ?? 0), 2);
+                $requiereCert = (int)($sesion['capacitacion_certificado'] ?? 0) === 1;
                 foreach ($preparados as $item) {
-                    $this->repo->actualizar((int)$item['cumplimiento_id'], [
+                    $campos = [
                         'nota_evaluacion' => $item['nota'],
                         'registrado_por_usuario_id_ext' => $usuarioId,
-                    ]);
+                    ];
+                    // Si la nota alcanza el mínimo y no falta certificado, el cumplimiento queda APROBADO.
+                    if ((float)$item['nota'] >= $minima) {
+                        $cumplimientoId = (int)$item['cumplimiento_id'];
+                        $soportesOk = !$requiereCert || $this->soportes->contar($cumplimientoId) > 0;
+                        if ($soportesOk) {
+                            $campos['resultado'] = self::RESULTADO_APROBADO;
+                        }
+                    }
+                    $this->repo->actualizar((int)$item['cumplimiento_id'], $campos);
                     $fila = $this->repo->buscarPorAsignacion((int)$item['asignacion_id']);
                     if ($fila !== null) {
                         $filas[] = $fila;
@@ -1304,7 +1315,7 @@ class CumplimientoService
      */
     private function completarUno(array $campos, ?int $usuarioId): void
     {
-        $this->exigirSesion((int)$campos['sesion_id']);
+        $this->exigirSesion((int)$campos['sesion_id'], true);
         $this->validarParticipante((int)$campos['sesion_id'], (int)$campos['asignacion_id'], true);
         $notaEnviada = !empty($campos['nota_enviada']);
         $notaBruta = $campos['nota_evaluacion'] ?? null;
@@ -1474,7 +1485,7 @@ class CumplimientoService
     }
 
     /** @return array<string,mixed> */
-    private function exigirSesion(int $sesionId): array
+    private function exigirSesion(int $sesionId, bool $permitirFinalizada = false): array
     {
         if ($sesionId < 1) {
             throw new HttpException('Debe indicar la sesión.', 422);
@@ -1484,7 +1495,7 @@ class CumplimientoService
             throw new HttpException('La sesión no existe.', 404);
         }
         $estado = strtoupper((string)($sesion['estado'] ?? ''));
-        if ($estado === 'EJECUTADA') {
+        if ($estado === 'EJECUTADA' && !$permitirFinalizada) {
             throw new HttpException('No es posible registrar en una capacitación finalizada.', 409);
         }
         if ($estado === 'CANCELADA') {

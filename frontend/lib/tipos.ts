@@ -250,6 +250,9 @@ export type ItemCronograma = {
   cantidad_programada: number;
   ejecutadas_fuera_de_tiempo?: number;
   pendientes_fuera_plazo?: number;
+  pendientes_sin_cumplimiento?: number;
+  /** Pendientes según vw_estado (eval, soporte, ausente, etc.). */
+  pendientes_incompletos?: number;
   anio: number;
   proceso_id: number | null;
   proceso_nombre: string | null;

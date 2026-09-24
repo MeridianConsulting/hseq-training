@@ -722,7 +722,7 @@ function Contenido() {
                     { clave: "asis", etiqueta: "Asistencia" },
                     { clave: "nota", etiqueta: "Nota" },
                     { clave: "sop", etiqueta: "Soporte" },
-                    { clave: "opc", etiqueta: "Oportunidad" },
+                    { clave: "opc", etiqueta: "Plazo" },
                     { clave: "est", etiqueta: "Estado" },
                     { clave: "acc", etiqueta: "", clase: "w-px whitespace-nowrap" },
                   ]}
@@ -825,7 +825,7 @@ function Contenido() {
                 valor={detalle.ejecucion.fecha_realizacion || detalle.ejecucion.fecha_sesion ? "Sí" : "No"}
               />
               <Dato
-                etiqueta="Oportunidad"
+                etiqueta="Plazo"
                 valor={
                   detalle.ejecutada_fuera_de_tiempo || detalle.ejecucion.fuera_de_tiempo
                     ? "Fuera del tiempo (realización posterior a fecha hasta)"

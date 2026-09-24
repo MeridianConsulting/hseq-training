@@ -204,6 +204,7 @@ class CronogramaService
             ? ($this->sesionesPorDetalle([$detalleId])[$detalleId] ?? [])
             : ($this->sesionesPorCapacitacionMes([$capacitacionId], $anio)[$clave] ?? []);
 
+        $huboEjecutada = false;
         foreach ($existentes as $sesion) {
             $estado = strtoupper((string)($sesion['estado'] ?? ''));
             if ($estado === 'PROGRAMADA') {
@@ -215,7 +216,7 @@ class CronogramaService
                 return $detalleId > 0 ? $this->ver($detalleId) : $this->verGrupo($capacitacionId, $anio, $mes);
             }
             if ($estado === 'EJECUTADA') {
-                throw new HttpException('La capacitación ya fue finalizada.', 409);
+                $huboEjecutada = true;
             }
         }
 
@@ -224,13 +225,31 @@ class CronogramaService
             : (isset($fila['fecha_programada']) && $fila['fecha_programada'] !== null && $fila['fecha_programada'] !== ''
                 ? substr((string)$fila['fecha_programada'], 0, 10)
                 : sprintf('%04d-%02d-01', $anio, $mes));
+        $hoy = date('Y-m-d');
+        if ($huboEjecutada && $fechaHasta < $hoy) {
+            $fechaHasta = $hoy;
+        }
 
         $lista = $this->trabajadoresDeGrupo($capacitacionId, $anio, $mes, (int)$fila['cantidad_programada']);
+        $items = $lista['items'];
+        if ($huboEjecutada) {
+            $items = array_values(array_filter(
+                $items,
+                static fn (array $t): bool => self::asignacionPendienteDeCumplir($t)
+            ));
+            if ($items === []) {
+                throw new HttpException(
+                    'No hay trabajadores pendientes para una nueva sesión. Si ya asistieron y solo falta aprobar o corregir la nota, use «Completar».',
+                    409
+                );
+            }
+        }
+
         $asignacionIds = array_map(
             static fn (array $t): int => (int)$t['asignacion_id'],
-            $lista['items']
+            $items
         );
-        $cupo = max(count($asignacionIds), (int)$fila['cantidad_programada'], 1);
+        $cupo = max(count($asignacionIds), $huboEjecutada ? 1 : (int)$fila['cantidad_programada'], 1);
         $catalogo = $this->datosInicioSesion($fila);
 
         $this->sesionService->crear([
@@ -247,6 +266,20 @@ class CronogramaService
         ], $usuarioId);
 
         return $detalleId > 0 ? $this->ver($detalleId) : $this->verGrupo($capacitacionId, $anio, $mes);
+    }
+
+    /**
+     * Elegible para nueva sesión (reintento): reutiliza la misma asignación.
+     * Incluye ausentes y quienes asistieron pero siguen PENDIENTE (reprobados / sin APROBADO).
+     * No incluye COMPLETADA / VENCIDA / PROXIMA_A_VENCER.
+     *
+     * @param array<string,mixed> $trabajador
+     */
+    private static function asignacionPendienteDeCumplir(array $trabajador): bool
+    {
+        $estado = strtoupper((string)($trabajador['estado_asignacion'] ?? ''));
+
+        return $estado === '' || str_starts_with($estado, 'PENDIENTE');
     }
 
     /**
@@ -642,6 +675,8 @@ class CronogramaService
             'cantidad_programada' => (int)$fila['cantidad_programada'],
             'ejecutadas_fuera_de_tiempo' => (int)($fila['ejecutadas_fuera_de_tiempo'] ?? 0),
             'pendientes_fuera_plazo' => (int)($fila['pendientes_fuera_plazo'] ?? 0),
+            'pendientes_sin_cumplimiento' => (int)($fila['pendientes_sin_cumplimiento'] ?? 0),
+            'pendientes_incompletos' => (int)($fila['pendientes_incompletos'] ?? 0),
             'anio' => (int)$fila['anio'],
             'proceso_id' => $procesoId,
             'proceso_ids' => array_values($procesoIds),

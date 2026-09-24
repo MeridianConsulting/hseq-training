@@ -717,7 +717,7 @@ class ReporteService
                 ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha de realización', 'tipo' => 'fecha'],
                 ['clave' => 'fecha_sesion', 'etiqueta' => 'Fecha de sesión', 'tipo' => 'fecha'],
                 ['clave' => 'estado', 'etiqueta' => 'Estado'],
-                ['clave' => 'oportunidad', 'etiqueta' => 'Oportunidad'],
+                ['clave' => 'oportunidad', 'etiqueta' => 'Plazo'],
                 ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
                 ['clave' => 'resultado', 'etiqueta' => 'Resultado'],
                 ['clave' => 'horas_efectivas', 'etiqueta' => 'Horas', 'tipo' => 'numero'],
@@ -743,7 +743,7 @@ class ReporteService
             ['clave' => 'fecha_desde', 'etiqueta' => 'Fecha desde', 'tipo' => 'fecha'],
             ['clave' => 'fecha_hasta', 'etiqueta' => 'Fecha hasta', 'tipo' => 'fecha'],
             ['clave' => 'fecha_realizacion', 'etiqueta' => 'Fecha real de ejecución', 'tipo' => 'fecha'],
-            ['clave' => 'oportunidad', 'etiqueta' => 'Oportunidad'],
+            ['clave' => 'oportunidad', 'etiqueta' => 'Plazo'],
             ['clave' => 'fecha_vencimiento', 'etiqueta' => 'Fecha de vencimiento', 'tipo' => 'fecha'],
         ];
 

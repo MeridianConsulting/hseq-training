@@ -199,7 +199,7 @@ function FilaCapacitacion({
           <dd>{fecha(item.fecha_realizacion)}</dd>
         </div>
         <div>
-          <dt className="text-slate-400">Oportunidad</dt>
+          <dt className="text-slate-400">Plazo</dt>
           <dd>{texto(item.oportunidad)}</dd>
         </div>
         <div>

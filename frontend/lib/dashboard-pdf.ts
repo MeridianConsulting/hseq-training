@@ -295,7 +295,7 @@ export function exportarDashboardPdf(resumen: ResumenDashboard, meta: MetaDashbo
     b.barraHorizontal(titulo, t.izq, t.der, t.ratio, COLOR_EJECUTADO);
   }
 
-  b.seccion("Control de oportunidad y soportes");
+  b.seccion("Control de plazo y soportes");
   b.kv("Ejecutadas fuera de tiempo", String(resumen.ejecutadas_fuera_de_tiempo ?? 0));
   {
     const t = textoSoportes(resumen.soportes);

@@ -214,7 +214,7 @@ function columnasDe(tipo: string): { clave: string; etiqueta: string }[] {
     { clave: "fecha_desde", etiqueta: "Fecha desde" },
     { clave: "fecha_hasta", etiqueta: "Fecha hasta" },
     { clave: "fecha_realizacion", etiqueta: "Fecha real" },
-    { clave: "oportunidad", etiqueta: "Oportunidad" },
+    { clave: "oportunidad", etiqueta: "Plazo" },
     { clave: "fecha_vencimiento", etiqueta: "Vencimiento" },
   ];
   if (tipo === "tareas_criticas" || tipo === "cumplimiento_general") {
@@ -933,7 +933,7 @@ function Contenido() {
               { clave: "fecha_desde", etiqueta: "Desde" },
               { clave: "fecha_hasta", etiqueta: "Hasta" },
               { clave: "fecha_realizacion", etiqueta: "Fecha real" },
-              { clave: "oportunidad", etiqueta: "Oportunidad" },
+              { clave: "oportunidad", etiqueta: "Plazo" },
               { clave: "estado", etiqueta: "Estado" },
             ]}
             filas={drillItems.map((item) => [
@@ -1007,7 +1007,7 @@ function Contenido() {
                 <dd>{formatoFecha(detalle.fecha_realizacion)}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">Oportunidad</dt>
+                <dt className="text-xs uppercase text-slate-500">Plazo</dt>
                 <dd>{texto(detalle.oportunidad)}</dd>
               </div>
               <div>
