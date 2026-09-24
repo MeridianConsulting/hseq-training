@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { PanelOperativo } from "@/app/(app)/cronograma/panel-operativo";
+import {
+  FormularioSesion,
+  tipoModalidad,
+} from "@/app/(app)/cronograma/formulario-sesion";
 import { FiltroCronograma, type FiltroCronogramaValor } from "@/components/cronograma/filtro-cronograma";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
@@ -61,6 +65,11 @@ function sesionActiva(item: ItemCronograma): number | null {
   if (programada) return programada.sesion_id;
   const ultima = (item.sesiones ?? [])[item.sesiones.length - 1];
   return ultima ? ultima.sesion_id : null;
+}
+
+/** Virtual/mixta (u otra) requieren formulario con enlace; presencial puede iniciar rápido. */
+function requiereFormularioInicio(item: ItemCronograma): boolean {
+  return tipoModalidad(item.metodologia) !== "PRESENCIAL";
 }
 
 const ETIQUETAS_ASIGNACION: Record<string, string> = {
@@ -485,25 +494,44 @@ function Contenido() {
       <Modal
         abierto={iniciarDe !== null}
         titulo="Iniciar capacitación"
+        amplio={iniciarDe !== null && requiereFormularioInicio(iniciarDe)}
         onCerrar={() => setIniciarDe(null)}
       >
         {iniciarDe ? (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} con fecha de sesión{" "}
-              {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00,
-              convocando a las personas asignadas en el periodo{" "}
-              {formatearFecha(iniciarDe.fecha_desde)} → {formatearFecha(iniciarDe.fecha_hasta)}.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variante="secondary" onClick={() => setIniciarDe(null)}>
-                Cancelar
-              </Button>
-              <Button type="button" onClick={() => void confirmarInicio()} disabled={guardando}>
-                {guardando ? "Iniciando…" : "Iniciar capacitación"}
-              </Button>
+          requiereFormularioInicio(iniciarDe) ? (
+            <FormularioSesion
+              key={`iniciar-${iniciarDe.capacitacion_id}-${iniciarDe.mes}`}
+              item={iniciarDe}
+              onCancelar={() => setIniciarDe(null)}
+              onGuardado={(detalle) => {
+                const item = iniciarDe;
+                setIniciarDe(null);
+                setMensaje("Sesión creada. Puede continuar con la ejecución.");
+                setError(null);
+                recargar();
+                if (detalle?.sesion_id) {
+                  setPanel({ item, sesionId: detalle.sesion_id });
+                }
+              }}
+            />
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Se iniciará {iniciarDe.codigo} — {iniciarDe.tema} con fecha de sesión{" "}
+                {formatearFecha(iniciarDe.fecha_hasta ?? iniciarDe.fecha_programada)} a las 08:00,
+                convocando a las personas asignadas en el periodo{" "}
+                {formatearFecha(iniciarDe.fecha_desde)} → {formatearFecha(iniciarDe.fecha_hasta)}.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variante="secondary" onClick={() => setIniciarDe(null)}>
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={() => void confirmarInicio()} disabled={guardando}>
+                  {guardando ? "Iniciando…" : "Iniciar capacitación"}
+                </Button>
+              </div>
             </div>
-          </div>
+          )
         ) : null}
       </Modal>
 

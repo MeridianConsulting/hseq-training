@@ -104,6 +104,37 @@ class CapacitacionRepository
         return $salida;
     }
 
+    /**
+     * Capacitaciones activas elegibles en matriz: inducción/reinducción, obligatorias o tarea crítica.
+     *
+     * @return list<array{capacitacion_id:int,codigo:string,nombre:string,es_tarea_critica:bool,duracion_estimada_horas:?float,tipo_nombre:?string,vigencia_nombre:?string,objetivo:?string,modalidad_nombre:?string}>
+     */
+    public function listarActivasParaMatriz(): array
+    {
+        $salida = [];
+        foreach ($this->listarActivasResumen() as $cap) {
+            if ($this->esElegibleParaMatriz($cap['es_tarea_critica'], $cap['tipo_nombre'] ?? null)) {
+                $salida[] = $cap;
+            }
+        }
+
+        return $salida;
+    }
+
+    public function esElegibleParaMatriz(bool $esTareaCritica, ?string $tipoNombre): bool
+    {
+        if ($esTareaCritica) {
+            return true;
+        }
+
+        $tipo = self::normalizarTipoNombre($tipoNombre);
+
+        return $tipo === 'OBLIGATORIA'
+            || $tipo === 'INDUCCION'
+            || $tipo === 'REINDUCCION'
+            || $tipo === 'INDUCCION/REINDUCCION';
+    }
+
     public function buscarPorCodigo(string $codigo): ?array
     {
         return $this->db->fetch(

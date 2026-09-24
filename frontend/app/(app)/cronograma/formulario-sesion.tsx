@@ -51,13 +51,13 @@ function mesPadded(mes: number): string {
 
 function vacio(item: ItemCronograma): DatosSesion {
   return {
-    fecha: item.fecha_programada ?? `${item.anio}-${mesPadded(item.mes)}-01`,
+    fecha: item.fecha_hasta ?? item.fecha_programada ?? `${item.anio}-${mesPadded(item.mes)}-01`,
     hora: "08:00",
     modalidad_id: "",
     ubicacion_id: "",
     enlace_virtual: "",
     proveedor_id: "",
-    cupo_maximo: "",
+    cupo_maximo: String(Math.max(item.cantidad_programada || 1, 1)),
   };
 }
 
@@ -129,7 +129,7 @@ export function FormularioSesion({
   item: ItemCronograma;
   sesion?: SesionCronograma | null;
   onCancelar: () => void;
-  onGuardado: () => void;
+  onGuardado: (detalle?: DetalleSesion) => void;
 }) {
   const esEdicion = Boolean(sesion);
   const [datos, setDatos] = useState<DatosSesion>(sesion ? desdeSesion(sesion) : vacio(item));
@@ -248,7 +248,7 @@ export function FormularioSesion({
       });
       return;
     }
-    onGuardado();
+    onGuardado(r.data ?? undefined);
   }
 
   const convocables = contexto?.items ?? [];
@@ -405,7 +405,7 @@ export function FormularioSesion({
           Cancelar
         </Button>
         <Button type="submit" disabled={guardando}>
-          {esEdicion ? "Guardar cambios" : "Crear sesión"}
+          {esEdicion ? "Guardar cambios" : "Crear sesión e iniciar"}
         </Button>
       </div>
     </form>

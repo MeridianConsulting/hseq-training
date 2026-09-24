@@ -272,7 +272,7 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Matriz de aplicabilidad"
-        descripcion="Marque las capacitaciones que aplican a cada cargo según el proceso y, si corresponde, el proyecto. Las asignaciones se generan en el módulo de asignaciones."
+        descripcion="Marque las capacitaciones de inducción/reinducción, obligatorias o tareas críticas que aplican a cada cargo según el proceso y, si corresponde, el proyecto. Las asignaciones se generan en el módulo de asignaciones."
         acciones={
           puedeGuardar ? (
             <Button type="button" disabled={!contextoListo || !sucio || guardando} onClick={() => void guardar()}>

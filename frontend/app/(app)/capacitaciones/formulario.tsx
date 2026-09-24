@@ -181,7 +181,7 @@ export function FormularioCapacitacion({
   const [datos, setDatos] = useState<DatosCapacitacion>(base);
   const [errores, setErrores] = useState<ErroresCapacitacion>({});
 
-  const catalogosVisibles = useMemo(() => {
+  const catalogosVisibles = useMemo((): Record<string, ItemCatalogo[]> => {
     const tiposBase = tiposCapacitacionFormulario(catalogos["tipos-capacitacion"] ?? []);
     if (!inicial) {
       return {
@@ -390,7 +390,7 @@ export function FormularioCapacitacion({
       </Field>
 
       <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
-        <Button type="button" variante="secundario" onClick={onCancelar}>
+        <Button type="button" variante="secondary" onClick={onCancelar}>
           Cancelar
         </Button>
         <Button type="submit">Guardar</Button>

@@ -143,7 +143,7 @@ class MatrizService
             'procesos' => $this->alertas->procesosActivos(),
             'proyectos' => $this->alertas->proyectos(),
             'cargos' => $this->personal->cargos(),
-            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+            'capacitaciones' => $this->capacitaciones->listarActivasParaMatriz(),
         ];
     }
 
@@ -180,7 +180,7 @@ class MatrizService
             'consulta' => false,
             'cargos' => $this->cargosDeVista($procesoId, $proyectoNorm),
             'cargos_catalogo' => $catalogo,
-            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+            'capacitaciones' => $this->capacitaciones->listarActivasParaMatriz(),
             'celdas' => array_values($celdas),
         ];
     }
@@ -210,7 +210,7 @@ class MatrizService
             'consulta' => true,
             'cargos' => $catalogo,
             'cargos_catalogo' => $catalogo,
-            'capacitaciones' => $this->capacitaciones->listarActivasResumen(),
+            'capacitaciones' => $this->capacitaciones->listarActivasParaMatriz(),
             'celdas' => $celdas,
         ];
     }
@@ -741,6 +741,7 @@ class MatrizService
             if (strtoupper((string)($cap['estado'] ?? '')) !== 'ACTIVA') {
                 throw new HttpException('Solo se pueden asociar capacitaciones activas.', 422);
             }
+            $this->exigirCapacitacionParaMatriz($cap);
 
             $pares[$cargoId . ':' . $capId] = [
                 'cargo_id_ext' => $cargoId,
@@ -749,6 +750,19 @@ class MatrizService
         }
 
         return $pares;
+    }
+
+    private function exigirCapacitacionParaMatriz(array $cap): void
+    {
+        $esCritica = (int)($cap['es_tarea_critica'] ?? 0) === 1
+            || (!empty($cap['es_tarea_critica']) && $cap['es_tarea_critica'] === true);
+        $tipoNombre = isset($cap['tipo_nombre']) ? (string)$cap['tipo_nombre'] : null;
+        if (!$this->capacitaciones->esElegibleParaMatriz($esCritica, $tipoNombre)) {
+            throw new HttpException(
+                'En la matriz solo se permiten capacitaciones de inducción/reinducción, obligatorias o marcadas como tarea crítica.',
+                422
+            );
+        }
     }
 
     private function validarReferencias(array $datos, bool $altaNueva): void
@@ -760,6 +774,9 @@ class MatrizService
             }
             if ($altaNueva && strtoupper((string)($cap['estado'] ?? '')) !== 'ACTIVA') {
                 throw new HttpException('Solo se pueden asociar capacitaciones activas.', 422);
+            }
+            if ($altaNueva) {
+                $this->exigirCapacitacionParaMatriz($cap);
             }
         }
 
