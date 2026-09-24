@@ -99,19 +99,22 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(evento) => setPassword(evento.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 pr-28 text-sm outline-none transition focus:border-hseq-600 focus:ring-2 focus:ring-hseq-100"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 pr-11 text-sm outline-none transition focus:border-hseq-600 focus:ring-2 focus:ring-hseq-100"
                   placeholder="••••••••"
                 />
-                <Button
+                <button
                   type="button"
-                  variante="ghost"
                   onClick={() => setMostrarPassword((valor) => !valor)}
-                  className="absolute inset-y-0 right-2 my-auto !px-2 !py-1 text-xs"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 transition hover:text-hseq-800"
                   aria-label={mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  tabIndex={-1}
                 >
-                  {mostrarPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-                  {mostrarPassword ? "Ocultar" : "Mostrar"}
-                </Button>
+                  {mostrarPassword ? (
+                    <EyeOff className="h-4 w-4" aria-hidden />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden />
+                  )}
+                </button>
               </div>
             </label>
 

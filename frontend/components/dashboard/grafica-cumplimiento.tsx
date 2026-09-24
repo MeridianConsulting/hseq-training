@@ -1,6 +1,9 @@
 import { Card } from "@/components/ui/card";
 import type { KpiCumplimiento, KpiEficacia, KpiHoras, KpiSoportes } from "@/lib/tipos";
 
+const cardHoverClass =
+  "transition duration-200 ease-out hover:-translate-y-1 hover:border-hseq-300 hover:shadow-md";
+
 export function GraficaCumplimiento({
   titulo,
   descripcion,
@@ -18,7 +21,7 @@ export function GraficaCumplimiento({
   const altoEjecutado = (kpi.ejecutado / maximo) * 120;
 
   return (
-    <Card>
+    <Card className={cardHoverClass}>
       <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
       <p className="mt-1 text-xs text-slate-500">{descripcion}</p>
 
@@ -93,7 +96,7 @@ export function TarjetaEficacia({
   kpi: KpiEficacia;
 }) {
   return (
-    <Card>
+    <Card className={cardHoverClass}>
       <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
       <p className="mt-1 text-xs text-slate-500">{descripcion}</p>
       {kpi.evaluaciones === 0 || kpi.promedio === null ? (
@@ -108,7 +111,7 @@ export function TarjetaEficacia({
           </p>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-2 rounded-full bg-hseq-600"
+              className="h-2 rounded-full bg-hseq-600 transition-[width] duration-300"
               style={{ width: `${Math.min(100, Math.max(0, (kpi.promedio / 5) * 100))}%` }}
             />
           </div>
@@ -120,7 +123,7 @@ export function TarjetaEficacia({
 
 export function TarjetaSoportes({ kpi }: { kpi: KpiSoportes }) {
   return (
-    <Card>
+    <Card className={cardHoverClass}>
       <h3 className="text-sm font-semibold text-hseq-900">Cumplimiento de soportes</h3>
       <p className="mt-1 text-xs text-slate-500">
         Capacitaciones que requieren certificado/soporte. Con soporte = cumple; sin soporte =
@@ -179,7 +182,7 @@ export function TarjetaHoras({
   const anchoEjecutadas = (kpi.ejecutadas / maximo) * 100;
 
   return (
-    <Card>
+    <Card className={cardHoverClass}>
       <h3 className="text-sm font-semibold text-hseq-900">{titulo}</h3>
       <div className="mt-4 space-y-3">
         <BarraHoras etiqueta="Programadas" valor={kpi.programadas} ancho={anchoProgramadas} color="#0e7490" />
@@ -214,7 +217,10 @@ function BarraHoras({
         <p className="text-sm font-semibold text-hseq-900">{formatoNumero(valor, 1)} h</p>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-2 rounded-full" style={{ width: `${ancho}%`, backgroundColor: color }} />
+        <div
+          className="h-2 rounded-full transition-[width] duration-300"
+          style={{ width: `${ancho}%`, backgroundColor: color }}
+        />
       </div>
     </div>
   );

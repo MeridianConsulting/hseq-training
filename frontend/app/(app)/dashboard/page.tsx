@@ -171,7 +171,7 @@ function Contenido() {
             </div>
 
             <div className="flex flex-wrap items-stretch gap-3">
-              <Card className="min-w-[11rem] py-3 px-4">
+              <Card className="min-w-[11rem] py-3 px-4 transition duration-200 ease-out hover:-translate-y-1 hover:border-hseq-300 hover:shadow-md">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Empleados
                 </p>
@@ -187,7 +187,7 @@ function Contenido() {
                 </dl>
               </Card>
 
-              <Card className="min-w-[11rem] py-3 px-4">
+              <Card className="min-w-[11rem] py-3 px-4 transition duration-200 ease-out hover:-translate-y-1 hover:border-hseq-300 hover:shadow-md">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Alertas (resumen)
                 </p>
@@ -237,27 +237,6 @@ function Contenido() {
                 href="/reportes?tipo=tareas_criticas"
               />
             </div>
-            <Card className="mt-4 max-w-md py-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Control de oportunidad
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-700">Ejecutadas fuera de tiempo</p>
-              <p className="mt-1 text-3xl font-semibold text-hseq-900">
-                {resumen.ejecutadas_fuera_de_tiempo ?? 0}
-              </p>
-              <p className="mt-2 text-sm text-slate-600">
-                Cumplimientos aprobados cuya fecha real supera la fecha hasta de la asignación. Siguen
-                contando como ejecutadas; no reducen el % de cobertura (penalización pendiente de
-                definición). No es un noveno KPI adicional.
-              </p>
-              <Link
-                href="/reportes?tipo=cumplimiento_general"
-                prefetch={false}
-                className="mt-2 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
-              >
-                Analizar en Reportes
-              </Link>
-            </Card>
           </section>
 
           <section className="mb-8">
@@ -285,15 +264,6 @@ function Contenido() {
 
           <section className="mb-8">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Soportes
-            </h2>
-            <div className="max-w-xl">
-              <TarjetaSoportes kpi={resumen.soportes} />
-            </div>
-          </section>
-
-          <section className="mb-8">
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Horas de capacitación
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -308,6 +278,38 @@ function Contenido() {
                 kpi={horas.critica}
                 href="/reportes?tipo=tareas_criticas"
               />
+            </div>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Control de oportunidad y soportes
+            </h2>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="py-4 transition duration-200 ease-out hover:-translate-y-1 hover:border-hseq-300 hover:shadow-md">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Control de oportunidad
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-700">Ejecutadas fuera de tiempo</p>
+                <p className="mt-1 text-3xl font-semibold text-hseq-900">
+                  {resumen.ejecutadas_fuera_de_tiempo ?? 0}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  Cumplimientos aprobados cuya fecha real supera la fecha hasta de la asignación.
+                  Siguen contando como ejecutadas; no reducen el % de cobertura (penalización
+                  pendiente de definición). No es un noveno KPI adicional.
+                </p>
+                <Link
+                  href="/reportes?tipo=cumplimiento_general"
+                  prefetch={false}
+                  className="mt-2 inline-block text-sm font-medium text-hseq-800 underline-offset-2 hover:underline"
+                >
+                  Analizar en Reportes
+                </Link>
+              </Card>
+              <div>
+                <TarjetaSoportes kpi={resumen.soportes} />
+              </div>
             </div>
           </section>
         </>

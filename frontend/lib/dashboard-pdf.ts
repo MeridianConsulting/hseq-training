@@ -275,9 +275,6 @@ export function exportarDashboardPdf(resumen: ResumenDashboard, meta: MetaDashbo
     { titulo: "Tareas criticas", kpi: resumen.cobertura.tareas_criticas },
   ]);
 
-  b.kv("Ejecutadas fuera de tiempo", String(resumen.ejecutadas_fuera_de_tiempo ?? 0));
-  b.y += 2;
-
   b.seccion("Eficacia");
   for (const [titulo, kpi] of [
     ["Eficacia general", resumen.eficacia.general],
@@ -288,12 +285,6 @@ export function exportarDashboardPdf(resumen: ResumenDashboard, meta: MetaDashbo
     b.barraHorizontal(titulo, t.valor, "", t.ratio, COLOR_EJECUTADO);
   }
 
-  b.seccion("Soportes");
-  {
-    const t = textoSoportes(resumen.soportes);
-    b.barraHorizontal("Evidencias / soportes", t.izq, t.der, t.ratio, COLOR_PROGRAMADO);
-  }
-
   b.seccion("Horas de capacitacion");
   for (const [titulo, kpi] of [
     ["Total", resumen.horas.general],
@@ -302,6 +293,13 @@ export function exportarDashboardPdf(resumen: ResumenDashboard, meta: MetaDashbo
   ] as [string, KpiHoras][]) {
     const t = textoHoras(kpi);
     b.barraHorizontal(titulo, t.izq, t.der, t.ratio, COLOR_EJECUTADO);
+  }
+
+  b.seccion("Control de oportunidad y soportes");
+  b.kv("Ejecutadas fuera de tiempo", String(resumen.ejecutadas_fuera_de_tiempo ?? 0));
+  {
+    const t = textoSoportes(resumen.soportes);
+    b.barraHorizontal("Evidencias / soportes", t.izq, t.der, t.ratio, COLOR_PROGRAMADO);
   }
 
   const totalPaginas = doc.getNumberOfPages();
