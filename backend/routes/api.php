@@ -29,6 +29,7 @@ $router->post('/api/auth/login', [AuthController::class, 'login']);
 
 $router->group(['prefix' => '/api/auth', 'middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/me', [AuthController::class, 'me']);
+    $router->post('/refresh', [AuthController::class, 'refresh']);
     $router->post('/logout', [AuthController::class, 'logout']);
 });
 

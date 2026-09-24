@@ -21,6 +21,7 @@ export type ListaPaginada<T> = {
 };
 
 const TOKEN_KEY = "hseq_token";
+const TOKEN_EXPIRES_AT_KEY = "hseq_token_expires_at";
 const SESION_EXPIRADA = "hseq:sesion-expirada";
 
 export function getStoredToken(): string | null {
@@ -31,12 +32,50 @@ export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export function setStoredToken(token: string): void {
+export function setStoredToken(token: string, expiresInSegundos?: number): void {
   localStorage.setItem(TOKEN_KEY, token);
+  if (expiresInSegundos != null && expiresInSegundos > 0) {
+    localStorage.setItem(TOKEN_EXPIRES_AT_KEY, String(Date.now() + expiresInSegundos * 1000));
+  } else {
+    const expMs = leerExpDesdeJwt(token);
+    if (expMs != null) {
+      localStorage.setItem(TOKEN_EXPIRES_AT_KEY, String(expMs));
+    }
+  }
 }
 
 export function clearStoredToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+}
+
+/** Momento de expiración del token en ms epoch, o null. */
+export function getTokenExpiresAt(): number | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = localStorage.getItem(TOKEN_EXPIRES_AT_KEY);
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
+    }
+  }
+  const token = getStoredToken();
+  return token ? leerExpDesdeJwt(token) : null;
+}
+
+function leerExpDesdeJwt(token: string): number | null {
+  try {
+    const parte = token.split(".")[1];
+    if (!parte) {
+      return null;
+    }
+    const json = JSON.parse(atob(parte.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
 }
 
 export function onSesionExpirada(callback: () => void): () => void {
@@ -80,6 +119,10 @@ export function withQuery(
   return cadena ? `${path}?${cadena}` : path;
 }
 
+function esRutaPublicaAuth(path: string): boolean {
+  return path.startsWith("/api/auth/login") || path.startsWith("/api/ping");
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
   const token = getStoredToken();
   const headers = new Headers(options.headers);
@@ -89,7 +132,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers.set("Content-Type", "application/json");
   }
 
-  if (token && !path.startsWith("/api/auth/login")) {
+  if (token && !esRutaPublicaAuth(path)) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -98,11 +141,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers,
   });
 
-  if (
-    respuesta.status === 401
-    && !path.startsWith("/api/auth/login")
-    && !path.startsWith("/api/ping")
-  ) {
+  if (respuesta.status === 401 && !esRutaPublicaAuth(path)) {
     clearStoredToken();
     notificarSesionExpirada();
   }

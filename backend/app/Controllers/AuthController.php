@@ -40,6 +40,14 @@ class AuthController extends Controller
         $this->success($this->service->perfil($usuarioId), 'Sesión activa');
     }
 
+    public function refresh(Request $request): void
+    {
+        $sesion = $request->user() ?? [];
+        $usuarioId = (int)($sesion['id'] ?? $sesion['usuario_id'] ?? 0);
+
+        $this->success($this->service->refresh($usuarioId), 'Sesión renovada');
+    }
+
     public function logout(Request $request): void
     {
         $this->success(null, 'Sesión cerrada');

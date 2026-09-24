@@ -65,6 +65,23 @@ class AuthService
         return $this->aUsuarioPublico($usuario);
     }
 
+    /**
+     * Emite un token nuevo con la sesión actual (usuario activo y no bloqueado).
+     *
+     * @return array{token:string,token_type:string,expires_in:int,usuario:array<string,mixed>}
+     */
+    public function refresh(int $usuarioId): array
+    {
+        $publico = $this->perfil($usuarioId);
+
+        return [
+            'token' => $this->emitirToken($publico),
+            'token_type' => 'Bearer',
+            'expires_in' => (int)config('auth.jwt_expiration', 3600),
+            'usuario' => $publico,
+        ];
+    }
+
     private function emitirToken(array $usuario): string
     {
         $ahora = time();
