@@ -349,7 +349,7 @@ class AsignacionService
     }
 
     /**
-     * Asignación MANUAL a varios trabajadores. No toca la matriz.
+     * Asignación MANUAL a varios trabajadores. Valida matriz (cargo/proceso/proyecto); no modifica la matriz.
      *
      * @param array<string,mixed> $datos
      * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
@@ -732,18 +732,9 @@ class AsignacionService
      */
     private function procesoIdDePersona(array $persona): ?int
     {
-        $lista = $persona['procesos'] ?? [];
-        if (is_array($lista) && $lista !== []) {
-            $id = (int)($lista[0]['proceso_id'] ?? 0);
-            if ($id > 0) {
-                return $id;
-            }
-        }
+        $ids = $this->procesoIdsDePersona($persona);
 
-        $cargoId = (int)($persona['cargo_id'] ?? 0);
-        $proyecto = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
-
-        return $this->matriz->procesoIdParaCargo($cargoId, $proyecto !== '' ? $proyecto : null);
+        return $ids[0] ?? null;
     }
 
     private function exigirPersonaActiva(array $persona): void
@@ -777,15 +768,87 @@ class AsignacionService
     /**
      * @param array<string,mixed> $persona
      */
+    /**
+     * ¿La capacitación aplica al trabajador según matriz (cargo + proceso + proyecto)?
+     *
+     * @param array<string,mixed> $persona
+     */
     private function esAplicable(array $persona, int $capacitacionId): bool
     {
         $cargoId = isset($persona['cargo_id']) ? (int)$persona['cargo_id'] : 0;
-        $proyecto = is_string($persona['proyecto'] ?? null) ? (string)$persona['proyecto'] : null;
-        $filas = $this->matriz->aplicables($cargoId > 0 ? $cargoId : null, null, $proyecto);
-        foreach ($filas as $fila) {
-            if ((int)($fila['capacitacion_id'] ?? 0) === $capacitacionId) {
+        if ($cargoId < 1) {
+            return false;
+        }
+
+        $proyecto = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
+        $proyectoFiltro = $proyecto !== '' ? $proyecto : null;
+        $procesoIds = $this->procesoIdsDePersona($persona);
+
+        if ($procesoIds === []) {
+            return $this->capacitacionEnAplicables($cargoId, null, $proyectoFiltro, $capacitacionId, true);
+        }
+
+        foreach ($procesoIds as $procesoId) {
+            if ($this->capacitacionEnAplicables($cargoId, $procesoId, $proyectoFiltro, $capacitacionId, false)) {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $persona
+     * @return list<int>
+     */
+    private function procesoIdsDePersona(array $persona): array
+    {
+        $ids = [];
+        $lista = $persona['procesos'] ?? [];
+        if (is_array($lista)) {
+            foreach ($lista as $fila) {
+                if (!is_array($fila)) {
+                    continue;
+                }
+                $id = (int)($fila['proceso_id'] ?? 0);
+                if ($id > 0) {
+                    $ids[$id] = $id;
+                }
+            }
+        }
+
+        if ($ids === []) {
+            $cargoId = (int)($persona['cargo_id'] ?? 0);
+            $proyecto = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
+            $desdeMatriz = $this->matriz->procesoIdParaCargo($cargoId, $proyecto !== '' ? $proyecto : null);
+            if ($desdeMatriz !== null && $desdeMatriz > 0) {
+                $ids[$desdeMatriz] = $desdeMatriz;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    private function capacitacionEnAplicables(
+        int $cargoId,
+        ?int $procesoId,
+        ?string $proyecto,
+        int $capacitacionId,
+        bool $soloProcesoNulo
+    ): bool {
+        $filas = $this->matriz->aplicables($cargoId, $procesoId, $proyecto);
+        foreach ($filas as $fila) {
+            if ((int)($fila['capacitacion_id'] ?? 0) !== $capacitacionId) {
+                continue;
+            }
+            if ($soloProcesoNulo) {
+                $procesoFila = $fila['proceso_id'] ?? null;
+                if ($procesoFila !== null && (int)$procesoFila > 0) {
+                    continue;
+                }
+            }
+
+            return true;
         }
 
         return false;

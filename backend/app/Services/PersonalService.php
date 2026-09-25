@@ -160,12 +160,45 @@ class PersonalService
 
         try {
             $aplicables = [];
-            foreach ($this->matriz()->aplicables(
-                $ficha['cargo_id'] !== null ? (int)$ficha['cargo_id'] : null,
-                null,
-                is_string($ficha['proyecto'] ?? null) ? (string)$ficha['proyecto'] : null
-            ) as $fila) {
-                $aplicables[] = $this->normalizarAplicable($fila);
+            $cargoId = $ficha['cargo_id'] !== null ? (int)$ficha['cargo_id'] : 0;
+            $proyecto = is_string($ficha['proyecto'] ?? null) ? trim((string)$ficha['proyecto']) : '';
+            $proyectoFiltro = $proyecto !== '' ? $proyecto : null;
+            $procesoIds = [];
+            foreach ($ficha['procesos'] ?? [] as $proc) {
+                if (!is_array($proc)) {
+                    continue;
+                }
+                $pid = (int)($proc['proceso_id'] ?? 0);
+                if ($pid > 0) {
+                    $procesoIds[$pid] = $pid;
+                }
+            }
+            if ($procesoIds === [] && $cargoId > 0) {
+                $desdeMatriz = $this->matriz()->procesoIdParaCargo($cargoId, $proyectoFiltro);
+                if ($desdeMatriz !== null && $desdeMatriz > 0) {
+                    $procesoIds[$desdeMatriz] = $desdeMatriz;
+                }
+            }
+
+            $vistos = [];
+            if ($cargoId > 0) {
+                $consultas = $procesoIds !== [] ? array_values($procesoIds) : [null];
+                foreach ($consultas as $procesoId) {
+                    foreach ($this->matriz()->aplicables($cargoId, $procesoId, $proyectoFiltro) as $fila) {
+                        if ($procesoId === null) {
+                            $procesoFila = $fila['proceso_id'] ?? null;
+                            if ($procesoFila !== null && (int)$procesoFila > 0) {
+                                continue;
+                            }
+                        }
+                        $cid = (int)($fila['capacitacion_id'] ?? 0);
+                        if ($cid < 1 || isset($vistos[$cid])) {
+                            continue;
+                        }
+                        $vistos[$cid] = true;
+                        $aplicables[] = $this->normalizarAplicable($fila);
+                    }
+                }
             }
 
             $asignaciones = (new AsignacionService())->listar(1, 100, $personaId, null, null, null, null);

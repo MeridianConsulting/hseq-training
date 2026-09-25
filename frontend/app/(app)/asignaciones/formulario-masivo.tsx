@@ -154,8 +154,10 @@ export function FormularioAsignacionMasiva({
         </Field>
       </div>
       <p className="text-xs text-slate-500">
-        El mismo período aplica a todas las personas seleccionadas. HSEQ define el plazo; no se
-        calcula desde la vigencia ni desde el Plan anual.
+        El mismo período aplica a todas las personas seleccionadas. Solo se asignan quienes
+        coincidan con la Matriz de Aplicabilidad (cargo, proceso y proyecto); el resto se omite
+        como no aplicable. HSEQ define el plazo; no se calcula desde la vigencia ni desde el Plan
+        anual.
       </p>
 
       <Field etiqueta="Trabajadores activos" error={errores.persona_ids_ext}>

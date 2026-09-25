@@ -505,20 +505,55 @@ class CumplimientoService
         }
 
         $aplicables = [];
-        $cargoId = isset($trabajador['cargo_id']) ? (int)$trabajador['cargo_id'] : null;
-        $proyecto = is_string($trabajador['proyecto'] ?? null) ? (string)$trabajador['proyecto'] : null;
+        $cargoId = isset($trabajador['cargo_id']) ? (int)$trabajador['cargo_id'] : 0;
+        $proyecto = is_string($trabajador['proyecto'] ?? null) ? trim((string)$trabajador['proyecto']) : '';
+        $proyectoFiltro = $proyecto !== '' ? $proyecto : null;
+        $procesoIds = [];
+        foreach ($trabajador['procesos'] ?? [] as $proc) {
+            if (!is_array($proc)) {
+                continue;
+            }
+            $pid = (int)($proc['proceso_id'] ?? 0);
+            if ($pid > 0) {
+                $procesoIds[$pid] = $pid;
+            }
+        }
         try {
-            foreach ((new MatrizRepository())->aplicables($cargoId, null, $proyecto) as $fila) {
-                $aplicables[] = [
-                    'matriz_aplicabilidad_id' => isset($fila['matriz_aplicabilidad_id'])
-                        ? (int)$fila['matriz_aplicabilidad_id']
-                        : null,
-                    'capacitacion_id' => isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : null,
-                    'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? $fila['codigo'] ?? null,
-                    'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? $fila['nombre'] ?? null,
-                    'proceso_nombre' => $fila['proceso_nombre'] ?? null,
-                    'proyecto' => $fila['proyecto'] ?? null,
-                ];
+            $matrizRepo = new MatrizRepository();
+            if ($procesoIds === [] && $cargoId > 0) {
+                $desdeMatriz = $matrizRepo->procesoIdParaCargo($cargoId, $proyectoFiltro);
+                if ($desdeMatriz !== null && $desdeMatriz > 0) {
+                    $procesoIds[$desdeMatriz] = $desdeMatriz;
+                }
+            }
+            $vistos = [];
+            if ($cargoId > 0) {
+                $consultas = $procesoIds !== [] ? array_values($procesoIds) : [null];
+                foreach ($consultas as $procesoId) {
+                    foreach ($matrizRepo->aplicables($cargoId, $procesoId, $proyectoFiltro) as $fila) {
+                        if ($procesoId === null) {
+                            $procesoFila = $fila['proceso_id'] ?? null;
+                            if ($procesoFila !== null && (int)$procesoFila > 0) {
+                                continue;
+                            }
+                        }
+                        $cid = isset($fila['capacitacion_id']) ? (int)$fila['capacitacion_id'] : 0;
+                        if ($cid < 1 || isset($vistos[$cid])) {
+                            continue;
+                        }
+                        $vistos[$cid] = true;
+                        $aplicables[] = [
+                            'matriz_aplicabilidad_id' => isset($fila['matriz_aplicabilidad_id'])
+                                ? (int)$fila['matriz_aplicabilidad_id']
+                                : null,
+                            'capacitacion_id' => $cid,
+                            'capacitacion_codigo' => $fila['capacitacion_codigo'] ?? $fila['codigo'] ?? null,
+                            'capacitacion_nombre' => $fila['capacitacion_nombre'] ?? $fila['nombre'] ?? null,
+                            'proceso_nombre' => $fila['proceso_nombre'] ?? null,
+                            'proyecto' => $fila['proyecto'] ?? null,
+                        ];
+                    }
+                }
             }
         } catch (Throwable $e) {
             Logger::error('Error al consultar aplicables en cumplimientos: ' . $e->getMessage());
