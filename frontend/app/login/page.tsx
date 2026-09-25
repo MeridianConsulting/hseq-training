@@ -50,7 +50,7 @@ export default function LoginPage() {
             width={364}
             height={73}
             preload
-            className="mx-auto mb-6 h-[3.9rem] w-auto object-contain sm:h-[4.55rem] lg:absolute lg:top-[10%] lg:right-[20%] lg:mx-0 lg:mb-0"
+            className="mx-auto mb-6 h-[5.9rem] w-auto object-contain sm:h-[9.55rem] lg:absolute lg:top-[3%] lg:right-[20%] lg:mx-0 lg:mb-0"
             style={{ width: "auto" }}
           />
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">

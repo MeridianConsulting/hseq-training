@@ -67,13 +67,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" aria-hidden />
             </button>
-            <div className="flex items-center rounded-lg bg-hseq-950 px-2 py-1 sm:px-3 sm:py-1.5">
+            <div className="flex items-center rounded-lg  px-2 py-1 sm:px-3 sm:py-1.5">
               <Image
                 src="/logo-hseq.png"
                 alt="Logo HSEQ"
                 width={160}
                 height={32}
-                className="h-6 w-auto object-contain sm:h-8"
+                className="h-10 w-auto object-contain sm:h-12"
                 style={{ width: "auto" }}
               />
             </div>
