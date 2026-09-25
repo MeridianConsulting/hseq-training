@@ -19,7 +19,7 @@ body {
 }
 
 body {
-  background: #f4f7f8;
+  background: #d8dadb;
   color: #12262c;
 }
 
@@ -191,7 +191,6 @@ body {
   background-color: #b91c1c;
 }
 
-/* Flotante de exportar: tamaño/posición; hereda glow del primary */
 .btn-export-fab-wrap,
 .btn-export-pdf-wrap {
   position: fixed;

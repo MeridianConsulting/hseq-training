@@ -45,8 +45,8 @@ export default function LoginPage() {
       <div className="relative flex w-full max-w-5xl flex-col items-center gap-8 lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
         <div className="relative flex w-full max-w-md flex-col justify-center text-center text-white lg:text-left">
           <Image
-            src="/logo_principal.png"
-            alt="Meridian Consulting"
+            src="/logo-hseq.png"
+            alt="Logo HSEQ"
             width={364}
             height={73}
             preload

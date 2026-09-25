@@ -69,8 +69,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
             <div className="flex items-center rounded-lg bg-hseq-950 px-2 py-1 sm:px-3 sm:py-1.5">
               <Image
-                src="/logo_principal.png"
-                alt="Meridian Consulting"
+                src="/logo-hseq.png"
+                alt="Logo HSEQ"
                 width={160}
                 height={32}
                 className="h-6 w-auto object-contain sm:h-8"
