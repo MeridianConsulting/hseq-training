@@ -17,7 +17,7 @@ import { Table } from "@/components/ui/table";
 import { Download } from "lucide-react";
 import { FichaTrabajador, GruposCapacitacion, ListaPeriodos } from "./historial";
 import { apiDownload, apiGet, withQuery } from "@/lib/api";
-import { humanizarNombreUnidad, procesoRequiereProyecto } from "@/lib/catalogos";
+import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type {
   FichaTrabajadorReporte,
   GrupoHistorial,
@@ -283,8 +283,6 @@ function Contenido() {
   const rangoInicial = rangoDePeriodo("mensual", hoy.getFullYear(), hoy.getMonth() + 1, 1, 1);
   const [desde, setDesde] = useState(rangoInicial.desde);
   const [hasta, setHasta] = useState(rangoInicial.hasta);
-  const [procesoId, setProcesoId] = useState("");
-  const [proyecto, setProyecto] = useState("");
   const [buscar, setBuscar] = useState("");
   const [estado, setEstado] = useState("");
   const [cargoId, setCargoId] = useState("");
@@ -307,7 +305,6 @@ function Contenido() {
   const [historialProyecto, setHistorialProyecto] = useState<PeriodoHistorial[]>([]);
   const [historialProceso, setHistorialProceso] = useState<PeriodoHistorial[]>([]);
   const [totales, setTotales] = useState<TotalesReporte | null>(null);
-  const [etiquetas, setEtiquetas] = useState<Record<string, string>>({});
   const [titulo, setTitulo] = useState("Reportes");
   const [pagina, setPagina] = useState(1);
   const [ultima, setUltima] = useState(1);
@@ -325,7 +322,6 @@ function Contenido() {
   const [cargandoDrill, setCargandoDrill] = useState(false);
 
   const esHistorial = tipo === "historial_trabajador";
-  const muestraProyecto = procesoRequiereProyecto(procesoId, opciones.procesos);
   const permiteDetalle = TIPOS_DETALLE.includes(tipo);
   const permiteDrill = TIPOS_AGREGADOS.includes(tipo);
 
@@ -351,8 +347,6 @@ function Contenido() {
     () => ({
       desde: desde || undefined,
       hasta: hasta || undefined,
-      proceso_id: procesoId || undefined,
-      proyecto: muestraProyecto && proyecto ? proyecto : undefined,
       buscar: esHistorial ? undefined : buscar.trim() || undefined,
       estado: estado || undefined,
       cargo_id_ext: esHistorial ? cargoId || undefined : undefined,
@@ -363,8 +357,6 @@ function Contenido() {
     [
       desde,
       hasta,
-      procesoId,
-      proyecto,
       buscar,
       estado,
       cargoId,
@@ -372,7 +364,6 @@ function Contenido() {
       tipoCapId,
       personaId,
       esHistorial,
-      muestraProyecto,
     ],
   );
 
@@ -418,7 +409,6 @@ function Contenido() {
     setHistorialProyecto(data.historial_proyecto ?? []);
     setHistorialProceso(data.historial_proceso ?? []);
     setTotales(data.totales);
-    setEtiquetas(data.filtros_etiqueta ?? {});
     setTitulo(data.titulo);
     setPagina(data.pagination.current_page);
     setUltima(data.pagination.last_page);
@@ -461,8 +451,6 @@ function Contenido() {
     const extras: Record<string, string | number | undefined> = {
       desde: params.desde,
       hasta: params.hasta,
-      proceso_id: params.proceso_id,
-      proyecto: params.proyecto,
       estado: params.estado,
       page: 1,
       per_page: 100,
@@ -505,12 +493,6 @@ function Contenido() {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!muestraProyecto && proyecto !== "") {
-      setProyecto("");
-    }
-  }, [muestraProyecto, proyecto]);
 
   useEffect(() => {
     if (!esHistorial) {
@@ -578,35 +560,6 @@ function Contenido() {
             ))}
           </select>
         </Field>
-        <Field etiqueta="Proceso">
-          <select
-            className={inputClass}
-            value={procesoId}
-            onChange={(e) => {
-              setProcesoId(e.target.value);
-              setProyecto("");
-            }}
-          >
-            <option value="">Todos</option>
-            {opciones.procesos.map((p) => (
-              <option key={p.proceso_id} value={p.proceso_id}>
-                {p.nombre}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {muestraProyecto ? (
-          <Field etiqueta="Proyecto">
-            <select className={inputClass} value={proyecto} onChange={(e) => setProyecto(e.target.value)}>
-              <option value="">Todos</option>
-              {opciones.proyectos.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
         {muestraPeriodo ? (
           <>
             <Field etiqueta="Período">
@@ -753,76 +706,47 @@ function Contenido() {
         ) : null}
       </Filters>
 
-      <MasFiltros
-        abierto={masFiltros}
-        onToggle={() => setMasFiltros((abierto) => !abierto)}
-        extrasActivos={
-          [
-            muestraPeriodo ? desde : "",
-            muestraPeriodo ? hasta : "",
-            esHistorial ? cargoId : "",
-            esHistorial ? tipoCapId : "",
-            esHistorial ? capacitacionId : "",
-          ].filter(Boolean).length
-        }
-      >
-        {muestraPeriodo ? (
-          <>
-            <Field etiqueta="Fecha inicial">
-              <input className={inputClass} type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-            </Field>
-            <Field etiqueta="Fecha final">
-              <input className={inputClass} type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-            </Field>
-          </>
-        ) : null}
-        {esHistorial ? (
-          <>
-            <Field etiqueta="Cargo">
-              <select className={inputClass} value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
-                <option value="">Todos</option>
-                {opciones.cargos.map((c) => (
-                  <option key={c.cargo_id} value={c.cargo_id}>
-                    {c.nombre_cargo}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field etiqueta="Tipo de capacitación">
-              <select className={inputClass} value={tipoCapId} onChange={(e) => setTipoCapId(e.target.value)}>
-                <option value="">Todos</option>
-                {(opciones.tipos_capacitacion ?? []).map((t) => (
-                  <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
-                    {t.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field etiqueta="Capacitación">
-              <select
-                className={inputClass}
-                value={capacitacionId}
-                onChange={(e) => setCapacitacionId(e.target.value)}
-              >
-                <option value="">Todas</option>
-                {(opciones.capacitaciones ?? []).map((c) => (
-                  <option key={c.capacitacion_id} value={c.capacitacion_id}>
-                    {c.codigo} — {c.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </>
-        ) : null}
-      </MasFiltros>
-
-      {Object.keys(etiquetas).length > 0 ? (
-        <p className="mb-4 text-sm text-slate-600">
-          <span className="font-medium text-slate-700">Filtros aplicados:</span>{" "}
-          {Object.entries(etiquetas)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(" · ")}
-        </p>
+      {esHistorial ? (
+        <MasFiltros
+          abierto={masFiltros}
+          onToggle={() => setMasFiltros((abierto) => !abierto)}
+          extrasActivos={[cargoId, tipoCapId, capacitacionId].filter(Boolean).length}
+        >
+          <Field etiqueta="Cargo">
+            <select className={inputClass} value={cargoId} onChange={(e) => setCargoId(e.target.value)}>
+              <option value="">Todos</option>
+              {opciones.cargos.map((c) => (
+                <option key={c.cargo_id} value={c.cargo_id}>
+                  {c.nombre_cargo}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field etiqueta="Tipo de capacitación">
+            <select className={inputClass} value={tipoCapId} onChange={(e) => setTipoCapId(e.target.value)}>
+              <option value="">Todos</option>
+              {(opciones.tipos_capacitacion ?? []).map((t) => (
+                <option key={t.tipo_capacitacion_id} value={t.tipo_capacitacion_id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field etiqueta="Capacitación">
+            <select
+              className={inputClass}
+              value={capacitacionId}
+              onChange={(e) => setCapacitacionId(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {(opciones.capacitaciones ?? []).map((c) => (
+                <option key={c.capacitacion_id} value={c.capacitacion_id}>
+                  {c.codigo} — {c.nombre}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </MasFiltros>
       ) : null}
 
       {totales ? (
