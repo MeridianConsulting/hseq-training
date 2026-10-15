@@ -769,6 +769,7 @@ export type PersonaCorporativa = {
   tipo_documento_abreviatura?: string | null;
   nombre_completo: string;
   estado: string;
+  es_contratista?: boolean;
   fecha_inactivacion?: string | null;
   cargo_id: number | null;
   cargo: string | null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { useAuth } from "@/components/auth-provider";
@@ -16,9 +16,23 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { IdCard, Pencil } from "lucide-react";
-import { apiGet, apiPut, withQuery, type ApiErrorMap, type ListaPaginada } from "@/lib/api";
-import type { OpcionesPersonal, PersonaCorporativa, TipoDocumentoCorporativo } from "@/lib/tipos";
+import { Download, IdCard, Pencil, Plus, Upload } from "lucide-react";
+import {
+  apiDownload,
+  apiGet,
+  apiPost,
+  apiPostForm,
+  apiPut,
+  withQuery,
+  type ApiErrorMap,
+  type ListaPaginada,
+} from "@/lib/api";
+import type {
+  OpcionesPersonal,
+  PersonaCorporativa,
+  ResultadoCargaPersonal,
+  TipoDocumentoCorporativo,
+} from "@/lib/tipos";
 import { FormularioTrabajador, type DatosTrabajador } from "./formulario";
 
 function etiquetaProcesos(item: PersonaCorporativa): string {
@@ -39,6 +53,7 @@ export default function PersonalPage() {
 
 function Contenido() {
   const { puede } = useAuth();
+  const inputImportar = useRef<HTMLInputElement>(null);
   const { valores, setFiltro, limpiar } = useFiltrosUrl({
     buscar: "",
     estado: "Activo",
@@ -60,7 +75,9 @@ function Contenido() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [opcionesListas, setOpcionesListas] = useState(false);
   const [editando, setEditando] = useState<PersonaCorporativa | null>(null);
+  const [creando, setCreando] = useState(false);
   const [erroresApi, setErroresApi] = useState<ApiErrorMap | null>(null);
+  const [importando, setImportando] = useState(false);
 
   const muestraProyecto = procesoPermiteFiltroProyecto(valores.proceso_id, opciones.procesos);
 
@@ -123,7 +140,14 @@ function Contenido() {
       return;
     }
     void cargar(1);
-  }, [opcionesListas, valores.buscar, valores.estado, valores.cargo_id, valores.proceso_id, valores.proyecto]);
+  }, [
+    opcionesListas,
+    valores.buscar,
+    valores.estado,
+    valores.cargo_id,
+    valores.proceso_id,
+    valores.proyecto,
+  ]);
 
   const chips: ChipFiltro[] = [];
   if (valores.buscar) {
@@ -152,7 +176,7 @@ function Contenido() {
     chips.push({ clave: "proyecto", etiqueta: "Proyecto", valor: valores.proyecto });
   }
 
-  async function guardar(evento: FormEvent, datos: DatosTrabajador) {
+  async function guardarEdicion(evento: FormEvent, datos: DatosTrabajador) {
     evento.preventDefault();
     if (!editando) {
       return;
@@ -179,11 +203,117 @@ function Contenido() {
     void cargar(pagina);
   }
 
+  async function guardarAlta(evento: FormEvent, datos: DatosTrabajador) {
+    evento.preventDefault();
+    setErroresApi(null);
+    setError(null);
+    setMensaje(null);
+
+    const respuesta = await apiPost<PersonaCorporativa>("/api/personal", {
+      numero_documento: datos.numero_documento.trim(),
+      nombre_completo: datos.nombre_completo.trim(),
+      correo: datos.correo.trim() || null,
+      cargo_id: Number(datos.cargo_id),
+      proceso_id: Number(datos.proceso_id),
+      proyecto: datos.proyecto.trim() || null,
+      fecha_ingreso: datos.fecha_ingreso,
+      fecha_nacimiento: datos.fecha_nacimiento,
+      tipo_documento_id: Number(datos.tipo_documento_id),
+    });
+
+    if (!respuesta.success) {
+      setErroresApi(respuesta.errors);
+      setError(respuesta.message || "No fue posible registrar el personal.");
+      return;
+    }
+
+    setCreando(false);
+    setMensaje(respuesta.message || "Personal registrado.");
+    void cargar(1);
+  }
+
+  async function descargarPlantilla() {
+    try {
+      await apiDownload("/api/personal/plantilla", "plantilla_trabajadores.xlsx");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No fue posible descargar la plantilla.");
+    }
+  }
+
+  async function importarArchivo(archivo: File) {
+    setImportando(true);
+    setError(null);
+    setMensaje(null);
+    const form = new FormData();
+    form.append("archivo", archivo);
+    const respuesta = await apiPostForm<ResultadoCargaPersonal>("/api/personal/importar", form);
+    setImportando(false);
+
+    if (!respuesta.success || !respuesta.data) {
+      setError(respuesta.message || "No fue posible importar el archivo.");
+      return;
+    }
+
+    const r = respuesta.data;
+    setMensaje(
+      respuesta.message ||
+        `Importación: ${r.total_importados} de ${r.total_procesados} registros. Rechazados: ${r.total_rechazados}.`,
+    );
+    void cargar(1);
+  }
+
   return (
     <>
       <PageHeader
         titulo="Personal corporativo"
-        descripcion="Consulta del maestro meridian_personal. En Editar se asigna el proceso HSEQ (y proyecto si aplica); ese contexto se suma a los procesos de la matriz. No se dan de alta trabajadores aquí."
+        descripcion="Consulta y gestión del personal en meridian_personal."
+        acciones={
+          <div className="flex flex-wrap gap-2">
+            {puede("personal.importar") ? (
+              <>
+                <Button type="button" variante="secondary" onClick={() => void descargarPlantilla()}>
+                  <Download className="h-4 w-4" aria-hidden />
+                  Plantilla
+                </Button>
+                <Button
+                  type="button"
+                  variante="secondary"
+                  disabled={importando}
+                  onClick={() => inputImportar.current?.click()}
+                >
+                  <Upload className="h-4 w-4" aria-hidden />
+                  {importando ? "Importando…" : "Importar"}
+                </Button>
+                <input
+                  ref={inputImportar}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const archivo = e.target.files?.[0];
+                    e.target.value = "";
+                    if (archivo) {
+                      void importarArchivo(archivo);
+                    }
+                  }}
+                />
+              </>
+            ) : null}
+            {puede("personal.crear") ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setCreando(true);
+                  setErroresApi(null);
+                  setError(null);
+                }}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                Nuevo personal
+              </Button>
+            ) : null}
+          </div>
+        }
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
@@ -333,7 +463,32 @@ function Contenido() {
               setEditando(null);
               setErroresApi(null);
             }}
-            onGuardar={(e, datos) => void guardar(e, datos)}
+            onGuardar={(e, datos) => void guardarEdicion(e, datos)}
+          />
+        ) : null}
+      </Modal>
+
+      <Modal
+        abierto={creando}
+        titulo="Nuevo personal"
+        onCerrar={() => {
+          setCreando(false);
+          setErroresApi(null);
+        }}
+      >
+        {creando ? (
+          <FormularioTrabajador
+            inicial={null}
+            cargos={opciones.cargos}
+            procesos={opciones.procesos}
+            proyectos={opciones.proyectos}
+            tiposDocumento={tiposDocumento}
+            erroresApi={erroresApi}
+            onCancelar={() => {
+              setCreando(false);
+              setErroresApi(null);
+            }}
+            onGuardar={(e, datos) => void guardarAlta(e, datos)}
           />
         ) : null}
       </Modal>

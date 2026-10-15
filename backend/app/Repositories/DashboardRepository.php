@@ -245,9 +245,20 @@ class DashboardRepository
         $salida = [];
         foreach ($filas as $fila) {
             $nombre = trim((string)($fila['nombre'] ?? ''));
-            if ($nombre !== '') {
-                $salida[] = $nombre;
+            if ($nombre === '') {
+                continue;
             }
+            $clave = mb_strtoupper(trim($nombre), 'UTF-8');
+            $clave = strtr($clave, [
+                'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+                'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
+                'Ñ' => 'N',
+            ]);
+            $clave = preg_replace('/\s+/', ' ', $clave) ?? $clave;
+            if ($clave === 'ADMINISTRACION') {
+                continue;
+            }
+            $salida[] = $nombre;
         }
 
         return $salida;

@@ -51,7 +51,8 @@ class PersonalService
         ?string $estado,
         ?int $cargoId,
         ?string $proyecto = null,
-        ?int $procesoId = null
+        ?int $procesoId = null,
+        ?int $esContratista = null
     ): array {
         $pagina = max(1, $pagina);
         $porPagina = min(100, max(1, $porPagina));
@@ -59,6 +60,10 @@ class PersonalService
 
         if ($estado !== null && $estado !== '' && !in_array($estado, ['Activo', 'Inactivo'], true)) {
             throw new HttpException('El estado laboral debe ser Activo o Inactivo.', 422);
+        }
+
+        if ($esContratista !== null && $esContratista !== 0 && $esContratista !== 1) {
+            throw new HttpException('El filtro de contratista debe ser 0 o 1.', 422);
         }
 
         try {
@@ -82,7 +87,8 @@ class PersonalService
                     $cargoId,
                     $proyectoFiltro,
                     $cargoIds,
-                    $personaIds
+                    $personaIds,
+                    $esContratista
                 )
             ));
 
@@ -94,7 +100,8 @@ class PersonalService
                     $cargoId,
                     $proyectoFiltro,
                     $cargoIds,
-                    $personaIds
+                    $personaIds,
+                    $esContratista
                 ),
                 'page' => $pagina,
                 'per_page' => $porPagina,
@@ -530,16 +537,33 @@ class PersonalService
             return $this->rechazo('El documento no debe exceder 15 caracteres.');
         }
 
+        $primerNombreDirecto = $this->normalizarTexto($entrada['primer_nombre'] ?? '');
+        $primerApellidoDirecto = $this->normalizarTexto($entrada['primer_apellido'] ?? '');
         $nombreCompleto = $this->normalizarTexto($entrada['nombre_completo'] ?? $entrada['nombre'] ?? '');
 
-        if ($nombreCompleto === '') {
-            return $this->rechazo('El nombre es obligatorio.');
-        }
+        if ($primerNombreDirecto !== '' && $primerApellidoDirecto !== '') {
+            $partes = [
+                'primer_nombre' => $primerNombreDirecto,
+                'segundo_nombre' => ($sn = $this->normalizarTexto($entrada['segundo_nombre'] ?? '')) !== '' ? $sn : null,
+                'primer_apellido' => $primerApellidoDirecto,
+                'segundo_apellido' => ($sa = $this->normalizarTexto($entrada['segundo_apellido'] ?? '')) !== '' ? $sa : null,
+            ];
+            $nombreCompleto = trim(implode(' ', array_filter([
+                $partes['primer_nombre'],
+                $partes['segundo_nombre'],
+                $partes['primer_apellido'],
+                $partes['segundo_apellido'],
+            ])));
+        } else {
+            if ($nombreCompleto === '') {
+                return $this->rechazo('El nombre es obligatorio.');
+            }
 
-        $partes = $this->partirNombre($nombreCompleto);
+            $partes = $this->partirNombre($nombreCompleto);
 
-        if ($partes === null) {
-            return $this->rechazo('El nombre debe incluir al menos un nombre y un apellido.');
+            if ($partes === null) {
+                return $this->rechazo('El nombre debe incluir al menos un nombre y un apellido.');
+            }
         }
 
         $correo = $this->normalizarTexto($entrada['correo'] ?? $entrada['correo_corporativo'] ?? '');
@@ -563,6 +587,18 @@ class PersonalService
 
             return $this->rechazo($fechaBruta === '' ? 'La fecha de ingreso es obligatoria.' : 'La fecha de ingreso no es válida.');
         }
+
+        $fechaNacimientoIso = $this->parsearFecha($entrada['fecha_nacimiento'] ?? $entrada['fecha_nacimiento_texto'] ?? '');
+        if ($fechaNacimientoIso === null) {
+            $fechaNacBruta = $this->normalizarTexto($entrada['fecha_nacimiento'] ?? $entrada['fecha_nacimiento_texto'] ?? '');
+
+            return $this->rechazo(
+                $fechaNacBruta === ''
+                    ? 'La fecha de nacimiento es obligatoria.'
+                    : 'La fecha de nacimiento no es válida.'
+            );
+        }
+        $fechaNacimientoTexto = $this->formatearFechaNacimientoTexto($fechaNacimientoIso);
 
         $tipoDocumentoId = (int)($entrada['tipo_documento_id'] ?? self::TIPO_DOCUMENTO_CC);
 
@@ -629,8 +665,9 @@ class PersonalService
                 'proyecto' => $proyecto !== '' ? $proyecto : null,
                 'proceso_id' => $contexto['proceso_id'] ?? null,
                 'fecha_ingreso' => $fecha,
-                'fecha_nacimiento_texto' => self::FECHA_NACIMIENTO_TECNICA,
+                'fecha_nacimiento_texto' => $fechaNacimientoTexto,
                 'estado' => 'Activo',
+                'es_contratista' => 1,
             ],
         ];
     }
@@ -653,6 +690,7 @@ class PersonalService
                     'correo_corporativo' => $datos['correo_corporativo'],
                     'cargo_id' => $datos['cargo_id'],
                     'estado' => $datos['estado'],
+                    'es_contratista' => 1,
                 ]);
 
                 $this->repo->insertarContrato([
@@ -835,6 +873,16 @@ class PersonalService
             return null;
         }
 
+        if (preg_match('/^\d{8}$/', $texto) === 1) {
+            $fecha = \DateTimeImmutable::createFromFormat('!dmY', $texto);
+            $errores = \DateTimeImmutable::getLastErrors();
+            if ($fecha instanceof \DateTimeImmutable
+                && ($errores === false || ($errores['warning_count'] === 0 && $errores['error_count'] === 0))
+            ) {
+                return $fecha->format('Y-m-d');
+            }
+        }
+
         if (is_numeric($texto) && strpos($texto, '.') === false && (int)$texto > 20000 && (int)$texto < 80000) {
             return $this->fechaDesdeSerialExcel((int)$texto);
         }
@@ -855,6 +903,17 @@ class PersonalService
         }
 
         return null;
+    }
+
+    /** Convierte Y-m-d a DDMMAAAA para personas.fecha_nacimiento_texto. */
+    public function formatearFechaNacimientoTexto(string $fechaIso): string
+    {
+        $fecha = \DateTimeImmutable::createFromFormat('!Y-m-d', $fechaIso);
+        if (!$fecha instanceof \DateTimeImmutable) {
+            return self::FECHA_NACIMIENTO_TECNICA;
+        }
+
+        return $fecha->format('dmY');
     }
 
     /**
@@ -983,7 +1042,10 @@ class PersonalService
             return null;
         }
 
-        if ($procesoId !== null && $procesoId > 0 && !$this->alertasRepo()->procesoEsGestionProyectos($procesoId)) {
+        if ($procesoId !== null && $procesoId > 0
+            && !$this->alertasRepo()->procesoEsGestionProyectos($procesoId)
+            && !$this->alertasRepo()->procesoEsGestionAdministrativa($procesoId)
+        ) {
             return null;
         }
 
@@ -1087,6 +1149,13 @@ class PersonalService
             throw new HttpException('El proceso no existe o no está activo.', 422);
         }
 
+        if ($this->alertasRepo()->procesoEsGestionAdministrativa($procesoId)) {
+            return [
+                'proceso_id' => $procesoId,
+                'proyecto' => $this->alertasRepo()->proyectoAdministracion(),
+            ];
+        }
+
         $requiereProyecto = $this->alertasRepo()->procesoEsGestionProyectos($procesoId);
         $proyectoBruto = $this->normalizarTexto($entrada['proyecto'] ?? '');
 
@@ -1180,6 +1249,7 @@ class PersonalService
             'tipo_documento_abreviatura' => $fila['tipo_documento_abreviatura'] ?? null,
             'nombre_completo' => $fila['nombre_completo'],
             'estado' => $fila['estado'],
+            'es_contratista' => (int)($fila['es_contratista'] ?? 0) === 1,
             'fecha_inactivacion' => $fila['fecha_inactivacion'] ?? null,
             'cargo_id' => $fila['cargo_id'] !== null ? (int)$fila['cargo_id'] : null,
             'cargo' => $fila['cargo'],

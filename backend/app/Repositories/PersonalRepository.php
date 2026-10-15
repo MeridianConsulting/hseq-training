@@ -33,13 +33,14 @@ class PersonalRepository
         ?int $cargoId,
         ?string $proyecto = null,
         ?array $cargoIds = null,
-        ?array $personaIds = null
+        ?array $personaIds = null,
+        ?int $esContratista = null
     ): array {
         if ($this->filtroAlcanceVacio($cargoIds, $personaIds)) {
             return [];
         }
 
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds);
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds, $esContratista);
 
         $sql = $this->selectPersona()
             . " {$where}
@@ -59,13 +60,14 @@ class PersonalRepository
         ?int $cargoId,
         ?string $proyecto = null,
         ?array $cargoIds = null,
-        ?array $personaIds = null
+        ?array $personaIds = null,
+        ?int $esContratista = null
     ): int {
         if ($this->filtroAlcanceVacio($cargoIds, $personaIds)) {
             return 0;
         }
 
-        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds);
+        [$where, $params] = $this->filtros($buscar, $estado, $cargoId, $proyecto, $cargoIds, $personaIds, $esContratista);
         $personas = Database::personalTable('personas');
         $contratos = Database::personalTable('contratos');
 
@@ -352,7 +354,8 @@ class PersonalRepository
      *   fecha_nacimiento_texto:string,
      *   correo_corporativo:?string,
      *   cargo_id:int,
-     *   estado:string
+     *   estado:string,
+     *   es_contratista?:int
      * } $datos
      */
     public function insertarPersona(array $datos): int
@@ -370,6 +373,7 @@ class PersonalRepository
             'correo_corporativo' => $datos['correo_corporativo'],
             'cargo_id' => $datos['cargo_id'],
             'estado' => $datos['estado'],
+            'es_contratista' => (int)($datos['es_contratista'] ?? 1),
         ]);
     }
 
@@ -529,6 +533,7 @@ class PersonalRepository
                     p.primer_nombre,
                     p.primer_apellido,
                     p.estado,
+                    p.es_contratista,
                     p.fecha_inactivacion,
                     p.cargo_id,
                     c.nombre_cargo AS cargo,
@@ -597,7 +602,8 @@ class PersonalRepository
         ?int $cargoId,
         ?string $proyecto = null,
         ?array $cargoIds = null,
-        ?array $personaIds = null
+        ?array $personaIds = null,
+        ?int $esContratista = null
     ): array {
         $condiciones = [];
         $params = [];
@@ -616,6 +622,11 @@ class PersonalRepository
         if ($estado !== null && $estado !== '') {
             $condiciones[] = 'p.estado = ?';
             $params[] = $estado;
+        }
+
+        if ($esContratista !== null) {
+            $condiciones[] = 'p.es_contratista = ?';
+            $params[] = $esContratista === 1 ? 1 : 0;
         }
 
         if ($cargoId !== null && $cargoId > 0) {

@@ -210,6 +210,54 @@ class AlertaRepository
         return str_contains($clave, 'GESTION DE PROYECTOS');
     }
 
+    public function procesoEsGestionAdministrativa(?int $procesoId): bool
+    {
+        if ($procesoId === null || $procesoId < 1) {
+            return false;
+        }
+
+        $fila = $this->db->fetch(
+            'SELECT nombre FROM procesos WHERE proceso_id = ? LIMIT 1',
+            [$procesoId]
+        );
+        if ($fila === null) {
+            return false;
+        }
+
+        return $this->nombreEsGestionAdministrativa((string)$fila['nombre']);
+    }
+
+    public function nombreEsGestionAdministrativa(string $nombre): bool
+    {
+        $clave = $this->normalizarNombre($nombre);
+
+        return str_contains($clave, 'GESTION ADMINISTRATIVA Y FINANCIERA');
+    }
+
+    /** Proyecto fijo HSEQ para Gestión Administrativa y Financiera. */
+    public function proyectoAdministracion(): string
+    {
+        $canonico = $this->resolverProyecto('ADMINISTRACION', false);
+        if ($canonico !== null) {
+            return $canonico;
+        }
+
+        try {
+            $this->db->insert('proyectos', [
+                'nombre' => 'ADMINISTRACION',
+                'activo' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            $reintento = $this->resolverProyecto('ADMINISTRACION', false);
+            if ($reintento !== null) {
+                return $reintento;
+            }
+            throw $e;
+        }
+
+        return 'ADMINISTRACION';
+    }
+
     /**
      * @return list<array{cargo_id:int|string,nombre_cargo:string}>
      */
@@ -224,7 +272,12 @@ class AlertaRepository
         );
     }
 
-    /** @return list<string> */
+    /**
+     * Proyectos de obra para filtros/selectores.
+     * Excluye ADMINISTRACION (valor fijo de contexto GAF, no proyecto filtrable).
+     *
+     * @return list<string>
+     */
     public function proyectos(): array
     {
         $filas = $this->db->fetchAll(
@@ -234,12 +287,18 @@ class AlertaRepository
         $salida = [];
         foreach ($filas as $fila) {
             $nombre = trim((string)($fila['nombre'] ?? ''));
-            if ($nombre !== '') {
-                $salida[] = $nombre;
+            if ($nombre === '' || $this->esProyectoAdministracionInterno($nombre)) {
+                continue;
             }
+            $salida[] = $nombre;
         }
 
         return $salida;
+    }
+
+    public function esProyectoAdministracionInterno(string $nombre): bool
+    {
+        return $this->normalizarNombre($nombre) === 'ADMINISTRACION';
     }
 
     /**

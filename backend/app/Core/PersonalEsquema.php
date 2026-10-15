@@ -23,6 +23,7 @@ class PersonalEsquema
 
         try {
             self::asegurarFechaInactivacion();
+            self::asegurarEsContratista();
         } catch (Throwable $e) {
             Logger::error('No fue posible actualizar el esquema de personal: ' . $e->getMessage());
         }
@@ -48,6 +49,29 @@ class PersonalEsquema
         $db->getConnection()->exec(
             "ALTER TABLE {$tabla}
              ADD COLUMN fecha_inactivacion DATETIME NULL DEFAULT NULL AFTER estado"
+        );
+    }
+
+    private static function asegurarEsContratista(): void
+    {
+        $db = Database::personal();
+        $schema = Database::personalName();
+        $fila = $db->fetch(
+            "SELECT COUNT(*) AS total
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ?
+               AND TABLE_NAME = 'personas'
+               AND COLUMN_NAME = 'es_contratista'",
+            [$schema]
+        );
+        if ((int)($fila['total'] ?? 0) > 0) {
+            return;
+        }
+
+        $tabla = Database::personalTable('personas');
+        $db->getConnection()->exec(
+            "ALTER TABLE {$tabla}
+             ADD COLUMN es_contratista TINYINT(1) NOT NULL DEFAULT 0 AFTER estado"
         );
     }
 }

@@ -20,6 +20,7 @@ export type DatosTrabajador = {
   proceso_id: string;
   proyecto: string;
   fecha_ingreso: string;
+  fecha_nacimiento: string;
   tipo_documento_id: string;
 };
 
@@ -34,6 +35,7 @@ function vacio(): DatosTrabajador {
     proceso_id: "",
     proyecto: "",
     fecha_ingreso: "",
+    fecha_nacimiento: "",
     tipo_documento_id: "1",
   };
 }
@@ -47,6 +49,7 @@ function desdeItem(item: PersonaCorporativa): DatosTrabajador {
     proceso_id: item.proceso_id ? String(item.proceso_id) : "",
     proyecto: item.proyecto ?? "",
     fecha_ingreso: item.contrato_fecha_inicio ?? "",
+    fecha_nacimiento: "",
     tipo_documento_id: item.tipo_documento_id ? String(item.tipo_documento_id) : "1",
   };
 }
@@ -73,8 +76,16 @@ export function validarDatosTrabajador(
       errores.nombre_completo = "El nombre debe incluir al menos un nombre y un apellido.";
     }
 
+    if (!datos.tipo_documento_id) {
+      errores.tipo_documento_id = "El tipo de documento es obligatorio.";
+    }
+
     if (!datos.fecha_ingreso) {
       errores.fecha_ingreso = "La fecha de ingreso es obligatoria.";
+    }
+
+    if (!datos.fecha_nacimiento) {
+      errores.fecha_nacimiento = "La fecha de nacimiento es obligatoria.";
     }
   }
 
@@ -171,12 +182,16 @@ export function FormularioTrabajador({
           disabled={esEdicion}
         />
       </Field>
-      <Field etiqueta="Tipo de documento">
+      <Field
+        etiqueta="Tipo de documento"
+        error={errores.tipo_documento_id ?? primerError(erroresApi, "tipo_documento_id")}
+      >
         <select
           className={inputClass}
           value={datos.tipo_documento_id}
           onChange={(e) => set("tipo_documento_id", e.target.value)}
           disabled={esEdicion}
+          required={!esEdicion}
         >
           {tiposDocumento.length === 0 ? <option value="1">CC</option> : null}
           {tiposDocumento.map((tipo) => (
@@ -266,11 +281,25 @@ export function FormularioTrabajador({
           disabled={esEdicion}
         />
       </Field>
+      {!esEdicion ? (
+        <Field
+          etiqueta="Fecha de nacimiento"
+          error={errores.fecha_nacimiento ?? primerError(erroresApi, "fecha_nacimiento")}
+        >
+          <input
+            className={inputClass}
+            type="date"
+            value={datos.fecha_nacimiento}
+            onChange={(e) => set("fecha_nacimiento", e.target.value)}
+            required
+          />
+        </Field>
+      ) : null}
       <div className="flex justify-end gap-2 sm:col-span-2">
         <Button type="button" variante="secondary" onClick={onCancelar}>
           Cancelar
         </Button>
-        <Button type="submit">Guardar cambios</Button>
+        <Button type="submit">{esEdicion ? "Guardar cambios" : "Registrar personal"}</Button>
       </div>
     </form>
   );

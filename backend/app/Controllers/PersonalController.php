@@ -35,6 +35,10 @@ class PersonalController extends Controller
         $proyecto = nullable_trimmed_string($request->query('proyecto'));
         $procesoRaw = $request->query('proceso_id');
         $procesoId = ($procesoRaw !== null && $procesoRaw !== '') ? (int)$procesoRaw : null;
+        $contratistaRaw = $request->query('es_contratista');
+        $esContratista = ($contratistaRaw !== null && $contratistaRaw !== '')
+            ? (int)$contratistaRaw
+            : null;
 
         $resultado = $this->service->listar(
             $pagina,
@@ -43,7 +47,8 @@ class PersonalController extends Controller
             $estado,
             $cargoId,
             $proyecto,
-            $procesoId
+            $procesoId,
+            $esContratista
         );
 
         $this->paginate($resultado['items'], $resultado['total'], $resultado['page'], $resultado['per_page']);
@@ -165,14 +170,19 @@ class PersonalController extends Controller
 
         return [
             'numero_documento' => 'required|string|max:15',
-            'nombre_completo' => 'required|string|max:210',
+            'nombre_completo' => 'nullable|string|max:210',
+            'primer_nombre' => 'nullable|string|max:80',
+            'segundo_nombre' => 'nullable|string|max:80',
+            'primer_apellido' => 'nullable|string|max:80',
+            'segundo_apellido' => 'nullable|string|max:80',
             'correo' => 'nullable|email|max:100',
             'correo_corporativo' => 'nullable|email|max:100',
             'cargo_id' => 'required|integer',
             'proceso_id' => 'required|integer',
             'proyecto' => 'nullable|string|max:120',
             'fecha_ingreso' => 'required|date',
-            'tipo_documento_id' => 'nullable|integer',
+            'fecha_nacimiento' => 'required|date',
+            'tipo_documento_id' => 'required|integer',
         ];
     }
 
@@ -186,6 +196,9 @@ class PersonalController extends Controller
             'proceso_id.required' => 'El proceso es obligatorio.',
             'fecha_ingreso.required' => 'La fecha de ingreso es obligatoria.',
             'fecha_ingreso.date' => 'La fecha de ingreso no es válida.',
+            'fecha_nacimiento.required' => 'La fecha de nacimiento es obligatoria.',
+            'fecha_nacimiento.date' => 'La fecha de nacimiento no es válida.',
+            'tipo_documento_id.required' => 'El tipo de documento es obligatorio.',
             'correo.email' => 'El correo no tiene un formato válido.',
         ];
     }
@@ -222,30 +235,6 @@ class PersonalController extends Controller
             return "El trabajador fue {$verbo}, pero ocurrió un problema al generar sus asignaciones de capacitación. Consulte el historial o contacte al administrador.";
         }
 
-        $especiales = [];
-        foreach ($sync['creadas_especiales'] ?? [] as $nombre) {
-            if (is_string($nombre) && trim($nombre) !== '') {
-                $especiales[] = trim($nombre);
-            }
-        }
-
-        $partes = [$base];
-        if ($especiales !== []) {
-            $partes[] = 'Se asignó automáticamente: ' . implode(', ', $especiales);
-        }
-
-        $creadas = (int)($sync['creadas'] ?? 0);
-        $deMatriz = $creadas - count($especiales);
-        if ($deMatriz > 0) {
-            $partes[] = $deMatriz === $creadas
-                ? "{$creadas} asignaciones automáticas creadas."
-                : "{$deMatriz} asignaciones de matriz creadas.";
-        }
-
-        if (count($partes) === 1) {
-            return $base . '. No se encontraron capacitaciones aplicables nuevas para este trabajador.';
-        }
-
-        return implode('. ', $partes);
+        return $base;
     }
 }

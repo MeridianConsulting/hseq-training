@@ -28,6 +28,7 @@ class PersonalImportacionService
         'nombre' => 'Nombre',
         'cargo' => 'Cargo',
         'fecha_ingreso' => 'Fecha de ingreso',
+        'fecha_nacimiento' => 'Fecha de nacimiento',
     ];
 
     private PersonalService $personal;
@@ -43,7 +44,15 @@ class PersonalImportacionService
         $hoja = $libro->getActiveSheet();
         $hoja->setTitle('Trabajadores');
 
-        $encabezados = ['Documento', 'Nombre', 'Correo', 'Cargo', 'Proyecto', 'Fecha de ingreso'];
+        $encabezados = [
+            'Documento',
+            'Nombre',
+            'Correo',
+            'Cargo',
+            'Proyecto',
+            'Fecha de ingreso',
+            'Fecha de nacimiento',
+        ];
 
         foreach ($encabezados as $indice => $titulo) {
             $hoja->setCellValueByColumnAndRow($indice + 1, 1, $titulo);
@@ -56,6 +65,7 @@ class PersonalImportacionService
         $hoja->getColumnDimension('D')->setWidth(28);
         $hoja->getColumnDimension('E')->setWidth(22);
         $hoja->getColumnDimension('F')->setWidth(20);
+        $hoja->getColumnDimension('G')->setWidth(22);
 
         $hoja->getStyle('A:A')->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
         $hoja->setCellValueExplicit('A2', '001234567', DataType::TYPE_STRING);
@@ -64,15 +74,17 @@ class PersonalImportacionService
         $hoja->setCellValue('D2', 'PRACTICANTE');
         $hoja->setCellValue('E2', 'Proyecto ejemplo');
         $hoja->setCellValue('F2', '01/08/2026');
-        $hoja->getStyle('F:F')->getNumberFormat()->setFormatCode('DD/MM/YYYY');
+        $hoja->setCellValue('G2', '15/03/1990');
+        $hoja->getStyle('F:G')->getNumberFormat()->setFormatCode('DD/MM/YYYY');
 
         $notas = $libro->createSheet();
         $notas->setTitle('Indicaciones');
         $notas->setCellValue('A1', 'Use fechas en formato DD/MM/YYYY.');
         $notas->setCellValue('A2', 'La columna Documento debe ser texto para conservar ceros a la izquierda.');
         $notas->setCellValue('A3', 'El cargo debe coincidir con un cargo existente del catálogo corporativo. No se crean cargos nuevos.');
-        $notas->setCellValue('A4', 'Correo y proyecto son opcionales.');
-        $notas->setCellValue('A5', 'Un error en una fila no impide importar el resto de filas válidas.');
+        $notas->setCellValue('A4', 'Correo y proyecto son opcionales. Fecha de nacimiento es obligatoria.');
+        $notas->setCellValue('A5', 'Toda persona importada desde HSEQ se registra como contratista (es_contratista = 1).');
+        $notas->setCellValue('A6', 'Un error en una fila no impide importar el resto de filas válidas.');
         $notas->getColumnDimension('A')->setWidth(110);
 
         $libro->setActiveSheetIndex(0);
@@ -144,6 +156,7 @@ class PersonalImportacionService
                     'cargo' => $fila['cargo'],
                     'proyecto' => $fila['proyecto'],
                     'fecha_ingreso' => $fila['fecha_ingreso'],
+                    'fecha_nacimiento' => $fila['fecha_nacimiento'],
                 ],
                 null,
                 $documentosEnBd,
@@ -304,6 +317,7 @@ class PersonalImportacionService
                 'cargo' => $this->valorColumna($valores, $mapaColumnas, 'cargo'),
                 'proyecto' => $this->valorColumna($valores, $mapaColumnas, 'proyecto'),
                 'fecha_ingreso' => $this->valorColumna($valores, $mapaColumnas, 'fecha_ingreso'),
+                'fecha_nacimiento' => $this->valorColumna($valores, $mapaColumnas, 'fecha_nacimiento'),
             ];
         }
 
@@ -371,6 +385,9 @@ class PersonalImportacionService
             'fecha de ingreso' => 'fecha_ingreso',
             'fecha ingreso' => 'fecha_ingreso',
             'fecha_ingreso' => 'fecha_ingreso',
+            'fecha de nacimiento' => 'fecha_nacimiento',
+            'fecha nacimiento' => 'fecha_nacimiento',
+            'fecha_nacimiento' => 'fecha_nacimiento',
         ];
 
         return $alias[$clave] ?? null;
