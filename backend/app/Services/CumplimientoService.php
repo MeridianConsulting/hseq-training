@@ -793,7 +793,7 @@ class CumplimientoService
         return [
             'asignacion_id' => 'required|integer|min:1',
             'fecha_realizacion' => 'required|date',
-            'nota_evaluacion' => 'nullable',
+            'nota_evaluacion' => 'required',
             'horas_efectivas' => 'nullable|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
         ];
@@ -832,20 +832,15 @@ class CumplimientoService
         }
 
         $requiereEval = (int)($cap['evaluacion'] ?? 0) === 1;
-        $nota = null;
-        if (($datos['nota_evaluacion'] ?? null) !== null && $datos['nota_evaluacion'] !== '') {
-            $nota = $this->exigirNota($datos['nota_evaluacion']);
-        }
-        if ($requiereEval && $nota === null) {
-            throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
-        }
+        // En el registro directo todos los campos son obligatorios (fecha, nota y soporte).
+        $nota = $this->exigirNota($datos['nota_evaluacion'] ?? null);
         if ($requiereEval && $nota < round((float)($cap['nota_minima'] ?? 0), 2)) {
             throw new HttpException(self::MENSAJE_NOTA_MINIMA, 422);
         }
 
         $tieneSoportes = $existente !== null && $this->soportes->contar((int)$existente['cumplimiento_id']) > 0;
-        if ($archivos === [] && !$tieneSoportes && $this->soportes->requiereCertificadoPorCapacitacion($capId)) {
-            throw new HttpException(SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 422);
+        if ($archivos === [] && !$tieneSoportes) {
+            throw new HttpException('Debe adjuntar al menos un soporte.', 422);
         }
 
         $horas = $datos['horas_efectivas'] ?? null;
@@ -1240,12 +1235,15 @@ class CumplimientoService
             : strtoupper((string)($actual['resultado'] ?? ''));
         $notaEnviada = array_key_exists('nota_evaluacion', $datos);
         $meta = $this->metaEvaluacion($actual, (int)($actual['sesion_id'] ?? 0));
-        $nota = $this->resolverNota(
-            $datos['nota_evaluacion'] ?? null,
-            $notaEnviada,
-            $meta,
-            $actual['nota_evaluacion'] ?? null
-        );
+        // La edición de historial siempre envía nota (campo obligatorio), aun sin evaluación.
+        $nota = !$meta['requiere'] && $notaEnviada && ($datos['nota_evaluacion'] ?? '') !== ''
+            ? $this->exigirNota($datos['nota_evaluacion'])
+            : $this->resolverNota(
+                $datos['nota_evaluacion'] ?? null,
+                $notaEnviada,
+                $meta,
+                $actual['nota_evaluacion'] ?? null
+            );
         $this->exigirNotaParaAprobado($resultado, $nota, $meta);
         $this->exigirEvidenciaParaAprobado(
             $resultado,

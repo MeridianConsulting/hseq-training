@@ -37,16 +37,18 @@ export function RegistroDirecto({
   async function enviar(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (persona.requiere_certificado && persona.soportes_count === 0 && archivos.length === 0) {
-      setError("Esta capacitación requiere certificado. Adjunte al menos un archivo.");
+    const faltantes: string[] = [];
+    if (!fecha) faltantes.push("la fecha en que la realizó");
+    if (nota.trim() === "") faltantes.push("la nota");
+    if (persona.soportes_count === 0 && archivos.length === 0) faltantes.push("al menos un soporte");
+    if (faltantes.length > 0) {
+      setError(`Todos los campos son obligatorios. Falta: ${faltantes.join(", ")}.`);
       return;
     }
     const form = new FormData();
     form.append("asignacion_id", String(persona.asignacion_id));
     form.append("fecha_realizacion", fecha);
-    if (nota.trim() !== "") {
-      form.append("nota_evaluacion", nota.replace(",", "."));
-    }
+    form.append("nota_evaluacion", nota.replace(",", "."));
     for (const archivo of archivos) {
       form.append("archivos[]", archivo);
     }
@@ -92,7 +94,7 @@ export function RegistroDirecto({
             required
           />
         </Field>
-        <Field etiqueta={persona.requiere_evaluacion ? "Nota" : "Nota (no requerida)"}>
+        <Field etiqueta="Nota">
           <input
             className={inputClass}
             type="number"
@@ -101,18 +103,17 @@ export function RegistroDirecto({
             step="0.01"
             value={nota}
             onChange={(e) => setNota(e.target.value)}
-            required={persona.requiere_evaluacion}
-            disabled={!persona.requiere_evaluacion}
-            placeholder={persona.requiere_evaluacion ? "" : "N/A"}
+            required
           />
         </Field>
-        <Field etiqueta={persona.requiere_certificado ? "Soportes (obligatorio)" : "Soportes (PDF, JPG, PNG)"}>
+        <Field etiqueta="Soportes (PDF, JPG, PNG)">
           <input
             className={inputClass}
             type="file"
             multiple
             accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
             onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
+            required={persona.soportes_count === 0}
           />
           {archivos.length > 0 ? (
             <ul className="mt-1 space-y-0.5 text-xs">

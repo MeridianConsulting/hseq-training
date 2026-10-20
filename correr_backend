@@ -1,2 +1,5 @@
 cd c:\xampp\htdocs\hseq-training\backend
 php -S localhost:8080 -t public public/index.php
+
+cd c:\xampp\htdocs\hseq-training\frontend
+npm run build:prod

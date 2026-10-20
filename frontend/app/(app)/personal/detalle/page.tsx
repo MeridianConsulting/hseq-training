@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState, type FormEvent, type ReactN
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ListaEvidencias, VistaPreviaArchivo, useVistaPrevia } from "@/app/(app)/cumplimientos/evidencias";
+import { EditarHistorial } from "@/app/(app)/personal/detalle/editar-historial";
 import { useAuth } from "@/components/auth-provider";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
@@ -124,6 +125,7 @@ function Contenido() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [editando, setEditando] = useState<Cumplimiento | null>(null);
 
   const cargarPerfil = useCallback(async () => {
     if (!Number.isFinite(id) || id < 1) {
@@ -282,6 +284,7 @@ function Contenido() {
             { clave: "nota", etiqueta: "Evaluación" },
             { clave: "vence", etiqueta: "Vencimiento" },
             { clave: "sop", etiqueta: "Soportes" },
+            ...(puede("cumplimientos.editar") ? [{ clave: "acc", etiqueta: "", clase: "w-px whitespace-nowrap" }] : []),
           ]}
           filas={perfil.cumplimientos.map((item) => [
             etiquetaCapacitacion(item),
@@ -290,8 +293,30 @@ function Contenido() {
             etiquetaNota(item),
             formatoFecha(item.fecha_vencimiento),
             <ListaEvidencias key={`s-${item.cumplimiento_id}`} soportes={item.soportes ?? []} />,
+            ...(puede("cumplimientos.editar")
+              ? [
+                  <Button key="e" type="button" variante="ghost" className="px-2" onClick={() => setEditando(item)}>
+                    Editar
+                  </Button>,
+                ]
+              : []),
           ])}
         />
+        {editando ? (
+          <EditarHistorial
+            item={editando}
+            onCerrar={() => {
+              setEditando(null);
+              void cargarPerfil();
+            }}
+            onGuardado={async (msg) => {
+              setEditando(null);
+              setMensaje(msg);
+              setError(null);
+              await cargarPerfil();
+            }}
+          />
+        ) : null}
         {puede("cumplimientos.crear") ? (
           <FormularioHistorial
             personaId={id}
@@ -397,8 +422,8 @@ function FormularioHistorial({
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
-    if (!capacitacionId || !fecha) {
-      onError("Indique capacitación y fecha real de ejecución.");
+    if (!capacitacionId || !fecha || nota.trim() === "" || archivos.length === 0) {
+      onError("Todos los campos son obligatorios: capacitación, fecha real de ejecución, nota y al menos un soporte.");
       return;
     }
     setEnviando(true);
@@ -407,9 +432,7 @@ function FormularioHistorial({
       capacitacion_id: Number(capacitacionId),
       fecha_realizacion: fecha,
     };
-    if (nota.trim() !== "") {
-      body.nota_evaluacion = Number(nota.replace(",", "."));
-    }
+    body.nota_evaluacion = Number(nota.replace(",", "."));
     const r = await apiPost<Cumplimiento>("/api/cumplimientos/historial", body);
     if (r.cancelada) {
       setEnviando(false);
@@ -482,7 +505,7 @@ function FormularioHistorial({
           required
         />
       </Field>
-      <Field etiqueta="Nota (si aplica)">
+      <Field etiqueta="Nota">
         <input
           className={inputClass}
           type="number"
@@ -491,7 +514,7 @@ function FormularioHistorial({
           step="0.01"
           value={nota}
           onChange={(e) => setNota(e.target.value)}
-          placeholder="Opcional"
+          required
         />
       </Field>
       <Field etiqueta="Soportes (PDF, JPG, PNG)">
@@ -502,6 +525,7 @@ function FormularioHistorial({
           multiple
           accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
           onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
+          required
         />
         {archivos.length > 0 ? (
           <ul className="mt-1 space-y-0.5 text-xs">
