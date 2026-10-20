@@ -198,7 +198,8 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<ApiR
   return payload;
 }
 
-export async function apiDownload(path: string, nombreFallback: string): Promise<void> {
+/** Obtiene un archivo protegido como Blob (descarga o vista previa). */
+export async function apiBlob(path: string): Promise<Blob> {
   const token = getStoredToken();
   const headers = new Headers();
   headers.set("Accept", "*/*");
@@ -228,7 +229,11 @@ export async function apiDownload(path: string, nombreFallback: string): Promise
     throw new Error(mensaje);
   }
 
-  const blob = await respuesta.blob();
+  return respuesta.blob();
+}
+
+export async function apiDownload(path: string, nombreFallback: string): Promise<void> {
+  const blob = await apiBlob(path);
   const url = URL.createObjectURL(blob);
   const enlace = document.createElement("a");
   enlace.href = url;

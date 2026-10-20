@@ -788,6 +788,145 @@ class CumplimientoService
         });
     }
 
+    public function reglasDirecto(): array
+    {
+        return [
+            'asignacion_id' => 'required|integer|min:1',
+            'fecha_realizacion' => 'required|date',
+            'nota_evaluacion' => 'nullable',
+            'horas_efectivas' => 'nullable|numeric|gt:0',
+            'observaciones' => 'nullable|string|max:500',
+        ];
+    }
+
+    /**
+     * Registro directo desde Cumplimientos (sin sesión): fecha real, nota y soportes
+     * sobre una asignación existente. Todo o nada: si un archivo falla no queda registro.
+     *
+     * @param array<string,mixed> $datos
+     * @param list<array<string,mixed>> $archivos items de $_FILES
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     * @return array<string,mixed>
+     */
+    public function registrarDirecto(array $datos, array $archivos, ?int $usuarioId, ?array $actor = null): array
+    {
+        $asigId = (int)($datos['asignacion_id'] ?? 0);
+        $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
+        if ($fecha > date('Y-m-d')) {
+            throw new HttpException('La fecha de realización no puede ser futura.', 422);
+        }
+        $asig = (new AsignacionRepository())->buscarPorId($asigId);
+        if ($asig === null) {
+            throw new HttpException('La asignación no existe.', 404);
+        }
+
+        $capId = (int)$asig['capacitacion_id'];
+        $cap = (new CapacitacionRepository())->buscarPorId($capId);
+        if ($cap === null) {
+            throw new HttpException('Capacitación no encontrada.', 404);
+        }
+
+        $existente = $this->repo->buscarPorAsignacion($asigId);
+        if ($existente !== null && strtoupper((string)($existente['resultado'] ?? '')) === self::RESULTADO_APROBADO) {
+            throw new HttpException(self::MENSAJE_YA_REGISTRADO, 409);
+        }
+
+        $requiereEval = (int)($cap['evaluacion'] ?? 0) === 1;
+        $nota = null;
+        if (($datos['nota_evaluacion'] ?? null) !== null && $datos['nota_evaluacion'] !== '') {
+            $nota = $this->exigirNota($datos['nota_evaluacion']);
+        }
+        if ($requiereEval && $nota === null) {
+            throw new HttpException(self::MENSAJE_NOTA_OBLIGATORIA, 422);
+        }
+        if ($requiereEval && $nota < round((float)($cap['nota_minima'] ?? 0), 2)) {
+            throw new HttpException(self::MENSAJE_NOTA_MINIMA, 422);
+        }
+
+        $tieneSoportes = $existente !== null && $this->soportes->contar((int)$existente['cumplimiento_id']) > 0;
+        if ($archivos === [] && !$tieneSoportes && $this->soportes->requiereCertificadoPorCapacitacion($capId)) {
+            throw new HttpException(SoporteService::MENSAJE_REQUIERE_CERTIFICADO, 422);
+        }
+
+        $horas = $datos['horas_efectivas'] ?? null;
+        $horas = $horas === null || $horas === ''
+            ? (float)($cap['duracion_estimada_horas'] ?? 0)
+            : $this->exigirHoras($horas);
+        if ($horas <= 0) {
+            throw new HttpException('Las horas efectivas deben ser mayores que cero. Defínalas en el catálogo o en el registro.', 422);
+        }
+
+        $campos = [
+            'fecha_realizacion' => $fecha,
+            'resultado' => self::RESULTADO_APROBADO,
+            'horas_efectivas' => $horas,
+            'nota_evaluacion' => $nota,
+            'observaciones' => nullable_trimmed_string($datos['observaciones'] ?? null)
+                ?? 'Registro directo desde Cumplimientos.',
+            'fecha_vencimiento' => $this->vencimiento->fechaVencimientoDeAsignacion($asigId, $fecha),
+            'registrado_por_usuario_id_ext' => $usuarioId,
+        ];
+
+        $this->soportes->iniciarSeguimiento();
+        try {
+            return $this->repo->transaccion(function () use (
+                $asigId,
+                $existente,
+                $campos,
+                $archivos,
+                $usuarioId,
+                $actor
+            ): array {
+                // Si está convocado a una sesión abierta, se refleja también en el Cronograma.
+                $convocatoria = $this->repo->convocatoriaAbierta($asigId);
+                if ($convocatoria !== null) {
+                    $this->repo->marcarAsistio((int)$convocatoria['sesion_participante_id'], $usuarioId);
+                    $campos['sesion_id'] = (int)$convocatoria['sesion_id'];
+                }
+
+                if ($existente === null) {
+                    $cumplimientoId = $this->repo->crear($campos + ['asignacion_id' => $asigId, 'sesion_id' => null]);
+                } else {
+                    $cumplimientoId = (int)$existente['cumplimiento_id'];
+                    $this->repo->actualizar($cumplimientoId, $campos);
+                }
+
+                foreach ($archivos as $archivo) {
+                    $this->soportes->cargar($cumplimientoId, $archivo, 'CERTIFICADO', $usuarioId, $actor);
+                }
+
+                if ($actor !== null) {
+                    $this->auditoria->deActor(
+                        $actor,
+                        $existente === null ? 'crear' : 'actualizar',
+                        'cumplimientos_capacitacion',
+                        $cumplimientoId,
+                        [
+                            'origen' => AuditoriaService::ORIGEN_USUARIO,
+                            'modo' => 'directo',
+                            'asignacion_id' => $asigId,
+                            'fecha_realizacion' => $campos['fecha_realizacion'],
+                            'nota_evaluacion' => $campos['nota_evaluacion'],
+                            'fecha_vencimiento' => $campos['fecha_vencimiento'],
+                            'soportes' => count($archivos),
+                            'sesion_id' => $campos['sesion_id'] ?? null,
+                        ]
+                    );
+                }
+
+                $fila = $this->repo->buscarPorAsignacion($asigId);
+
+                return $fila === null ? [] : $this->normalizarConSoportes([$fila])[0];
+            });
+        } catch (Throwable $e) {
+            // La BD se revierte; los archivos ya movidos al disco se eliminan aquí.
+            $this->soportes->descartarSeguidos();
+            throw $e;
+        } finally {
+            $this->soportes->finalizarSeguimiento();
+        }
+    }
+
     public function reglasHistorial(): array
     {
         return [

@@ -181,6 +181,51 @@ class CumplimientoController extends Controller
         $this->created($creado, 'Historial registrado. La vigencia se calcula con el catálogo; HSEQ programa el futuro a mano.');
     }
 
+    public function storeDirecto(Request $request): void
+    {
+        $datos = $this->validate($request, $this->service->reglasDirecto(), $this->service->mensajes());
+        $creado = $this->service->registrarDirecto(
+            $datos,
+            $this->archivosMultiples($request->file('archivos')),
+            $request->userId() ?: null,
+            AuditoriaService::actorDe($request)
+        );
+
+        $this->created($creado, 'Cumplimiento registrado');
+    }
+
+    /**
+     * Convierte archivos[] de $_FILES en una lista de items individuales.
+     *
+     * @param array<string,mixed>|null $campo
+     * @return list<array<string,mixed>>
+     */
+    private function archivosMultiples(?array $campo): array
+    {
+        if ($campo === null || !isset($campo['name'])) {
+            return [];
+        }
+        if (!is_array($campo['name'])) {
+            return ($campo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE ? [] : [$campo];
+        }
+
+        $lista = [];
+        foreach (array_keys($campo['name']) as $i) {
+            if (($campo['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+            $lista[] = [
+                'name' => $campo['name'][$i],
+                'type' => $campo['type'][$i] ?? '',
+                'tmp_name' => $campo['tmp_name'][$i] ?? '',
+                'error' => $campo['error'][$i],
+                'size' => $campo['size'][$i] ?? 0,
+            ];
+        }
+
+        return $lista;
+    }
+
     public function storeMasivo(Request $request): void
     {
         $datos = $this->validate($request, $this->service->reglasMasivo(), $this->service->mensajes());

@@ -1009,7 +1009,7 @@ class MigracionService
 
     private function directorioBase(): string
     {
-        return rtrim(str_replace('\\', '/', BASE_PATH), '/') . '/storage/uploads';
+        return (new SoporteService())->directorioBase();
     }
 
     /** @param array<string,mixed> $fila */

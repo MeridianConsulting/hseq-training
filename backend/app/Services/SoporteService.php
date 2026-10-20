@@ -31,12 +31,33 @@ class SoporteService
     private SoporteRepository $repo;
     private CumplimientoRepository $cumplimientos;
     private AuditoriaService $auditoria;
+    /** @var list<string>|null rutas cargadas mientras hay seguimiento activo */
+    private ?array $seguidos = null;
 
     public function __construct()
     {
         $this->repo = new SoporteRepository();
         $this->cumplimientos = new CumplimientoRepository();
         $this->auditoria = new AuditoriaService();
+    }
+
+    /** Registra las rutas de los archivos cargados para poder descartarlos si la transacción falla. */
+    public function iniciarSeguimiento(): void
+    {
+        $this->seguidos = [];
+    }
+
+    public function descartarSeguidos(): void
+    {
+        foreach ($this->seguidos ?? [] as $ruta) {
+            $this->borrarArchivo($ruta);
+        }
+        $this->seguidos = [];
+    }
+
+    public function finalizarSeguimiento(): void
+    {
+        $this->seguidos = null;
     }
 
     public function tamanoMaximo(): int
@@ -46,7 +67,22 @@ class SoporteService
         return is_numeric($valor) ? max(1, (int)$valor) : 10485760;
     }
 
+    /**
+     * Carpeta de soportes fuera de frontend/ y backend/ (por defecto <raíz>/archivos).
+     * Se puede cambiar con SOPORTES_PATH en .env.
+     */
     public function directorioBase(): string
+    {
+        $configurado = trim((string)Env::get('SOPORTES_PATH', ''));
+        if ($configurado !== '') {
+            return rtrim(str_replace('\\', '/', $configurado), '/');
+        }
+
+        return rtrim(str_replace('\\', '/', dirname(BASE_PATH)), '/') . '/archivos';
+    }
+
+    /** Ubicación anterior (backend/storage/uploads); solo lectura para archivos ya cargados. */
+    private function directorioLegado(): string
     {
         return rtrim(str_replace('\\', '/', BASE_PATH), '/') . '/storage/uploads';
     }
@@ -115,6 +151,9 @@ class SoporteService
         $ok = is_uploaded_file($tmp) ? move_uploaded_file($tmp, $destino) : copy($tmp, $destino);
         if (!$ok || !is_file($destino)) {
             throw new HttpException(self::MENSAJE_CARGA, 500);
+        }
+        if ($this->seguidos !== null) {
+            $this->seguidos[] = $destino;
         }
 
         try {
@@ -388,10 +427,17 @@ class SoporteService
         }
         $base = $this->directorioBase();
         $full = $base . '/' . $relativa;
+        if (!is_file($full)) {
+            $legado = $this->directorioLegado() . '/' . $relativa;
+            if (is_file($legado)) {
+                $base = $this->directorioLegado();
+                $full = $legado;
+            }
+        }
         $realBase = realpath($base);
         $realFull = realpath($full);
         if ($realBase === false) {
-            return is_file($full) ? $full : $full;
+            return $full;
         }
         if ($realFull !== false && str_starts_with($realFull, $realBase)) {
             return $realFull;

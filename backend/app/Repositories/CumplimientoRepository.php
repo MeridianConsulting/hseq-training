@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Core\Database;
-use PDOException;
-use Throwable;
 
 class CumplimientoRepository
 {
@@ -180,24 +178,44 @@ class CumplimientoRepository
     }
 
     /**
+     * Convocatoria vigente (sesión PROGRAMADA, programación no cancelada) aún sin asistencia.
+     *
+     * @return array{sesion_participante_id:int,sesion_id:int}|null
+     */
+    public function convocatoriaAbierta(int $asignacionId): ?array
+    {
+        return $this->db->fetch(
+            "SELECT sp.sesion_participante_id, sp.sesion_id
+             FROM sesion_participantes sp
+             INNER JOIN sesiones_capacitacion s ON s.sesion_id = sp.sesion_id
+             LEFT JOIN plan_anual_detalle d ON d.plan_detalle_id = s.plan_detalle_id
+             WHERE sp.asignacion_id = ?
+               AND s.estado = 'PROGRAMADA'
+               AND (d.estado_programacion IS NULL OR d.estado_programacion <> 'CANCELADA')
+               AND (sp.estado_asistencia IS NULL OR sp.estado_asistencia IN ('', 'CONVOCADO'))
+             ORDER BY s.fecha_hora DESC, sp.sesion_id DESC
+             LIMIT 1",
+            [$asignacionId]
+        );
+    }
+
+    public function marcarAsistio(int $sesionParticipanteId, ?int $usuarioId): int
+    {
+        return $this->db->update(
+            'sesion_participantes',
+            ['estado_asistencia' => 'ASISTIO', 'registrado_por_usuario_id_ext' => $usuarioId],
+            'sesion_participante_id = ?',
+            [$sesionParticipanteId]
+        );
+    }
+
+    /**
      * @param callable():mixed $operacion
      */
     public function transaccion(callable $operacion): mixed
     {
-        $this->db->beginTransaction();
-
-        try {
-            $resultado = $operacion();
-            $this->db->commit();
-
-            return $resultado;
-        } catch (PDOException $e) {
-            $this->db->rollBack();
-            throw $e;
-        } catch (Throwable $e) {
-            $this->db->rollBack();
-            throw $e;
-        }
+        // Admite anidamiento (p. ej. cargar soportes dentro del registro directo).
+        return $this->db->transaccion($operacion);
     }
 
     private function selectBase(): string

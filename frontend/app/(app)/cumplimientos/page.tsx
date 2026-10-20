@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ListaEvidencias } from "@/app/(app)/cumplimientos/evidencias";
+import { RegistroDirecto, puedeRegistrarDirecto } from "@/app/(app)/cumplimientos/registro-directo";
+import { useAuth } from "@/components/auth-provider";
 import { procesoPermiteFiltroProyecto } from "@/components/dashboard/filtro-periodo";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Field, fieldClassAnio, inputClass, inputClassAnio } from "@/components/ui/field";
 import { Filters } from "@/components/ui/filters";
 import { FiltrosActivos, ListaCargando, MasFiltros, type ChipFiltro } from "@/components/ui/filtros-activos";
@@ -17,7 +18,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table } from "@/components/ui/table";
 import { useDebouncedCallback, useFiltrosUrl } from "@/hooks/useFiltrosUrl";
-import { Eye, UserRound } from "lucide-react";
+import { ClipboardCheck, Eye, UserRound } from "lucide-react";
 import { apiGet, withQuery, type ListaPaginada } from "@/lib/api";
 import type {
   ConsolidadCumplimientos,
@@ -169,6 +170,9 @@ function Contenido() {
   const [cargandoPers, setCargandoPers] = useState(false);
   const [detalle, setDetalle] = useState<DetalleConsultaCumplimiento | null>(null);
   const [situacion, setSituacion] = useState<SituacionTrabajadorCumplimiento | null>(null);
+  const [registrando, setRegistrando] = useState<ConsultaCumplimiento | null>(null);
+  const [mensajeModal, setMensajeModal] = useState<string | null>(null);
+  const { puede } = useAuth();
 
   const muestraProyecto = procesoPermiteFiltroProyecto(valores.proceso_id, opciones.procesos);
 
@@ -218,7 +222,7 @@ function Contenido() {
       const respuesta = await apiGet<ListaPaginada<ConsultaCumplimiento>>(
         withQuery("/api/cumplimientos/consulta", {
           page: paginaActual,
-          per_page: 20,
+          per_page: 50,
           ...paramsPeriodo(valores),
           capacitacion_id: cap.capacitacion_id,
           buscar: valores.buscar.trim() || undefined,
@@ -377,55 +381,11 @@ function Contenido() {
     <>
       <PageHeader
         titulo="Cumplimientos"
-        descripcion="Consolide el resultado de las capacitaciones programadas (Asignaciones) y ejecutadas (Tablero de Cronograma). Esta pantalla es solo consulta: no registre asistencia, notas ni soportes aquí."
+        descripcion="Consolide el resultado de las capacitaciones programadas (Asignaciones) y ejecutadas (Tablero de Cronograma). Desde el detalle de cada capacitación puede registrar la fecha real, la nota y el soporte de quienes la tengan pendiente."
       />
 
       {error ? <Alert tono="error">{error}</Alert> : null}
 
-      {situacion ? (
-        <Card className="mb-6">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold text-hseq-900">
-                {situacion.trabajador.nombre ?? `Persona ${situacion.trabajador.persona_id_ext}`}
-              </h2>
-              <p className="text-sm text-slate-600">
-                Cargo: {situacion.trabajador.cargo ?? "—"}
-                {situacion.trabajador.proyecto ? ` · Proyecto: ${situacion.trabajador.proyecto}` : ""}
-                {` · Estado corporativo: ${situacion.trabajador.estado_laboral ?? "—"}`}
-                {situacion.trabajador.documento ? ` · ${situacion.trabajador.documento}` : ""}
-              </p>
-              <Link
-                href={`/personal/detalle?id=${situacion.trabajador.persona_id_ext}`}
-                prefetch={false}
-                className="text-sm text-hseq-800 underline"
-              >
-                Ver ficha en Personal
-              </Link>
-            </div>
-            <Button type="button" variante="secondary" onClick={() => setSituacion(null)}>
-              Cerrar
-            </Button>
-          </div>
-          <Table
-            columnas={[
-              { clave: "cap", etiqueta: "Capacitación" },
-              { clave: "real", etiqueta: "Realizada" },
-              { clave: "vence", etiqueta: "Vencimiento" },
-              { clave: "estado", etiqueta: "Estado" },
-            ]}
-            filas={situacion.items.map((item) => [
-              `${item.capacitacion_codigo ?? ""} — ${item.capacitacion_nombre ?? ""}`,
-              formatoFecha(item.fecha_realizacion),
-              formatoFecha(item.fecha_vencimiento),
-              <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
-                {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
-              </Badge>,
-            ])}
-            vacio="Este trabajador no tiene capacitaciones asignadas."
-          />
-        </Card>
-      ) : null}
 
       <Filters>
         <Field etiqueta="Proceso">
@@ -688,6 +648,7 @@ function Contenido() {
 
       <Modal
         abierto={capDetalle !== null}
+        completo
         titulo={
           capDetalle
             ? `${capDetalle.codigo} — ${capDetalle.nombre}`
@@ -696,21 +657,80 @@ function Contenido() {
         onCerrar={() => {
           setCapDetalle(null);
           setPersonas([]);
+          setSituacion(null);
+          setRegistrando(null);
+          setMensajeModal(null);
         }}
       >
         {capDetalle ? (
           <div className="space-y-4">
+            {mensajeModal ? <Alert tono="ok">{mensajeModal}</Alert> : null}
             <p className="text-sm text-slate-600">
               {capDetalle.programadas} programadas · {capDetalle.ejecutadas} ejecutadas ·{" "}
               {capDetalle.pendientes} pendientes · {capDetalle.ejecutadas_fuera_de_tiempo} fuera de
               tiempo. Periodo {formatoFecha(capDetalle.fecha_desde)} →{" "}
               {formatoFecha(capDetalle.fecha_hasta)}.
             </p>
-            {cargandoPers ? (
+            {situacion ? (
+              <div>
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-hseq-900">
+                      {situacion.trabajador.nombre ?? `Persona ${situacion.trabajador.persona_id_ext}`}
+                    </h2>
+                    <p className="text-sm text-slate-600">
+                      Cargo: {situacion.trabajador.cargo ?? "—"}
+                      {situacion.trabajador.proyecto ? ` · Proyecto: ${situacion.trabajador.proyecto}` : ""}
+                      {` · Estado corporativo: ${situacion.trabajador.estado_laboral ?? "—"}`}
+                      {situacion.trabajador.documento ? ` · ${situacion.trabajador.documento}` : ""}
+                    </p>
+                    <Link
+                      href={`/personal/detalle?id=${situacion.trabajador.persona_id_ext}`}
+                      prefetch={false}
+                      className="text-sm text-hseq-800 underline"
+                    >
+                      Ver ficha en Personal
+                    </Link>
+                  </div>
+                  <Button type="button" variante="secondary" onClick={() => setSituacion(null)}>
+                    Volver al listado
+                  </Button>
+                </div>
+                <Table
+                  columnas={[
+                    { clave: "cap", etiqueta: "Capacitación" },
+                    { clave: "real", etiqueta: "Realizada" },
+                    { clave: "vence", etiqueta: "Vencimiento" },
+                    { clave: "estado", etiqueta: "Estado" },
+                  ]}
+                  filas={situacion.items.map((item) => [
+                    `${item.capacitacion_codigo ?? ""} — ${item.capacitacion_nombre ?? ""}`,
+                    formatoFecha(item.fecha_realizacion),
+                    formatoFecha(item.fecha_vencimiento),
+                    <Badge key="e" tono={tonoEstado(item.estado_calculado)}>
+                      {ETIQUETAS_ESTADO[item.estado_calculado] ?? item.estado_calculado}
+                    </Badge>,
+                  ])}
+                  vacio="Este trabajador no tiene capacitaciones asignadas."
+                />
+              </div>
+            ) : registrando ? (
+              <RegistroDirecto
+                persona={registrando}
+                onVolver={() => setRegistrando(null)}
+                onGuardado={async (msg) => {
+                  setRegistrando(null);
+                  setMensajeModal(msg);
+                  await cargarPersonas(capDetalle, paginaPers);
+                  void cargarConsolidados();
+                }}
+              />
+            ) : cargandoPers ? (
               <p className="text-sm text-slate-500">Cargando personas…</p>
             ) : (
               <>
                 <Table
+                  compacta
                   columnas={[
                     { clave: "doc", etiqueta: "Documento" },
                     { clave: "nom", etiqueta: "Trabajador" },
@@ -752,6 +772,20 @@ function Contenido() {
                       {ETIQUETAS_ESTADO[p.estado_calculado] ?? p.estado_calculado}
                     </Badge>,
                     <span key="a" className="flex flex-nowrap gap-1">
+                      {puede("cumplimientos.crear") && puedeRegistrarDirecto(p) ? (
+                        <Button
+                          type="button"
+                          variante="ghost"
+                          className="px-2"
+                          title="Registrar cumplimiento (fecha, nota y soporte)"
+                          onClick={() => {
+                            setMensajeModal(null);
+                            setRegistrando(p);
+                          }}
+                        >
+                          <ClipboardCheck className="h-4 w-4" aria-hidden />
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         variante="ghost"

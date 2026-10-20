@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ListaEvidencias } from "@/app/(app)/cumplimientos/evidencias";
+import { ListaEvidencias, VistaPreviaArchivo, useVistaPrevia } from "@/app/(app)/cumplimientos/evidencias";
 import { useAuth } from "@/components/auth-provider";
 import { RequierePermiso } from "@/components/requiere-permiso";
 import { Alert } from "@/components/ui/alert";
@@ -15,7 +15,7 @@ import { ListaCargando } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft } from "lucide-react";
-import { apiGet, apiPost, withQuery, type ListaPaginada } from "@/lib/api";
+import { apiGet, apiPost, apiPostForm, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { Asignacion, Capacitacion, Cumplimiento, PerfilTrabajador, PersonaCorporativa } from "@/lib/tipos";
 
@@ -379,7 +379,10 @@ function FormularioHistorial({
   const [capacitacionId, setCapacitacionId] = useState("");
   const [fecha, setFecha] = useState("");
   const [nota, setNota] = useState("");
+  const [archivos, setArchivos] = useState<File[]>([]);
+  const [inputArchivosKey, setInputArchivosKey] = useState(0);
   const [enviando, setEnviando] = useState(false);
+  const vista = useVistaPrevia();
 
   useEffect(() => {
     void (async () => {
@@ -408,26 +411,50 @@ function FormularioHistorial({
       body.nota_evaluacion = Number(nota.replace(",", "."));
     }
     const r = await apiPost<Cumplimiento>("/api/cumplimientos/historial", body);
-    setEnviando(false);
     if (r.cancelada) {
+      setEnviando(false);
       return;
     }
     if (!r.success) {
+      setEnviando(false);
       onError(r.message || "No fue posible registrar el historial.");
       return;
     }
+
+    const fallidos: string[] = [];
+    const cumplimientoId = r.data?.cumplimiento_id;
+    if (cumplimientoId) {
+      for (const archivo of archivos) {
+        const form = new FormData();
+        form.append("archivo", archivo);
+        form.append("tipo_soporte", "CERTIFICADO");
+        const ra = await apiPostForm(`/api/cumplimientos/${cumplimientoId}/soportes`, form);
+        if (!ra.success) {
+          fallidos.push(`${archivo.name}: ${ra.message || "no se pudo cargar"}`);
+        }
+      }
+    } else if (archivos.length > 0) {
+      fallidos.push("No se obtuvo el cumplimiento creado para adjuntar los archivos.");
+    }
+    setEnviando(false);
+
     setCapacitacionId("");
     setFecha("");
     setNota("");
+    setArchivos([]);
+    setInputArchivosKey((k) => k + 1);
     await onGuardado(r.message || "Historial registrado.");
+    if (fallidos.length > 0) {
+      onError(`Historial registrado, pero algunos archivos no se cargaron. ${fallidos.join(" · ")}`);
+    }
   }
 
   return (
     <form
       onSubmit={(ev) => void enviar(ev)}
-      className="mt-6 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-4"
+      className="mt-6 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-5"
     >
-      <p className="sm:col-span-2 lg:col-span-4 text-sm text-slate-600">
+      <p className="sm:col-span-2 lg:col-span-5 text-sm text-slate-600">
         Registrar historial manual (misma lógica que la carga inicial). Fecha real de ejecución;
         vigencia del catálogo. No crea asignación futura.
       </p>
@@ -467,11 +494,38 @@ function FormularioHistorial({
           placeholder="Opcional"
         />
       </Field>
+      <Field etiqueta="Soportes (PDF, JPG, PNG)">
+        <input
+          key={inputArchivosKey}
+          className={inputClass}
+          type="file"
+          multiple
+          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+          onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
+        />
+        {archivos.length > 0 ? (
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {archivos.map((a, i) => (
+              <li key={`${a.name}-${i}`} className="flex items-center gap-2">
+                <span className="truncate" title={a.name}>{a.name}</span>
+                <button
+                  type="button"
+                  className="font-medium text-hseq-700 underline"
+                  onClick={() => vista.abrir(a.name, a)}
+                >
+                  Ver
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Field>
       <div className="flex items-end">
         <Button type="submit" disabled={enviando}>
           {enviando ? "Guardando…" : "Registrar historial"}
         </Button>
       </div>
+      <VistaPreviaArchivo previa={vista.previa} onCerrar={vista.cerrar} />
     </form>
   );
 }

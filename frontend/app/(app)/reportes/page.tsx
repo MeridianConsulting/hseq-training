@@ -378,7 +378,6 @@ function Contenido() {
       setHistorialProyecto([]);
       setHistorialProceso([]);
       setTotales(null);
-      setEtiquetas({});
       setTotal(0);
       setError(null);
       setAviso("Seleccione un trabajador para consultar su historial.");
