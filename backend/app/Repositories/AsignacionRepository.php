@@ -416,7 +416,7 @@ class AsignacionRepository
         }
 
         if ($proyecto !== null && $proyecto !== '') {
-            $condiciones[] = 'a.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'a.proyecto = ?';
             $params[] = $proyecto;
         }
 

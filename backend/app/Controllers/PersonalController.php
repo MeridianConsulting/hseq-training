@@ -165,6 +165,7 @@ class PersonalController extends Controller
                 'cargo_id' => 'required|integer',
                 'proceso_id' => 'required|integer',
                 'proyecto' => 'nullable|string|max:120',
+                'estado' => 'required|in:Activo,Inactivo',
             ];
         }
 
@@ -200,6 +201,8 @@ class PersonalController extends Controller
             'fecha_nacimiento.date' => 'La fecha de nacimiento no es válida.',
             'tipo_documento_id.required' => 'El tipo de documento es obligatorio.',
             'correo.email' => 'El correo no tiene un formato válido.',
+            'estado.required' => 'El estado laboral es obligatorio.',
+            'estado.in' => 'El estado laboral debe ser Activo o Inactivo.',
         ];
     }
 

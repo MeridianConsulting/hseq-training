@@ -4,7 +4,34 @@
 
 Options -Indexes
 
-ErrorDocument 404 /404/
+# Apuntar al archivo, no a la carpeta. ErrorDocument 404 /404/ entra en bucle
+# interno (la subpeticion no resuelve index.html) y Apache responde 500.
+ErrorDocument 404 /404/index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # El export hecho en Windows guarda los segmentos RSC como carpetas
+  # (dashboard/__next.!KGFwcCk/dashboard/__PAGE__.txt). El navegador pide
+  # el nombre aplanado con puntos. Cada regla convierte un punto en barra.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^((?:.*/)?__next(?:/[^/.]+)*)\.([^/.]+)(.*)\.txt$ $1/$2$3.txt [QSA]
+</IfModule>
 
 <IfModule mod_expires.c>
   ExpiresActive On

@@ -190,6 +190,7 @@ function Contenido() {
       cargo_id: Number(datos.cargo_id),
       proceso_id: Number(datos.proceso_id),
       proyecto: datos.proyecto.trim() || null,
+      estado: datos.estado,
     });
 
     if (!respuesta.success) {

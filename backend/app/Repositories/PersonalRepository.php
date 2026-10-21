@@ -44,7 +44,7 @@ class PersonalRepository
 
         $sql = $this->selectPersona()
             . " {$where}
-             ORDER BY p.primer_apellido ASC, p.primer_nombre ASC
+             ORDER BY p.nombre_completo_nombres_primero ASC, p.persona_id ASC
              LIMIT {$limite} OFFSET {$offset}";
 
         return $this->db->fetchAll($sql, $params);
@@ -657,7 +657,7 @@ class PersonalRepository
         }
 
         if ($proyecto !== null && $proyecto !== '') {
-            $condiciones[] = 'ct.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'ct.proyecto = ?';
             $params[] = $proyecto;
         }
 

@@ -405,7 +405,7 @@ class CumplimientoRepository
                   AND m.cargo_id_ext = ?';
         $params = [$capacitacionId, $cargoId];
         if ($proyecto !== null && $proyecto !== '') {
-            $sql .= ' AND (m.proyecto IS NULL OR TRIM(m.proyecto) COLLATE utf8mb4_unicode_ci = ?)';
+            $sql .= ' AND (m.proyecto IS NULL OR TRIM(m.proyecto) = ?)';
             $params[] = $proyecto;
         }
         $sql .= ' ORDER BY m.matriz_aplicabilidad_id DESC LIMIT 1';
@@ -567,7 +567,7 @@ class CumplimientoRepository
 
         $proyecto = $filtros['proyecto'] ?? null;
         if (is_string($proyecto) && $proyecto !== '') {
-            $condiciones[] = 'a.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'a.proyecto = ?';
             $params[] = $proyecto;
         }
 

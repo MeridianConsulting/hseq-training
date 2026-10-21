@@ -56,10 +56,8 @@ class CapacitacionService
 
     public function reglas(bool $esActualizacion = false): array
     {
-        $codigo = $esActualizacion ? 'nullable|string|max:30' : 'required|string|max:30';
-
         return [
-            'codigo' => $codigo,
+            'codigo' => 'nullable|string|max:30',
             'nombre' => 'required|string|max:180',
             'objetivo' => 'required|string',
             'descripcion_temario' => 'nullable|string',
@@ -85,7 +83,6 @@ class CapacitacionService
     public function mensajes(): array
     {
         return [
-            'codigo.required' => 'El código es obligatorio.',
             'nombre.required' => 'El nombre es obligatorio.',
             'objetivo.required' => 'El objetivo es obligatorio.',
             'duracion_estimada_horas.required' => 'La duración es obligatoria.',
@@ -146,10 +143,7 @@ class CapacitacionService
     public function crear(array $datos, int $usuarioId, ?array $actor = null): array
     {
         $datos = $this->preparar($datos);
-
-        if ($this->repo->codigoDuplicado((string)$datos['codigo'])) {
-            throw new HttpException(self::MENSAJE_CODIGO_DUPLICADO, 409);
-        }
+        unset($datos['codigo']);
 
         $this->validarFks($datos);
         $this->exigirTipoYModalidad($datos);
@@ -159,6 +153,23 @@ class CapacitacionService
         $datos['creado_por_usuario_id_ext'] = $usuarioId;
 
         return $this->repo->transaccion(function () use ($datos, $actor): array {
+            $codigo = $this->repo->siguienteCodigo();
+            $numero = 1;
+            if (preg_match('/^HSEQ-(\d+)$/i', $codigo, $m) === 1) {
+                $numero = (int)$m[1];
+            }
+            $intentos = 0;
+            while ($this->repo->codigoDuplicado($codigo) && $intentos < 50) {
+                $numero++;
+                $ancho = max(2, strlen((string)$numero));
+                $codigo = 'HSEQ-' . str_pad((string)$numero, $ancho, '0', STR_PAD_LEFT);
+                $intentos++;
+            }
+            if ($this->repo->codigoDuplicado($codigo)) {
+                throw new HttpException(self::MENSAJE_CODIGO_DUPLICADO, 409);
+            }
+            $datos['codigo'] = $codigo;
+
             $id = $this->repo->crear($datos);
             $creado = $this->ver($id);
             if ($actor !== null) {
@@ -185,10 +196,7 @@ class CapacitacionService
     {
         $antes = $this->ver($id);
         $datos = $this->preparar($datos, true);
-
-        if (isset($datos['codigo']) && $this->repo->codigoDuplicado((string)$datos['codigo'], $id)) {
-            throw new HttpException(self::MENSAJE_CODIGO_DUPLICADO, 409);
-        }
+        unset($datos['codigo']);
 
         $this->validarFks($datos);
         $this->exigirTipoYModalidad($datos);

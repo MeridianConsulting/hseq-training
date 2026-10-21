@@ -372,12 +372,24 @@ class PersonalService
         $contexto = $this->resolverContextoHseq($entrada);
         $proyecto = $contexto['proyecto'];
 
+        $estado = $this->normalizarTexto($entrada['estado'] ?? '');
+        if ($estado === '') {
+            $estado = (string)($actual['estado'] ?? 'Activo');
+        }
+        if (!in_array($estado, ['Activo', 'Inactivo'], true)) {
+            throw new HttpException('El estado laboral debe ser Activo o Inactivo.', 422);
+        }
+
         try {
-            $this->repo->transaccion(function () use ($personaId, $actual, $correo, $cargoId, $proyecto, $contexto): int {
+            $this->repo->transaccion(function () use ($personaId, $actual, $correo, $cargoId, $proyecto, $contexto, $estado): int {
                 $this->repo->actualizarPersona($personaId, [
                     'correo_corporativo' => $correo !== '' ? $correo : null,
                     'cargo_id' => $cargoId,
                 ]);
+
+                if ((string)($actual['estado'] ?? '') !== $estado) {
+                    $this->repo->actualizarEstado($personaId, $estado);
+                }
 
                 $contratoId = $actual['contrato_id'];
                 if ($contratoId) {
@@ -417,10 +429,13 @@ class PersonalService
         $proyectoAhora = $proyecto ?? '';
         $procesoAntes = (int)($actual['proceso_id'] ?? 0);
         $procesoAhora = $contexto['proceso_id'];
+        $estadoAntes = (string)($actual['estado'] ?? '');
+        $reactivado = $estadoAntes === 'Inactivo' && $estado === 'Activo';
         if (
             $cargoCambio
             || strcasecmp($proyectoAntes, $proyectoAhora) !== 0
             || $procesoAntes !== $procesoAhora
+            || $reactivado
         ) {
             $this->historial->registrarCambio($personaId, $cargoId, $proyecto);
             $actualizado['sincronizacion'] = $this->sincronizarAsignaciones($actualizado);
@@ -432,6 +447,7 @@ class PersonalService
                 'cargo' => 'Cargo',
                 'proyecto' => 'Proyecto',
                 'proceso_nombre' => 'Proceso',
+                'estado' => 'Estado laboral',
             ];
             $antes = $this->auditoria->recortePersonal($actual);
             $despues = $this->auditoria->recortePersonal($actualizado);
@@ -1044,7 +1060,6 @@ class PersonalService
 
         if ($procesoId !== null && $procesoId > 0
             && !$this->alertasRepo()->procesoEsGestionProyectos($procesoId)
-            && !$this->alertasRepo()->procesoEsGestionAdministrativa($procesoId)
         ) {
             return null;
         }
@@ -1149,34 +1164,25 @@ class PersonalService
             throw new HttpException('El proceso no existe o no está activo.', 422);
         }
 
-        if ($this->alertasRepo()->procesoEsGestionAdministrativa($procesoId)) {
+        if (!$this->alertasRepo()->procesoEsGestionProyectos($procesoId)) {
             return [
                 'proceso_id' => $procesoId,
                 'proyecto' => $this->alertasRepo()->proyectoAdministracion(),
             ];
         }
 
-        $requiereProyecto = $this->alertasRepo()->procesoEsGestionProyectos($procesoId);
         $proyectoBruto = $this->normalizarTexto($entrada['proyecto'] ?? '');
-
-        if ($requiereProyecto) {
-            if ($proyectoBruto === '') {
-                throw new HttpException('El proyecto es obligatorio para este proceso.', 422);
-            }
-            $canonico = $this->alertasRepo()->resolverProyecto($proyectoBruto, false);
-            if ($canonico === null) {
-                throw new HttpException('El proyecto no es válido.', 422);
-            }
-
-            return [
-                'proceso_id' => $procesoId,
-                'proyecto' => $canonico,
-            ];
+        if ($proyectoBruto === '') {
+            throw new HttpException('El proyecto es obligatorio para este proceso.', 422);
+        }
+        $canonico = $this->alertasRepo()->resolverProyecto($proyectoBruto, false);
+        if ($canonico === null) {
+            throw new HttpException('El proyecto no es válido.', 422);
         }
 
         return [
             'proceso_id' => $procesoId,
-            'proyecto' => null,
+            'proyecto' => $canonico,
         ];
     }
 

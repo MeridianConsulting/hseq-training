@@ -92,7 +92,7 @@ class PersonaContextoRepository
             'SELECT persona_id_ext
              FROM persona_contexto_hseq
              WHERE proceso_id = ?
-               AND proyecto COLLATE utf8mb4_unicode_ci = ?',
+               AND proyecto = ?',
             [$procesoId, $proyecto]
         );
 
@@ -123,7 +123,7 @@ class PersonaContextoRepository
         $params = [$procesoId];
 
         if ($proyecto !== null && $proyecto !== '') {
-            $sql .= ' AND ctx.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $sql .= ' AND ctx.proyecto = ?';
             $params[] = $proyecto;
         }
 

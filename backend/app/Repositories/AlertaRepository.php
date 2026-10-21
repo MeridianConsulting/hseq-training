@@ -234,7 +234,7 @@ class AlertaRepository
         return str_contains($clave, 'GESTION ADMINISTRATIVA Y FINANCIERA');
     }
 
-    /** Proyecto fijo HSEQ para Gestión Administrativa y Financiera. */
+    /** Proyecto fijo cuando el proceso no es Gestión de Proyectos. */
     public function proyectoAdministracion(): string
     {
         $canonico = $this->resolverProyecto('ADMINISTRACION', false);
@@ -274,7 +274,7 @@ class AlertaRepository
 
     /**
      * Proyectos de obra para filtros/selectores.
-     * Excluye ADMINISTRACION (valor fijo de contexto GAF, no proyecto filtrable).
+     * Excluye ADMINISTRACION (valor fijo si el proceso no es Gestión de Proyectos).
      *
      * @return list<string>
      */
@@ -389,7 +389,7 @@ class AlertaRepository
 
         $proyecto = $filtros['proyecto'] ?? null;
         if (is_string($proyecto) && $proyecto !== '') {
-            $condiciones[] = 'v.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'v.proyecto = ?';
             $params[] = $proyecto;
         }
 

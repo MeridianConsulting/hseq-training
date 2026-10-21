@@ -590,11 +590,11 @@ class PlanAnualRepository
                 SELECT 1 FROM plan_anual_detalle d
                 WHERE d.plan_anual_id = p.plan_anual_id
                   AND (
-                    d.proyecto COLLATE utf8mb4_unicode_ci = ?
+                    d.proyecto = ?
                     OR EXISTS (
                         SELECT 1 FROM plan_detalle_alcances a
                         WHERE a.plan_detalle_id = d.plan_detalle_id
-                          AND a.proyecto COLLATE utf8mb4_unicode_ci = ?
+                          AND a.proyecto = ?
                     )
                   )
             )';

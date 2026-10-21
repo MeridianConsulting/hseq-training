@@ -19,6 +19,7 @@ export type DatosTrabajador = {
   cargo_id: string;
   proceso_id: string;
   proyecto: string;
+  estado: "Activo" | "Inactivo";
   fecha_ingreso: string;
   fecha_nacimiento: string;
   tipo_documento_id: string;
@@ -34,6 +35,7 @@ function vacio(): DatosTrabajador {
     cargo_id: "",
     proceso_id: "",
     proyecto: "",
+    estado: "Activo",
     fecha_ingreso: "",
     fecha_nacimiento: "",
     tipo_documento_id: "1",
@@ -48,6 +50,7 @@ function desdeItem(item: PersonaCorporativa): DatosTrabajador {
     cargo_id: item.cargo_id ? String(item.cargo_id) : "",
     proceso_id: item.proceso_id ? String(item.proceso_id) : "",
     proyecto: item.proyecto ?? "",
+    estado: item.estado === "Inactivo" ? "Inactivo" : "Activo",
     fecha_ingreso: item.contrato_fecha_inicio ?? "",
     fecha_nacimiento: "",
     tipo_documento_id: item.tipo_documento_id ? String(item.tipo_documento_id) : "1",
@@ -101,6 +104,10 @@ export function validarDatosTrabajador(
     errores.proceso_id = "El proceso es obligatorio.";
   } else if (procesoRequiereProyecto(datos.proceso_id, procesos) && !datos.proyecto.trim()) {
     errores.proyecto = "El proyecto es obligatorio para este proceso.";
+  }
+
+  if (esEdicion && datos.estado !== "Activo" && datos.estado !== "Inactivo") {
+    errores.estado = "El estado laboral debe ser Activo o Inactivo.";
   }
 
   return errores;
@@ -165,8 +172,8 @@ export function FormularioTrabajador({
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={enviar}>
       {esEdicion ? (
         <p className="sm:col-span-2 text-sm text-slate-600">
-          Puede modificar correo, cargo, proceso HSEQ y proyecto (si el proceso lo exige). Documento y
-          nombre no se cambian aquí.
+          Puede modificar correo, cargo, proceso HSEQ, proyecto (si el proceso lo exige) y el estado
+          laboral. Documento y nombre no se cambian aquí.
         </p>
       ) : null}
       <Field
@@ -265,6 +272,19 @@ export function FormularioTrabajador({
                 {proyecto}
               </option>
             ))}
+          </select>
+        </Field>
+      ) : null}
+      {esEdicion ? (
+        <Field etiqueta="Estado laboral" error={errores.estado ?? primerError(erroresApi, "estado")}>
+          <select
+            className={inputClass}
+            value={datos.estado}
+            onChange={(e) => set("estado", e.target.value as DatosTrabajador["estado"])}
+            required
+          >
+            <option value="Activo">Activo</option>
+            <option value="Inactivo">Inactivo</option>
           </select>
         </Field>
       ) : null}

@@ -10,11 +10,16 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Lee la plantilla HSEQ-PRG-10 (CRONOGRAMA, MATRIZ POR CARGO, SEGUIMIENTO_PERSONAL).
+ * Lee la plantilla HSEQ-PRG-10 (CRONOGRAMA, MATRIZ POR CARGO / alias, SEGUIMIENTO_PERSONAL / SEGUIM_*).
  */
 class MigracionPrg10Parser
 {
-    public const HOJAS = ['CRONOGRAMA', 'MATRIZ POR CARGO', 'SEGUIMIENTO_PERSONAL'];
+    public const HOJA_CRONOGRAMA = 'CRONOGRAMA';
+    public const HOJA_MATRIZ = 'MATRIZ POR CARGO';
+    public const HOJA_SEGUIMIENTO = 'SEGUIMIENTO_PERSONAL';
+
+    /** @var list<string> Nombres canónicos reportados al usuario si faltan. */
+    public const HOJAS = [self::HOJA_CRONOGRAMA, self::HOJA_MATRIZ, self::HOJA_SEGUIMIENTO];
 
     /**
      * @return array{
@@ -32,10 +37,16 @@ class MigracionPrg10Parser
     {
         $libro = IOFactory::load($ruta);
         $nombres = $libro->getSheetNames();
+        $mapa = [
+            self::HOJA_CRONOGRAMA => $this->resolverNombreHoja($nombres, self::HOJA_CRONOGRAMA),
+            self::HOJA_MATRIZ => $this->resolverNombreHoja($nombres, self::HOJA_MATRIZ),
+            self::HOJA_SEGUIMIENTO => $this->resolverNombreHoja($nombres, self::HOJA_SEGUIMIENTO),
+        ];
+
         $faltantes = [];
-        foreach (self::HOJAS as $esperada) {
-            if (!$this->tieneHoja($nombres, $esperada)) {
-                $faltantes[] = $esperada;
+        foreach ($mapa as $canonica => $real) {
+            if ($real === null) {
+                $faltantes[] = $canonica;
             }
         }
 
@@ -52,9 +63,9 @@ class MigracionPrg10Parser
             ];
         }
 
-        $crono = $this->hoja($libro, 'CRONOGRAMA');
-        $matriz = $this->hoja($libro, 'MATRIZ POR CARGO');
-        $seg = $this->hoja($libro, 'SEGUIMIENTO_PERSONAL');
+        $crono = $this->hojaPorNombre($libro, (string)$mapa[self::HOJA_CRONOGRAMA]);
+        $matriz = $this->hojaPorNombre($libro, (string)$mapa[self::HOJA_MATRIZ]);
+        $seg = $this->hojaPorNombre($libro, (string)$mapa[self::HOJA_SEGUIMIENTO]);
 
         $caps = $this->leerCapacitaciones($crono);
         if ($caps === []) {
@@ -81,25 +92,128 @@ class MigracionPrg10Parser
             'estructura_ok' => true,
             'mensaje' => null,
             'capacitaciones' => $caps,
-            'matriz' => $this->leerMatriz($matriz, $caps),
+            'matriz' => $this->leerMatriz($matriz, $caps, $crono),
             'trabajadores' => $this->leerTrabajadores($seg),
-            'seguimientos' => $this->leerSeguimientos($seg, $caps),
+            'seguimientos' => $this->leerSeguimientos($seg, $caps, $crono),
         ];
     }
 
-    /** @param list<string> $nombres */
-    private function tieneHoja(array $nombres, string $esperada): bool
+    /**
+     * Devuelve el título real de la hoja que cubre el rol canónico, o null.
+     *
+     * @param list<string> $nombres
+     */
+    private function resolverNombreHoja(array $nombres, string $canonica): ?string
     {
+        $candidatos = [];
         foreach ($nombres as $nombre) {
-            if (strcasecmp(trim($nombre), $esperada) === 0) {
-                return true;
+            $titulo = trim((string)$nombre);
+            if ($titulo === '') {
+                continue;
             }
+            if ($this->hojaCoincideConRol($titulo, $canonica)) {
+                $candidatos[] = $titulo;
+            }
+        }
+
+        if ($candidatos === []) {
+            return null;
+        }
+
+        return $this->elegirMejorCandidato($candidatos, $canonica);
+    }
+
+    private function hojaCoincideConRol(string $titulo, string $canonica): bool
+    {
+        $clave = $this->normalizarTituloHoja($titulo);
+        $esperada = $this->normalizarTituloHoja($canonica);
+
+        if ($clave === $esperada) {
+            return true;
+        }
+
+        if ($canonica === self::HOJA_MATRIZ) {
+            return $clave === 'MATRIZ_CARGO'
+                || $clave === 'MATRIZPORCARGO'
+                || str_starts_with($clave, 'MATRIZ_CARGO')
+                || str_starts_with($clave, 'MATRIZPORCARGO');
+        }
+
+        if ($canonica === self::HOJA_SEGUIMIENTO) {
+            return $clave === 'SEGUIMIENTO_PERSONAL'
+                || str_starts_with($clave, 'SEGUIMIENTO_PERSONAL')
+                || str_starts_with($clave, 'SEGUIM_')
+                || str_starts_with($clave, 'SEGUIMIENTO');
         }
 
         return false;
     }
 
-    private function hoja(Spreadsheet $libro, string $titulo): Worksheet
+    /**
+     * @param list<string> $candidatos
+     */
+    private function elegirMejorCandidato(array $candidatos, string $canonica): string
+    {
+        if (count($candidatos) === 1) {
+            return $candidatos[0];
+        }
+
+        usort($candidatos, function (string $a, string $b) use ($canonica): int {
+            return $this->prioridadCandidato($b, $canonica) <=> $this->prioridadCandidato($a, $canonica);
+        });
+
+        return $candidatos[0];
+    }
+
+    private function prioridadCandidato(string $titulo, string $canonica): int
+    {
+        $clave = $this->normalizarTituloHoja($titulo);
+        $esperada = $this->normalizarTituloHoja($canonica);
+
+        if ($clave === $esperada) {
+            return 100;
+        }
+
+        if ($canonica === self::HOJA_SEGUIMIENTO) {
+            if ($clave === 'SEGUIMIENTO_PERSONAL') {
+                return 100;
+            }
+            // Preferir SEGUIM_ADMON / SEGUIM_PETRO / etc. sobre brigadas u otros anexos.
+            if (str_contains($clave, 'BRIG') || str_contains($clave, 'COPASST') || str_contains($clave, 'CCL')) {
+                return 10;
+            }
+            if (str_starts_with($clave, 'SEGUIM_')) {
+                return 80;
+            }
+            if (str_starts_with($clave, 'SEGUIMIENTO')) {
+                return 70;
+            }
+        }
+
+        if ($canonica === self::HOJA_MATRIZ) {
+            if ($clave === 'MATRIZ_CARGO' || $clave === 'MATRIZPORCARGO') {
+                return 90;
+            }
+        }
+
+        return 50;
+    }
+
+    private function normalizarTituloHoja(string $titulo): string
+    {
+        $titulo = mb_strtoupper(trim($titulo), 'UTF-8');
+        $titulo = strtr($titulo, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'Ä' => 'A', 'Ë' => 'E', 'Ï' => 'I', 'Ö' => 'O', 'Ü' => 'U',
+            'Ñ' => 'N',
+        ]);
+        $titulo = str_replace([' ', '-'], '_', $titulo);
+        $titulo = preg_replace('/_+/', '_', $titulo) ?? $titulo;
+
+        return trim($titulo, '_');
+    }
+
+    private function hojaPorNombre(Spreadsheet $libro, string $titulo): Worksheet
     {
         foreach ($libro->getWorksheetIterator() as $hoja) {
             if (strcasecmp(trim($hoja->getTitle()), $titulo) === 0) {
@@ -154,7 +268,7 @@ class MigracionPrg10Parser
      * @param list<array<string,mixed>> $caps
      * @return list<array<string,mixed>>
      */
-    private function leerMatriz(Worksheet $hoja, array $caps): array
+    private function leerMatriz(Worksheet $hoja, array $caps, ?Worksheet $crono = null): array
     {
         $maxCol = Coordinate::columnIndexFromString($hoja->getHighestColumn());
         $maxRow = (int)$hoja->getHighestRow();
@@ -162,7 +276,7 @@ class MigracionPrg10Parser
         for ($col = 4; $col <= $maxCol; $col++) {
             $nombre = '';
             for ($r = 1; $r <= 8; $r++) {
-                $valor = $this->celda($hoja, $col, $r);
+                $valor = $this->textoTemaCelda($hoja, $col, $r, $crono);
                 if ($valor !== '' && !$this->esNumeroTema($valor)) {
                     $nombre = $valor;
                     break;
@@ -241,7 +355,7 @@ class MigracionPrg10Parser
      * @param list<array<string,mixed>> $caps
      * @return list<array<string,mixed>>
      */
-    private function leerSeguimientos(Worksheet $hoja, array $caps): array
+    private function leerSeguimientos(Worksheet $hoja, array $caps, ?Worksheet $crono = null): array
     {
         $mapa = $this->mapaIdentidad($hoja);
         if ($mapa === null) {
@@ -249,28 +363,10 @@ class MigracionPrg10Parser
         }
         [$headerRow, $cols] = $mapa;
         $maxCol = Coordinate::columnIndexFromString($hoja->getHighestColumn());
-        $inicioTemas = max($cols['ultima_identidad'] + 1, 10);
-        $bloques = [];
-        for ($col = $inicioTemas; $col <= $maxCol; $col += 4) {
-            $nombre = '';
-            for ($r = max(1, $headerRow - 4); $r <= $headerRow; $r++) {
-                $valor = $this->celda($hoja, $col, $r);
-                if ($valor !== '' && !$this->esEtiquetaBloque($valor) && !$this->esNumeroTema($valor)) {
-                    $nombre = $valor;
-                    break;
-                }
-            }
-            $codigo = $this->codigoPorNombre($caps, $nombre);
-            if ($codigo === null) {
-                continue;
-            }
-            $bloques[] = [
-                'codigo' => $codigo,
-                'estado' => $col,
-                'resultado' => $col + 1,
-                'certificado' => $col + 2,
-                'mes' => $col + 3,
-            ];
+        $inicioBase = max($cols['ultima_identidad'] + 1, 10);
+        $bloques = $this->bloquesSeguimientoMejorAlineacion($hoja, $caps, $headerRow, $inicioBase, $maxCol, $crono);
+        if ($bloques === []) {
+            return [];
         }
 
         $max = (int)$hoja->getHighestRow();
@@ -309,7 +405,7 @@ class MigracionPrg10Parser
      */
     private function mapaIdentidad(Worksheet $hoja): ?array
     {
-        $maxCol = min(9, Coordinate::columnIndexFromString($hoja->getHighestColumn()));
+        $maxCol = min(20, Coordinate::columnIndexFromString($hoja->getHighestColumn()));
         $maxRow = min(15, (int)$hoja->getHighestRow());
         for ($fila = 1; $fila <= $maxRow; $fila++) {
             $cols = [
@@ -328,6 +424,10 @@ class MigracionPrg10Parser
                 $clave = $this->claveEncabezado($this->celda($hoja, $col, $fila));
                 if ($clave === '') {
                     continue;
+                }
+                // Tras la columna de temas no seguir tomando "estado"/otros como identidad.
+                if ($this->esEtiquetaBloque($clave) || str_contains($clave, 'evaluacion') || str_contains($clave, 'requiere')) {
+                    break;
                 }
                 if ($this->esEncabezadoDocumento($clave)) {
                     $cols['documento'] = $col;
@@ -364,6 +464,149 @@ class MigracionPrg10Parser
         }
 
         return null;
+    }
+
+    /**
+     * Prueba desplazamientos 0..3 para alinear bloques de 4 columnas (Petro arranca en 12, Frontera en 10).
+     *
+     * @param list<array<string,mixed>> $caps
+     * @return list<array{codigo:string,estado:int,resultado:int,certificado:int,mes:int}>
+     */
+    private function bloquesSeguimientoMejorAlineacion(
+        Worksheet $hoja,
+        array $caps,
+        int $headerRow,
+        int $inicioBase,
+        int $maxCol,
+        ?Worksheet $crono
+    ): array {
+        $mejor = [];
+        for ($offset = 0; $offset < 4; $offset++) {
+            $inicio = $inicioBase + $offset;
+            $bloques = $this->detectarBloquesSeguimiento($hoja, $caps, $headerRow, $inicio, $maxCol, $crono);
+            if (count($bloques) > count($mejor)) {
+                $mejor = $bloques;
+            }
+        }
+
+        return $mejor;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $caps
+     * @return list<array{codigo:string,estado:int,resultado:int,certificado:int,mes:int}>
+     */
+    private function detectarBloquesSeguimiento(
+        Worksheet $hoja,
+        array $caps,
+        int $headerRow,
+        int $inicioTemas,
+        int $maxCol,
+        ?Worksheet $crono
+    ): array {
+        $bloques = [];
+        for ($col = $inicioTemas; $col <= $maxCol; $col += 4) {
+            $nombre = '';
+            $itemHint = '';
+            $formulaHint = '';
+            for ($r = max(1, $headerRow - 4); $r <= $headerRow; $r++) {
+                $bruto = $this->valorCrudo($hoja, $col, $r);
+                if (is_string($bruto) && str_starts_with($bruto, '=') && $formulaHint === '') {
+                    $formulaHint = $bruto;
+                }
+                $texto = $this->textoTemaCelda($hoja, $col, $r, $crono);
+                if ($texto === '') {
+                    continue;
+                }
+                if ($this->esNumeroTema($texto)) {
+                    $itemHint = $texto;
+                    continue;
+                }
+                if ($this->esEtiquetaBloque($texto)) {
+                    continue;
+                }
+                $nombre = $texto;
+                break;
+            }
+            $codigo = $this->codigoPorNombre($caps, $nombre);
+            if ($codigo === null && $itemHint !== '') {
+                $codigo = $this->codigoPorItem($caps, (int)$itemHint);
+            }
+            if ($codigo === null && $formulaHint !== '') {
+                $codigo = $this->codigoDesdeFormulaCronograma($formulaHint, $caps, $crono);
+            }
+            if ($codigo === null) {
+                continue;
+            }
+            $bloques[] = [
+                'codigo' => $codigo,
+                'estado' => $col,
+                'resultado' => $col + 1,
+                'certificado' => $col + 2,
+                'mes' => $col + 3,
+            ];
+        }
+
+        return $bloques;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $caps
+     */
+    private function codigoPorItem(array $caps, int $item): ?string
+    {
+        if ($item < 1) {
+            return null;
+        }
+        foreach ($caps as $cap) {
+            if ((int)$cap['item'] === $item) {
+                return (string)$cap['codigo'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $caps
+     */
+    private function codigoDesdeFormulaCronograma(string $formula, array $caps, ?Worksheet $crono): ?string
+    {
+        if ($crono === null || !str_starts_with($formula, '=')) {
+            return null;
+        }
+        if (!preg_match('/CRONOGRAMA!\$?([A-Z]+)\$?(\d+)/i', $formula, $m)) {
+            return null;
+        }
+        $col = Coordinate::columnIndexFromString(strtoupper($m[1]));
+        $fila = (int)$m[2];
+        $itemBruto = $this->celda($crono, 1, $fila);
+        if (preg_match('/^\d+$/', $itemBruto)) {
+            $porItem = $this->codigoPorItem($caps, (int)$itemBruto);
+            if ($porItem !== null) {
+                return $porItem;
+            }
+        }
+        $tema = $this->primeraNoVacia($crono, $fila, [$col, 5, 4, 2]);
+
+        return $this->codigoPorNombre($caps, $tema);
+    }
+
+    private function textoTemaCelda(Worksheet $hoja, int $col, int $fila, ?Worksheet $crono): string
+    {
+        $bruto = $this->valorCrudo($hoja, $col, $fila);
+        if (is_string($bruto) && str_starts_with($bruto, '=') && $crono !== null) {
+            if (preg_match('/CRONOGRAMA!\$?([A-Z]+)\$?(\d+)/i', $bruto, $m)) {
+                $cCol = Coordinate::columnIndexFromString(strtoupper($m[1]));
+                $cFila = (int)$m[2];
+                $tema = $this->primeraNoVacia($crono, $cFila, [$cCol, 5, 4, 2]);
+                if ($tema !== '') {
+                    return $tema;
+                }
+            }
+        }
+
+        return $this->celda($hoja, $col, $fila);
     }
 
     /**
@@ -407,9 +650,12 @@ class MigracionPrg10Parser
         $celda = $hoja->getCell($coord);
         $valor = $celda->getValue();
         if (is_string($valor) && str_starts_with($valor, '=')) {
-            $calc = $celda->getCalculatedValue();
-
-            return $calc;
+            try {
+                return $celda->getCalculatedValue();
+            } catch (\Throwable) {
+                // Fórmulas rotas o referencias a hojas renombradas: no tumbar la carga.
+                return $celda->getOldCalculatedValue() ?? '';
+            }
         }
 
         return $valor;

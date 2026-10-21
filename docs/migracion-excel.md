@@ -17,7 +17,17 @@ Las asignaciones y cumplimientos usan `persona_id_ext`.
 
 ## Carga inicial de historial (`/migracion`)
 
-Formato de archivo: plantilla HSEQ-PRG-10 (hojas CRONOGRAMA, MATRIZ POR CARGO, SEGUIMIENTO_PERSONAL).
+Formato de archivo: plantilla HSEQ-PRG-10.
+
+Hojas requeridas (nombres canónicos; se aceptan alias habituales por proyecto):
+
+| Rol | Canónico | Alias aceptados |
+|-----|----------|-----------------|
+| Cronograma | `CRONOGRAMA` | (exacto) |
+| Matriz | `MATRIZ POR CARGO` | `MATRIZ_CARGO` |
+| Seguimiento | `SEGUIMIENTO_PERSONAL` | `SEGUIM_PETRO`, `SEGUIM_ADMON`, `SEGUIM_*`, `SEGUIMIENTO…` (si hay varias, se prefieren las de personal frente a brigadas/COPASST) |
+
+También resuelve encabezados de tema enlazados con fórmulas `=CRONOGRAMA!E…` y alinea bloques de 4 columnas aunque el seguimiento empiece en distinta columna (p. ej. Petro vs Frontera).
 
 Flujo: validar → revisar inconsistencias → confirmar.
 

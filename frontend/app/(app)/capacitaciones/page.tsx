@@ -201,7 +201,6 @@ function Contenido() {
 
     const n = (valor: string) => (valor === "" ? null : Number(valor));
     const cuerpo = {
-      codigo: datos.codigo.trim(),
       nombre: datos.nombre.trim(),
       objetivo: datos.objetivo.trim(),
       tipo_capacitacion_id: n(datos.tipo_capacitacion_id),

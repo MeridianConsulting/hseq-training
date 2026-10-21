@@ -120,9 +120,6 @@ export function validarDatosCapacitacion(datos: DatosCapacitacion): ErroresCapac
   const errores: ErroresCapacitacion = {};
   const horas = datos.duracion_estimada_horas.trim();
 
-  if (!datos.codigo.trim()) {
-    errores.codigo = "El código es obligatorio.";
-  }
   if (!datos.nombre.trim()) {
     errores.nombre = "El nombre es obligatorio.";
   }
@@ -266,7 +263,12 @@ export function FormularioCapacitacion({
     <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={enviar}>
       <p className="sm:col-span-2 text-sm font-semibold text-slate-800">Información básica</p>
       <Field etiqueta="Código" error={errores.codigo}>
-        <input className={inputClass} required value={datos.codigo} onChange={(e) => set("codigo", e.target.value)} />
+        <input
+          className={inputClass}
+          value={inicial ? datos.codigo : "Se asignará automáticamente"}
+          disabled
+          readOnly
+        />
       </Field>
       <Field etiqueta="Nombre" error={errores.nombre}>
         <input className={inputClass} required value={datos.nombre} onChange={(e) => set("nombre", e.target.value)} />

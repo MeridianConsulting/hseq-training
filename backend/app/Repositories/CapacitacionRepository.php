@@ -156,6 +156,29 @@ class CapacitacionRepository
         return $this->db->fetch($sql, $params) !== null;
     }
 
+    /**
+     * Siguiente código HSEQ-NN a partir de los existentes (HSEQ-01, HSEQ-2, etc.).
+     */
+    public function siguienteCodigo(): string
+    {
+        $filas = $this->db->fetchAll(
+            "SELECT codigo FROM capacitaciones WHERE codigo REGEXP '^HSEQ-[0-9]+$'"
+        );
+
+        $max = 0;
+        foreach ($filas as $fila) {
+            $codigo = (string)($fila['codigo'] ?? '');
+            if (preg_match('/^HSEQ-(\d+)$/i', $codigo, $m) === 1) {
+                $max = max($max, (int)$m[1]);
+            }
+        }
+
+        $siguiente = $max + 1;
+        $ancho = max(2, strlen((string)$siguiente));
+
+        return 'HSEQ-' . str_pad((string)$siguiente, $ancho, '0', STR_PAD_LEFT);
+    }
+
     public function catalogoExiste(string $tabla, string $pk, int $id): bool
     {
         return $this->db->fetch("SELECT {$pk} FROM {$tabla} WHERE {$pk} = ? LIMIT 1", [$id]) !== null;

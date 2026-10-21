@@ -855,7 +855,7 @@ class ReporteRepository
 
         $proyecto = isset($filtros['proyecto']) ? trim((string)$filtros['proyecto']) : '';
         if ($proyecto !== '') {
-            $condiciones[] = 'a.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $condiciones[] = 'a.proyecto = ?';
             $params[] = $proyecto;
         }
 

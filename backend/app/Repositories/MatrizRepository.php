@@ -127,7 +127,7 @@ class MatrizRepository
         if ($proyecto === null || $proyecto === '') {
             $sql .= " AND (m.proyecto IS NULL OR TRIM(m.proyecto) = '')";
         } else {
-            $sql .= ' AND m.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $sql .= ' AND m.proyecto = ?';
             $params[] = $proyecto;
         }
 
@@ -175,7 +175,7 @@ class MatrizRepository
         if ($proyecto === null || $proyecto === '') {
             $sql .= " AND (m.proyecto IS NULL OR TRIM(m.proyecto) = '')";
         } else {
-            $sql .= ' AND m.proyecto COLLATE utf8mb4_unicode_ci = ?';
+            $sql .= ' AND m.proyecto = ?';
             $params[] = $proyecto;
         }
 
