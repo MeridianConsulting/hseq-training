@@ -69,6 +69,12 @@ export function etiquetaUnidad(unidad: string, cantidad?: number): string {
   return `${cantidad} ${texto}`;
 }
 
+/** True si el tipo de catálogo tiene campos que alimentan la columna Detalle. */
+export function catalogoTieneDetalle(campos: string[] | null | undefined): boolean {
+  const lista = campos ?? [];
+  return lista.includes("descripcion") || lista.includes("cantidad") || lista.includes("unidad");
+}
+
 export function detalleItemCatalogo(item: ItemCatalogo): string {
   if (item.descripcion != null && String(item.descripcion) !== "") {
     return String(item.descripcion);

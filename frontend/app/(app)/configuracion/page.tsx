@@ -16,7 +16,7 @@ import { Table } from "@/components/ui/table";
 import { useDebouncedCallback } from "@/hooks/useFiltrosUrl";
 import { Pencil, Plus, RotateCcw, UserMinus } from "lucide-react";
 import { apiDelete, apiGet, apiPost, apiPut, withQuery, type ListaPaginada } from "@/lib/api";
-import { detalleItemCatalogo, humanizarNombreUnidad } from "@/lib/catalogos";
+import { catalogoTieneDetalle, detalleItemCatalogo, humanizarNombreUnidad } from "@/lib/catalogos";
 import type { ItemCatalogo, TipoCatalogo } from "@/lib/tipos";
 import { FormularioCatalogo } from "./formulario";
 import { PanelUsuarios } from "./panel-usuarios";
@@ -109,6 +109,8 @@ function Contenido() {
     setBuscar("");
     setFiltroEstado("todos");
   }
+
+  const muestraDetalle = catalogoTieneDetalle(tipo?.campos);
 
   const chips: ChipFiltro[] = [];
   if (buscar) {
@@ -309,7 +311,7 @@ function Contenido() {
             <Table
               columnas={[
                 { clave: "nombre", etiqueta: "Nombre" },
-                { clave: "extra", etiqueta: "Detalle" },
+                ...(muestraDetalle ? [{ clave: "extra", etiqueta: "Detalle" }] : []),
                 { clave: "estado", etiqueta: "Estado" },
                 { clave: "creado", etiqueta: "Creado" },
                 { clave: "actualizado", etiqueta: "Actualizado" },
@@ -317,7 +319,7 @@ function Contenido() {
               ]}
               filas={items.map((item) => [
                 humanizarNombreUnidad(String(item.nombre ?? "")),
-                detalleItemCatalogo(item),
+                ...(muestraDetalle ? [detalleItemCatalogo(item)] : []),
                 item.activo === undefined ? (
                   "—"
                 ) : (
