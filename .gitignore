@@ -7,3 +7,8 @@ database/asegurar_cargos_frontera.php
 database/19_nombres_unidad_anio.php
 database/20_vigencias_equivalentes.php
 database/21_tipos_excel.php
+
+# Empaques locales para despliegue (no versionar)
+*.zip
+backend.zip
+frontend.zip
