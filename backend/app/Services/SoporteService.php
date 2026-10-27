@@ -196,6 +196,12 @@ class SoporteService
             throw $e;
         }
 
+        try {
+            (new CumplimientoService())->promoverAprobadoSiCorresponde($cumplimientoId);
+        } catch (\Throwable $e) {
+            // El soporte ya quedó; la promoción no debe revertir la carga.
+        }
+
         $fila = $this->repo->buscarPorId($id);
 
         return $this->normalizar($fila ?? ['soporte_id' => $id, 'cumplimiento_id' => $cumplimientoId] + $validado);

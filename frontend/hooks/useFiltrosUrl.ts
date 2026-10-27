@@ -51,15 +51,8 @@ export function useFiltrosUrl<T extends Record<string, string>>(
 
   const escribirUrl = useCallback(
     (siguiente: T) => {
+      // Solo filtros de este módulo: no arrastrar query de otras pantallas.
       const params = new URLSearchParams();
-      if (typeof window !== "undefined") {
-        const actuales = new URLSearchParams(window.location.search);
-        actuales.forEach((valor, clave) => {
-          if (!(clave in defaultsRef.current)) {
-            params.set(clave, valor);
-          }
-        });
-      }
       for (const [clave, valor] of Object.entries(siguiente)) {
         const base = defaultsRef.current[clave as keyof T & string] ?? "";
         if (valor !== "" && valor !== base) {

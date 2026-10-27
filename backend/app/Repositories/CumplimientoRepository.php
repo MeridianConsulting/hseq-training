@@ -67,6 +67,20 @@ class CumplimientoRepository
     }
 
     /**
+     * Cumplimientos ASISTIO/TARDE candidatos a pasar a APROBADO.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function listarParaPromocionAprobado(): array
+    {
+        return $this->db->fetchAll(
+            $this->selectBase() . " WHERE UPPER(TRIM(COALESCE(c.resultado, ''))) IN ('ASISTIO', 'TARDE')
+             ORDER BY c.cumplimiento_id ASC
+             LIMIT 500"
+        );
+    }
+
+    /**
      * @param array<string,mixed> $datos
      */
     public function crear(array $datos): int
@@ -110,18 +124,24 @@ class CumplimientoRepository
         return $mapa;
     }
 
-    public function existeEjecucion(int $personaId, int $capacitacionId, string $fecha): bool
-    {
-        $fila = $this->db->fetch(
-            'SELECT c.cumplimiento_id
+    public function existeEjecucion(
+        int $personaId,
+        int $capacitacionId,
+        string $fecha,
+        ?int $exceptoCumplimientoId = null
+    ): bool {
+        $sql = 'SELECT c.cumplimiento_id
              FROM cumplimientos_capacitacion c
              INNER JOIN asignaciones_capacitacion a ON a.asignacion_id = c.asignacion_id
-             WHERE a.persona_id_ext = ? AND a.capacitacion_id = ? AND c.fecha_realizacion = ?
-             LIMIT 1',
-            [$personaId, $capacitacionId, $fecha]
-        );
+             WHERE a.persona_id_ext = ? AND a.capacitacion_id = ? AND c.fecha_realizacion = ?';
+        $params = [$personaId, $capacitacionId, $fecha];
+        if ($exceptoCumplimientoId !== null && $exceptoCumplimientoId > 0) {
+            $sql .= ' AND c.cumplimiento_id <> ?';
+            $params[] = $exceptoCumplimientoId;
+        }
+        $sql .= ' LIMIT 1';
 
-        return $fila !== null;
+        return $this->db->fetch($sql, $params) !== null;
     }
 
     /**
@@ -227,6 +247,7 @@ class CumplimientoRepository
                     cap.codigo AS capacitacion_codigo,
                     cap.nombre AS capacitacion_nombre,
                     cap.certificado AS capacitacion_certificado,
+                    cap.requiere_listado_asistencia AS capacitacion_requiere_listado,
                     cap.evaluacion AS capacitacion_evaluacion,
                     cap.nota_minima AS capacitacion_nota_minima,
                     per.numero_documento,

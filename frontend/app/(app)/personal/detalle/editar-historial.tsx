@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ListaEvidencias,
   VistaPreviaArchivo,
@@ -11,12 +11,12 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-import { apiFetch } from "@/lib/api";
-import type { Cumplimiento, SoporteCumplimiento } from "@/lib/tipos";
+import { apiFetch, apiGet, withQuery, type ListaPaginada } from "@/lib/api";
+import type { Capacitacion, Cumplimiento, SoporteCumplimiento } from "@/lib/tipos";
 
 /**
- * Edición de un cumplimiento del historial: fecha, nota y soportes.
- * Todos los campos son obligatorios (al menos un soporte entre los actuales y los nuevos).
+ * Edición de un cumplimiento del historial: capacitación, fecha, nota y soportes.
+ * Permite corregir la capacitación si se registró por error.
  */
 export function EditarHistorial({
   item,
@@ -27,6 +27,10 @@ export function EditarHistorial({
   onCerrar: () => void;
   onGuardado: (mensaje: string) => void | Promise<void>;
 }) {
+  const [caps, setCaps] = useState<Capacitacion[]>([]);
+  const [capacitacionId, setCapacitacionId] = useState(
+    item.capacitacion_id != null ? String(item.capacitacion_id) : "",
+  );
   const [fecha, setFecha] = useState((item.fecha_realizacion ?? "").slice(0, 10));
   const [nota, setNota] = useState(item.nota_evaluacion != null ? String(item.nota_evaluacion) : "");
   const [soportes, setSoportes] = useState<SoporteCumplimiento[]>(item.soportes ?? []);
@@ -35,11 +39,24 @@ export function EditarHistorial({
   const [error, setError] = useState<string | null>(null);
   const vista = useVistaPrevia();
   const hoy = new Date().toISOString().slice(0, 10);
+  const ligadoASesion = item.sesion_id != null && item.sesion_id > 0;
+
+  useEffect(() => {
+    void (async () => {
+      const r = await apiGet<ListaPaginada<Capacitacion>>(
+        withQuery("/api/capacitaciones", { page: 1, per_page: 200 }),
+      );
+      if (r.success && r.data?.items) {
+        setCaps(r.data.items);
+      }
+    })();
+  }, []);
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
     setError(null);
     const faltantes: string[] = [];
+    if (!capacitacionId) faltantes.push("la capacitación");
     if (!fecha) faltantes.push("la fecha real de ejecución");
     if (nota.trim() === "") faltantes.push("la nota");
     if (soportes.length + archivos.length === 0) faltantes.push("al menos un soporte");
@@ -49,14 +66,22 @@ export function EditarHistorial({
     }
 
     setEnviando(true);
+    const body: Record<string, string | number | null> = {
+      fecha_realizacion: fecha,
+      nota_evaluacion: Number(nota.replace(",", ".")),
+      horas_efectivas: item.horas_efectivas ?? 1,
+      observaciones: item.observaciones ?? null,
+    };
+    if (!ligadoASesion) {
+      body.capacitacion_id = Number(capacitacionId);
+    }
+    if (soportes.length > 0) {
+      body.resultado = "APROBADO";
+    }
+
     const r = await apiFetch<Cumplimiento>(`/api/cumplimientos/${item.cumplimiento_id}`, {
       method: "PUT",
-      body: JSON.stringify({
-        fecha_realizacion: fecha,
-        nota_evaluacion: Number(nota.replace(",", ".")),
-        horas_efectivas: item.horas_efectivas ?? 1,
-        observaciones: item.observaciones ?? null,
-      }),
+      body: JSON.stringify(body),
     });
     if (r.cancelada) {
       setEnviando(false);
@@ -84,6 +109,31 @@ export function EditarHistorial({
     >
       <form onSubmit={(ev) => void enviar(ev)} className="space-y-4">
         {error ? <Alert tono="error">{error}</Alert> : null}
+        <Field etiqueta="Capacitación">
+          <select
+            className={inputClass}
+            value={capacitacionId}
+            onChange={(e) => setCapacitacionId(e.target.value)}
+            required
+            disabled={ligadoASesion}
+          >
+            <option value="">Seleccione…</option>
+            {caps.map((c) => (
+              <option key={c.capacitacion_id} value={c.capacitacion_id}>
+                {c.codigo} — {c.nombre}
+              </option>
+            ))}
+          </select>
+          {ligadoASesion ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Este registro viene de una sesión; la capacitación no se puede cambiar aquí.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">
+              Puede corregir la capacitación si se registró por error.
+            </p>
+          )}
+        </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field etiqueta="Fecha real de ejecución">
             <input
@@ -132,7 +182,9 @@ export function EditarHistorial({
             <ul className="mt-1 space-y-0.5 text-xs">
               {archivos.map((a, i) => (
                 <li key={`${a.name}-${i}`} className="flex items-center gap-2">
-                  <span className="truncate" title={a.name}>{a.name}</span>
+                  <span className="truncate" title={a.name}>
+                    {a.name}
+                  </span>
                   <button
                     type="button"
                     className="font-medium text-hseq-700 underline"

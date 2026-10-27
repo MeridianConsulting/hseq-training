@@ -711,10 +711,12 @@ class ReporteRepository
             $condiciones[] = 'cap.es_tarea_critica = 1';
         } elseif ($tipo === 'inducciones') {
             $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'INDUCCION'"
-                . " OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci IN ('INDUCCION', 'INDUCCION/REINDUCCION'))";
+                . " OR UPPER(TRIM(COALESCE(tip.nombre, ''))) COLLATE utf8mb4_unicode_ci IN ('INDUCCION', 'INDUCCION/REINDUCCION')"
+                . " OR LOWER(cap.nombre) LIKE '%induc%')";
         } elseif ($tipo === 'reinducciones') {
             $condiciones[] = "(a.origen COLLATE utf8mb4_unicode_ci = 'REINDUCCION'"
-                . " OR UPPER(TRIM(tip.nombre)) COLLATE utf8mb4_unicode_ci IN ('REINDUCCION', 'INDUCCION/REINDUCCION'))";
+                . " OR UPPER(TRIM(COALESCE(tip.nombre, ''))) COLLATE utf8mb4_unicode_ci IN ('REINDUCCION', 'INDUCCION/REINDUCCION')"
+                . " OR LOWER(cap.nombre) LIKE '%reinduc%' OR LOWER(cap.nombre) LIKE '%induc%')";
         }
 
         $estado = isset($filtros['estado']) ? trim((string)$filtros['estado']) : '';

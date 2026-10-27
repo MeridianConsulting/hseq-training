@@ -37,13 +37,13 @@ Flujo: validar → revisar inconsistencias → confirmar.
 - Trabajador existente en Personal Corporativo (por documento). Inactivos sí pueden tener historial.
 - Capacitaciones del CRONOGRAMA: si el código `HSEQ-NN` no existe se **crea** al confirmar; si existe y difiere del Excel se **actualiza**; si concuerda no se toca.
 - Fecha **real completa** de ejecución (día/mes/año). No se inventa el día 01 a partir del solo nombre del mes.
-- Nota si la capacitación exige evaluación; vigencia calculada desde el catálogo.
+- Nota si la capacitación exige evaluación; vencimiento = periodicidad de matriz (si aplica) o vigencia del catálogo.
 
 **Capacitaciones desde el Excel (al confirmar)**
 
 Del CRONOGRAMA se toman: código (`HSEQ-%02d`), nombre (TEMA), objetivo, horas, temario (SUBTEMA), modalidad (mapeo de METODOLOGÍA → PRESENCIAL / VIRTUAL / MIXTA; resto → VIRTUAL).
 
-Solo al **crear**: tipo `CAPACITACION GENERAL`, sin evaluación ni vigencia/categoría/periodicidad, criticidad `MEDIA`, sin certificado / tarea crítica / listado de asistencia.
+Solo al **crear**: tipo `CAPACITACION GENERAL`, sin evaluación/categoría, criticidad `MEDIA`, sin certificado / tarea crítica / listado de asistencia; vigencia **1 año** y periodicidad **anual** si existen en el catálogo.
 
 Al **actualizar** existentes solo se sincronizan los campos del Excel anteriores; no se cambian tipo, evaluación, vigencia ni demás flags del catálogo.
 
@@ -65,7 +65,7 @@ Misma persona + misma capacitación + misma fecha de realización → se omite.
 
 **Historial manual**
 
-En el perfil del trabajador (`/personal/{id}`), con permiso `cumplimientos.crear`, se puede registrar el mismo tipo de historial vía `POST /api/cumplimientos/historial` (misma lógica de vigencia y contenedor).
+En el perfil del trabajador (`/personal/{id}`), con permiso `cumplimientos.crear`, se puede registrar el mismo tipo de historial vía `POST /api/cumplimientos/historial` (misma lógica de vencimiento matriz/catálogo y contenedor).
 
 ## Inconsistencias típicas
 

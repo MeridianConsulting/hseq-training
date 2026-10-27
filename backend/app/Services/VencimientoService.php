@@ -140,6 +140,175 @@ class VencimientoService
         return self::calcularFechaVencimiento($fechaRealizacion, $per['cantidad'], $per['unidad']);
     }
 
+    /**
+     * Primera regla de matriz activa que aplica a cargo + proyecto + capacitación.
+     */
+    public function matrizIdAplicable(int $capacitacionId, ?int $cargoId, ?string $proyecto): ?int
+    {
+        if ($capacitacionId <= 0) {
+            return null;
+        }
+
+        $cargo = $cargoId !== null && $cargoId > 0 ? $cargoId : 0;
+        $proyectoPersona = is_string($proyecto) ? trim($proyecto) : '';
+
+        foreach ($this->matriz->reglasActivasParaMotor() as $regla) {
+            if ((int)($regla['capacitacion_id'] ?? 0) !== $capacitacionId) {
+                continue;
+            }
+            if (!$this->coincide($regla, $cargo, $proyectoPersona)) {
+                continue;
+            }
+
+            $id = (int)($regla['matriz_aplicabilidad_id'] ?? 0);
+
+            return $id > 0 ? $id : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Rellena fecha_vencimiento en cumplimientos aprobados que quedaron sin ella
+     * (historial/migración antiguos que solo miraban vigencia del catálogo).
+     * Idempotente: solo toca filas con fecha_vencimiento NULL.
+     */
+    public function recalcularVencimientosSinFecha(): int
+    {
+        $filas = $this->db->fetchAll(
+            "SELECT c.cumplimiento_id, c.asignacion_id, c.fecha_realizacion
+             FROM cumplimientos_capacitacion c
+             WHERE c.fecha_vencimiento IS NULL
+               AND c.fecha_realizacion IS NOT NULL
+               AND c.resultado = 'APROBADO'"
+        );
+
+        $actualizados = 0;
+        foreach ($filas as $fila) {
+            $asigId = (int)($fila['asignacion_id'] ?? 0);
+            $fecha = substr(trim((string)($fila['fecha_realizacion'] ?? '')), 0, 10);
+            if ($asigId <= 0 || $fecha === '') {
+                continue;
+            }
+
+            $vence = $this->fechaVencimientoDeAsignacion($asigId, $fecha);
+            if ($vence === null) {
+                continue;
+            }
+
+            $this->db->update(
+                'cumplimientos_capacitacion',
+                ['fecha_vencimiento' => $vence],
+                'cumplimiento_id = ? AND fecha_vencimiento IS NULL',
+                [(int)$fila['cumplimiento_id']]
+            );
+            $actualizados++;
+        }
+
+        return $actualizados;
+    }
+
+    private static bool $vencimientosAsegurados = false;
+
+    /**
+     * Vigencia de catálogo «1 año» (cantidad 1, unidad ANIOS).
+     *
+     * @return array{vigencia_id:int,cantidad:int,unidad:string}|null
+     */
+    public function vigenciaAnual(): ?array
+    {
+        $fila = $this->db->fetch(
+            "SELECT vigencia_id, cantidad, unidad
+             FROM vigencias
+             WHERE activo = 1
+               AND cantidad = 1
+               AND UPPER(TRIM(unidad)) = 'ANIOS'
+             ORDER BY vigencia_id ASC
+             LIMIT 1"
+        );
+        if ($fila === null) {
+            return null;
+        }
+
+        return [
+            'vigencia_id' => (int)$fila['vigencia_id'],
+            'cantidad' => (int)$fila['cantidad'],
+            'unidad' => strtoupper(trim((string)$fila['unidad'])),
+        ];
+    }
+
+    /** Periodicidad de catálogo «ANUAL» (cantidad 1, unidad ANIOS). */
+    public function periodicidadAnualId(): ?int
+    {
+        $fila = $this->db->fetch(
+            "SELECT periodicidad_id
+             FROM periodicidades
+             WHERE activo = 1
+               AND cantidad = 1
+               AND UPPER(TRIM(unidad)) = 'ANIOS'
+             ORDER BY periodicidad_id ASC
+             LIMIT 1"
+        );
+        if ($fila === null) {
+            return null;
+        }
+        $id = (int)($fila['periodicidad_id'] ?? 0);
+
+        return $id > 0 ? $id : null;
+    }
+
+    /**
+     * Inducciones/reinducciones sin vigencia heredan 1 año (y periodicidad anual si falta).
+     */
+    public function asegurarVigenciaInducciones(): int
+    {
+        $vig = $this->vigenciaAnual();
+        if ($vig === null) {
+            return 0;
+        }
+
+        $perId = $this->periodicidadAnualId();
+        // Solo filas sin vigencia; no pisa configuración manual.
+        $sqlPer = $perId !== null
+            ? ', periodicidad_default_id = COALESCE(periodicidad_default_id, ?)'
+            : '';
+        $params = [$vig['vigencia_id']];
+        if ($perId !== null) {
+            $params[] = $perId;
+        }
+
+        $pdo = $this->db->getConnection();
+        $stmt = $pdo->prepare(
+            "UPDATE capacitaciones
+             SET vigencia_id = ?{$sqlPer}
+             WHERE vigencia_id IS NULL
+               AND (
+                 LOWER(nombre) LIKE '%induc%'
+                 OR LOWER(nombre) LIKE '%reinduc%'
+               )"
+        );
+        $stmt->execute($params);
+
+        return (int)$stmt->rowCount();
+    }
+
+    /** Una vez por proceso PHP: vigencia en inducciones + vencimientos de historial faltantes. */
+    public static function asegurarVencimientosCumplimiento(): void
+    {
+        if (self::$vencimientosAsegurados) {
+            return;
+        }
+        self::$vencimientosAsegurados = true;
+
+        try {
+            $svc = new self();
+            $svc->asegurarVigenciaInducciones();
+            $svc->recalcularVencimientosSinFecha();
+        } catch (\Throwable $e) {
+            // No bloquear la API si el recalculo falla.
+        }
+    }
+
     /** @return array<string,mixed>|null */
     private function contextoAsignacion(int $asignacionId): ?array
     {
@@ -151,16 +320,17 @@ class VencimientoService
                     a.cargo_id_ext,
                     a.proyecto,
                     cap.vigencia_id,
-                    vg.cantidad AS cap_cantidad,
-                    vg.unidad AS cap_unidad,
-                    vg.nombre AS cap_nombre,
+                    COALESCE(vg.cantidad, pd.cantidad) AS cap_cantidad,
+                    COALESCE(vg.unidad, pd.unidad) AS cap_unidad,
+                    COALESCE(vg.nombre, pd.nombre) AS cap_nombre,
                     m.matriz_aplicabilidad_id AS matriz_existe,
-                    pe.cantidad AS mat_cantidad,
-                    pe.unidad AS mat_unidad,
-                    pe.nombre AS mat_nombre
+                    COALESCE(pe.cantidad, pd.cantidad) AS mat_cantidad,
+                    COALESCE(pe.unidad, pd.unidad) AS mat_unidad,
+                    COALESCE(pe.nombre, pd.nombre) AS mat_nombre
              FROM asignaciones_capacitacion a
              INNER JOIN capacitaciones cap ON cap.capacitacion_id = a.capacitacion_id
              LEFT JOIN vigencias vg ON vg.vigencia_id = cap.vigencia_id
+             LEFT JOIN periodicidades pd ON pd.periodicidad_id = cap.periodicidad_default_id
              LEFT JOIN matriz_aplicabilidad m ON m.matriz_aplicabilidad_id = a.matriz_aplicabilidad_id
              LEFT JOIN periodicidades pe ON pe.periodicidad_id = m.periodicidad_id
              WHERE a.asignacion_id = ?

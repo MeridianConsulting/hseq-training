@@ -7,6 +7,8 @@ namespace App\Core;
 use App\Core\Exceptions\HttpException;
 use App\Core\Exceptions\ValidationException;
 use App\Core\Exceptions\AuthenticationException;
+use App\Services\CumplimientoService;
+use App\Services\VencimientoService;
 
 class Application
 {
@@ -38,6 +40,8 @@ class Application
         PersonalEsquema::asegurar();
         PlanEsquema::asegurar();
         PersonaContextoEsquema::asegurar();
+        VencimientoService::asegurarVencimientosCumplimiento();
+        CumplimientoService::asegurarAprobadosPendientes();
         $this->router = new Router();
         $this->loadRoutes();
     }

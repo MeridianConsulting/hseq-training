@@ -42,6 +42,8 @@ class CumplimientoService
     /** @var array<string,string> */
     public const CAMPOS_AUDITABLES = [
         'fecha_realizacion' => 'Fecha de realización',
+        'capacitacion_codigo' => 'Código capacitación',
+        'capacitacion_nombre' => 'Capacitación',
         'resultado' => 'Resultado',
         'horas_efectivas' => 'Horas efectivas',
         'fecha_vencimiento' => 'Fecha de vencimiento',
@@ -87,6 +89,7 @@ class CumplimientoService
     {
         return [
             'fecha_realizacion' => 'required|date',
+            'capacitacion_id' => 'nullable|integer|min:1',
             'resultado' => 'nullable|in:' . self::RESULTADO_APROBADO,
             'horas_efectivas' => 'required|numeric|gt:0',
             'observaciones' => 'nullable|string|max:500',
@@ -936,6 +939,7 @@ class CumplimientoService
 
     /**
      * Historial sin sesión: contenedor FK (fecha límite = realización) + cumplimiento.
+     * Vencimiento: periodicidad de matriz (si aplica) o vigencia/periodicidad del catálogo.
      * Misma lógica que carga inicial. No programa Fecha Desde/Hasta operativas.
      *
      * @param array<string,mixed> $datos
@@ -998,12 +1002,6 @@ class CumplimientoService
             throw new HttpException('Las horas efectivas deben ser mayores que cero. Defínalas en el catálogo o en el registro.', 422);
         }
 
-        $vence = VencimientoService::calcularFechaVencimiento(
-            $fecha,
-            $cap['vigencia_cantidad'] !== null ? (int)$cap['vigencia_cantidad'] : null,
-            $cap['vigencia_unidad'] !== null ? (string)$cap['vigencia_unidad'] : null
-        );
-
         $obs = trim((string)($datos['observaciones'] ?? ''));
         $origenObs = trim((string)($datos['origen_observacion'] ?? ''));
         if ($origenObs === '') {
@@ -1013,6 +1011,12 @@ class CumplimientoService
             $origenObs .= ' ' . $obs;
         }
 
+        $cargoId = isset($persona['cargo_id']) && (int)$persona['cargo_id'] > 0
+            ? (int)$persona['cargo_id']
+            : null;
+        $proyecto = is_string($persona['proyecto'] ?? null) ? trim((string)$persona['proyecto']) : '';
+        $matrizId = $this->vencimiento->matrizIdAplicable($capId, $cargoId, $proyecto !== '' ? $proyecto : null);
+
         return $this->repo->transaccion(function () use (
             $personaId,
             $capId,
@@ -1020,26 +1024,31 @@ class CumplimientoService
             $persona,
             $horas,
             $nota,
-            $vence,
             $origenObs,
             $usuarioId,
-            $actor
+            $actor,
+            $cargoId,
+            $proyecto,
+            $matrizId
         ): array {
             $asigId = (new AsignacionRepository())->crear([
                 'persona_id_ext' => $personaId,
                 'contrato_id_ext' => $persona['contrato_id'] ?? null,
                 'capacitacion_id' => $capId,
-                'matriz_aplicabilidad_id' => null,
+                'matriz_aplicabilidad_id' => $matrizId,
                 'fecha_asignacion' => $fecha,
                 'fecha_limite_cumplimiento' => $fecha,
                 'origen' => 'MANUAL',
-                'cargo_id_ext' => $persona['cargo_id'] ?? null,
+                'cargo_id_ext' => $cargoId,
                 'area_id' => null,
                 'proceso_id' => null,
                 'ambito' => null,
-                'proyecto' => $persona['proyecto'] ?? null,
+                'proyecto' => $proyecto !== '' ? $proyecto : null,
                 'creada_por_usuario_id_ext' => $usuarioId,
             ]);
+
+            // Matriz (periodicidad) → vigencia del catálogo. No solo vigencia del curso.
+            $vence = $this->vencimiento->fechaVencimientoDeAsignacion($asigId, $fecha);
 
             $cumplimientoId = $this->repo->crear([
                 'asignacion_id' => $asigId,
@@ -1225,7 +1234,41 @@ class CumplimientoService
             throw new HttpException('El cumplimiento no existe.', 404);
         }
 
+        $antes = $this->recorteAuditable($actual);
         $fecha = $this->fechaRealizacion($datos['fecha_realizacion'] ?? null, null);
+        $asigId = (int)$actual['asignacion_id'];
+        $personaId = (int)($actual['persona_id_ext'] ?? 0);
+        $capActualId = (int)($actual['capacitacion_id'] ?? 0);
+        $capNuevaId = isset($datos['capacitacion_id']) ? (int)$datos['capacitacion_id'] : 0;
+        $cambiarCap = $capNuevaId > 0 && $capNuevaId !== $capActualId;
+
+        if ($cambiarCap) {
+            if (($actual['sesion_id'] ?? null) !== null) {
+                throw new HttpException(
+                    'No se puede cambiar la capacitación de un cumplimiento ligado a una sesión. Corrija el historial manual.',
+                    422
+                );
+            }
+            $cap = (new CapacitacionRepository())->buscarPorId($capNuevaId);
+            if ($cap === null) {
+                throw new HttpException('Capacitación no encontrada.', 404);
+            }
+            if ($personaId > 0 && $this->repo->existeEjecucion($personaId, $capNuevaId, $fecha, $id)) {
+                throw new HttpException(
+                    'Ya existe una ejecución histórica equivalente (trabajador + capacitación + fecha).',
+                    409
+                );
+            }
+        } elseif ($personaId > 0 && $capActualId > 0
+            && $fecha !== substr((string)($actual['fecha_realizacion'] ?? ''), 0, 10)
+            && $this->repo->existeEjecucion($personaId, $capActualId, $fecha, $id)
+        ) {
+            throw new HttpException(
+                'Ya existe una ejecución histórica equivalente (trabajador + capacitación + fecha).',
+                409
+            );
+        }
+
         $horas = $this->exigirHoras($datos['horas_efectivas'] ?? null);
         $resultadoEnviado = array_key_exists('resultado', $datos)
             && $datos['resultado'] !== null
@@ -1233,49 +1276,99 @@ class CumplimientoService
         $resultado = $resultadoEnviado
             ? $this->exigirResultado($datos['resultado'])
             : strtoupper((string)($actual['resultado'] ?? ''));
-        $notaEnviada = array_key_exists('nota_evaluacion', $datos);
-        $meta = $this->metaEvaluacion($actual, (int)($actual['sesion_id'] ?? 0));
-        // La edición de historial siempre envía nota (campo obligatorio), aun sin evaluación.
-        $nota = !$meta['requiere'] && $notaEnviada && ($datos['nota_evaluacion'] ?? '') !== ''
-            ? $this->exigirNota($datos['nota_evaluacion'])
-            : $this->resolverNota(
-                $datos['nota_evaluacion'] ?? null,
-                $notaEnviada,
-                $meta,
-                $actual['nota_evaluacion'] ?? null
-            );
-        $this->exigirNotaParaAprobado($resultado, $nota, $meta);
-        $this->exigirEvidenciaParaAprobado(
-            $resultado,
+
+        return $this->repo->transaccion(function () use (
+            $id,
+            $datos,
             $actual,
-            (int)($actual['sesion_id'] ?? 0),
-            (int)$actual['asignacion_id']
-        );
-        $observaciones = nullable_trimmed_string($datos['observaciones'] ?? null);
-        $venceManual = array_key_exists('fecha_vencimiento', $datos)
-            && $datos['fecha_vencimiento'] !== null
-            && trim((string)$datos['fecha_vencimiento']) !== '';
-        $vence = $venceManual
-            ? $this->exigirFechaVencimiento($datos['fecha_vencimiento'])
-            : $this->vencimiento->fechaVencimientoDeAsignacion((int)$actual['asignacion_id'], $fecha);
+            $antes,
+            $actor,
+            $usuarioId,
+            $fecha,
+            $horas,
+            $resultadoEnviado,
+            $resultado,
+            $cambiarCap,
+            $capNuevaId,
+            $asigId,
+            $personaId
+        ): array {
+            if ($cambiarCap) {
+                $cargoId = isset($actual['cargo_id_ext']) ? (int)$actual['cargo_id_ext'] : 0;
+                // cargo está en la asignación; leer proyecto/cargo desde asignacion si hace falta
+                $asigRepo = new AsignacionRepository();
+                $asigFila = $asigRepo->buscarPorId($asigId);
+                $cargoAsig = $asigFila !== null && isset($asigFila['cargo_id_ext'])
+                    ? (int)$asigFila['cargo_id_ext']
+                    : ($cargoId > 0 ? $cargoId : null);
+                $proyectoAsig = $asigFila !== null && is_string($asigFila['proyecto'] ?? null)
+                    ? trim((string)$asigFila['proyecto'])
+                    : (is_string($actual['proyecto'] ?? null) ? trim((string)$actual['proyecto']) : '');
+                $matrizId = $this->vencimiento->matrizIdAplicable(
+                    $capNuevaId,
+                    $cargoAsig !== null && $cargoAsig > 0 ? $cargoAsig : null,
+                    $proyectoAsig !== '' ? $proyectoAsig : null
+                );
+                $asigRepo->actualizar($asigId, [
+                    'capacitacion_id' => $capNuevaId,
+                    'matriz_aplicabilidad_id' => $matrizId,
+                ]);
+                $recargado = $this->repo->buscarPorId($id);
+                if ($recargado !== null) {
+                    $actual = $recargado;
+                }
+            }
 
-        $campos = [
-            'fecha_realizacion' => $fecha,
-            'resultado' => $resultado !== '' ? $resultado : ($actual['resultado'] ?? null),
-            'horas_efectivas' => $horas,
-            'fecha_vencimiento' => $vence,
-            'registrado_por_usuario_id_ext' => $usuarioId,
-        ];
-        if ($observaciones !== null || array_key_exists('observaciones', $datos)) {
-            $campos['observaciones'] = $observaciones;
-        }
-        if ($notaEnviada || ($meta['requiere'] && $nota !== null)) {
-            $campos['nota_evaluacion'] = $nota;
-        }
+            $notaEnviada = array_key_exists('nota_evaluacion', $datos);
+            $meta = $this->metaEvaluacion($actual, (int)($actual['sesion_id'] ?? 0));
+            $nota = !$meta['requiere'] && $notaEnviada && ($datos['nota_evaluacion'] ?? '') !== ''
+                ? $this->exigirNota($datos['nota_evaluacion'])
+                : $this->resolverNota(
+                    $datos['nota_evaluacion'] ?? null,
+                    $notaEnviada,
+                    $meta,
+                    $actual['nota_evaluacion'] ?? null
+                );
 
-        $antes = $this->recorteAuditable($actual);
+            if (!$resultadoEnviado && $resultado !== self::RESULTADO_APROBADO) {
+                $actualConNota = $actual;
+                if ($nota !== null) {
+                    $actualConNota['nota_evaluacion'] = $nota;
+                }
+                if ($this->puedePromoverAprobado($actualConNota, $meta)) {
+                    $resultado = self::RESULTADO_APROBADO;
+                }
+            }
 
-        return $this->repo->transaccion(function () use ($id, $campos, $antes, $actor, $venceManual): array {
+            $this->exigirNotaParaAprobado($resultado, $nota, $meta);
+            $this->exigirEvidenciaParaAprobado(
+                $resultado,
+                $actual,
+                (int)($actual['sesion_id'] ?? 0),
+                $asigId
+            );
+            $observaciones = nullable_trimmed_string($datos['observaciones'] ?? null);
+            $venceManual = array_key_exists('fecha_vencimiento', $datos)
+                && $datos['fecha_vencimiento'] !== null
+                && trim((string)$datos['fecha_vencimiento']) !== '';
+            $vence = $venceManual
+                ? $this->exigirFechaVencimiento($datos['fecha_vencimiento'])
+                : $this->vencimiento->fechaVencimientoDeAsignacion($asigId, $fecha);
+
+            $campos = [
+                'fecha_realizacion' => $fecha,
+                'resultado' => $resultado !== '' ? $resultado : ($actual['resultado'] ?? null),
+                'horas_efectivas' => $horas,
+                'fecha_vencimiento' => $vence,
+                'registrado_por_usuario_id_ext' => $usuarioId,
+            ];
+            if ($observaciones !== null || array_key_exists('observaciones', $datos)) {
+                $campos['observaciones'] = $observaciones;
+            }
+            if ($notaEnviada || ($meta['requiere'] && $nota !== null)) {
+                $campos['nota_evaluacion'] = $nota;
+            }
+
             $this->repo->actualizar($id, $campos);
             $despuesFila = $this->ver($id);
             if ($actor !== null) {
@@ -2007,5 +2100,101 @@ class CumplimientoService
             'created_at' => $fila['created_at'] ?? null,
             'updated_at' => $fila['updated_at'] ?? null,
         ];
+    }
+
+    /**
+     * Si el cumplimiento ya tiene nota (si aplica) y soporte (si aplica), pasa ASISTIO → APROBADO.
+     * Así no queda en Pendientes con certificado cargado.
+     */
+    public function promoverAprobadoSiCorresponde(int $cumplimientoId): bool
+    {
+        $fila = $this->repo->buscarPorId($cumplimientoId);
+        if ($fila === null) {
+            return false;
+        }
+
+        $actual = strtoupper((string)($fila['resultado'] ?? ''));
+        if ($actual === self::RESULTADO_APROBADO) {
+            return false;
+        }
+        if ($actual !== '' && $actual !== 'ASISTIO' && $actual !== 'TARDE') {
+            return false;
+        }
+
+        $meta = $this->metaEvaluacion($fila, (int)($fila['sesion_id'] ?? 0));
+        if (!$this->puedePromoverAprobado($fila, $meta)) {
+            return false;
+        }
+
+        $this->repo->actualizar($cumplimientoId, ['resultado' => self::RESULTADO_APROBADO]);
+
+        return true;
+    }
+
+    /**
+     * Backfill: cumplimientos ASISTIO/TARDE que ya cumplen reglas de APROBADO.
+     */
+    public function promoverAprobadosPendientes(): int
+    {
+        $filas = $this->repo->listarParaPromocionAprobado();
+        $n = 0;
+        foreach ($filas as $fila) {
+            if ($this->promoverAprobadoSiCorresponde((int)$fila['cumplimiento_id'])) {
+                $n++;
+            }
+        }
+
+        return $n;
+    }
+
+    private static bool $aprobadosAsegurados = false;
+
+    /** Una vez por proceso PHP: ASISTIO con nota/soporte → APROBADO. */
+    public static function asegurarAprobadosPendientes(): void
+    {
+        if (self::$aprobadosAsegurados) {
+            return;
+        }
+        self::$aprobadosAsegurados = true;
+
+        try {
+            (new self())->promoverAprobadosPendientes();
+        } catch (\Throwable $e) {
+            // No bloquear la API.
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $fila
+     * @param array{requiere:bool,minima:float} $meta
+     */
+    private function puedePromoverAprobado(array $fila, array $meta): bool
+    {
+        $id = (int)($fila['cumplimiento_id'] ?? 0);
+        $soportes = $id > 0 ? $this->soportes->contar($id) : 0;
+        $tieneNota = $fila['nota_evaluacion'] !== null && $fila['nota_evaluacion'] !== '';
+
+        if ($meta['requiere']) {
+            if (!$tieneNota) {
+                return false;
+            }
+            if (round((float)$fila['nota_evaluacion'], 2) < $meta['minima']) {
+                return false;
+            }
+        }
+
+        $requiereEvidencia = (int)($fila['capacitacion_certificado'] ?? 0) === 1
+            || (int)($fila['capacitacion_requiere_listado'] ?? 0) === 1
+            || (int)($fila['requiere_listado_asistencia'] ?? 0) === 1;
+        if ($requiereEvidencia && $soportes < 1) {
+            return false;
+        }
+
+        // Sin exigencias formales: solo cerrar si hay nota o soporte (cierre real, no asistencia suelta).
+        if (!$meta['requiere'] && !$requiereEvidencia) {
+            return $tieneNota || $soportes > 0;
+        }
+
+        return true;
     }
 }

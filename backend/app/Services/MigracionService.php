@@ -17,8 +17,9 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Carga inicial de historial: Excel → ejecuciones reales → vigencia de catálogo → Alertas.
+ * Carga inicial de historial: Excel → ejecuciones reales → vencimiento (matriz/catálogo) → Alertas.
  * Al confirmar: crea capacitaciones faltantes y actualiza las que diferan del Excel.
+ * Altas nuevas: vigencia 1 año + periodicidad anual si existen en catálogo.
  * No crea personas, matriz ni asignaciones pendientes.
  * Cada cumplimiento requiere un contenedor de asignación (FK); fecha_limite = fecha_realizacion.
  */
@@ -369,14 +370,15 @@ class MigracionService
                 );
                 $capsACrear++;
                 $capsOk++;
+                $defaultsVig = $this->defaultsVigenciaAnual();
                 $alta = $payloadExcel + [
                     'codigo' => $codigo,
                     'tipo_capacitacion_id' => $tipoGeneralId,
                     'evaluacion' => 0,
                     'nota_minima' => 0,
-                    'vigencia_id' => null,
+                    'vigencia_id' => $defaultsVig['vigencia_id'],
                     'categoria_id' => null,
-                    'periodicidad_default_id' => null,
+                    'periodicidad_default_id' => $defaultsVig['periodicidad_default_id'],
                     'certificado' => 0,
                     'es_tarea_critica' => 0,
                     'requiere_listado_asistencia' => 0,
@@ -394,8 +396,8 @@ class MigracionService
                     'horas' => $horasExcel,
                     'evaluacion' => false,
                     'nota_minima' => 0.0,
-                    'vigencia_cantidad' => null,
-                    'vigencia_unidad' => null,
+                    'vigencia_cantidad' => $defaultsVig['vigencia_cantidad'],
+                    'vigencia_unidad' => $defaultsVig['vigencia_unidad'],
                     'estado' => 'ACTIVA',
                 ];
                 continue;
@@ -1170,6 +1172,30 @@ class MigracionService
      * @param array<string,mixed> $existente
      * @param array<string,mixed> $payloadExcel
      */
+    /**
+     * Defaults de alta desde Excel: vigencia 1 año + periodicidad anual (si el catálogo las tiene).
+     *
+     * @return array{
+     *   vigencia_id:?int,
+     *   periodicidad_default_id:?int,
+     *   vigencia_cantidad:?int,
+     *   vigencia_unidad:?string
+     * }
+     */
+    private function defaultsVigenciaAnual(): array
+    {
+        $venc = new VencimientoService();
+        $vig = $venc->vigenciaAnual();
+        $perId = $venc->periodicidadAnualId();
+
+        return [
+            'vigencia_id' => $vig !== null ? $vig['vigencia_id'] : null,
+            'periodicidad_default_id' => $perId,
+            'vigencia_cantidad' => $vig !== null ? $vig['cantidad'] : null,
+            'vigencia_unidad' => $vig !== null ? $vig['unidad'] : null,
+        ];
+    }
+
     private function capacitacionDifiereDelExcel(array $existente, array $payloadExcel): bool
     {
         if (trim((string)($existente['nombre'] ?? '')) !== trim((string)($payloadExcel['nombre'] ?? ''))) {

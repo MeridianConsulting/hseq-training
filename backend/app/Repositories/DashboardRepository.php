@@ -363,7 +363,8 @@ class DashboardRepository
                 'LEFT JOIN tipos_capacitacion t ON t.tipo_capacitacion_id = cap.tipo_capacitacion_id',
                 'AND (a.origen IN (\'INDUCCION\', \'REINDUCCION\') OR ('
                     . 't.nombre IS NOT NULL AND ' . $this->sqlNombreInduccion('t.nombre')
-                    . '))',
+                    . ') OR ' . $this->sqlNombreInduccion('cap.nombre')
+                    . ')',
                 [],
             ];
         }
