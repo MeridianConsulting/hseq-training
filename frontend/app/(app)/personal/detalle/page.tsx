@@ -16,7 +16,7 @@ import { ListaCargando } from "@/components/ui/filtros-activos";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table } from "@/components/ui/table";
 import { ArrowLeft } from "lucide-react";
-import { apiGet, apiPost, apiPostForm, withQuery, type ListaPaginada } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPostForm, withQuery, type ListaPaginada } from "@/lib/api";
 import { humanizarNombreUnidad } from "@/lib/catalogos";
 import type { Asignacion, Capacitacion, Cumplimiento, PerfilTrabajador, PersonaCorporativa } from "@/lib/tipos";
 
@@ -152,6 +152,29 @@ function Contenido() {
   useEffect(() => {
     void cargarPerfil();
   }, [cargarPerfil]);
+
+  async function eliminarHistorial(item: Cumplimiento) {
+    const etiqueta = etiquetaCapacitacion(item);
+    if (
+      !confirm(
+        `¿Eliminar el historial de "${etiqueta}" (${formatoFecha(item.fecha_realizacion)})? Se borrarán también los soportes adjuntos.`,
+      )
+    ) {
+      return;
+    }
+    const r = await apiDelete(`/api/cumplimientos/${item.cumplimiento_id}`);
+    if (r.cancelada) {
+      return;
+    }
+    if (!r.success) {
+      setError(r.message || "No fue posible eliminar el historial.");
+      setMensaje(null);
+      return;
+    }
+    setMensaje(r.message || "Historial eliminado correctamente.");
+    setError(null);
+    await cargarPerfil();
+  }
 
   if (cargando) {
     return <ListaCargando />;
@@ -295,9 +318,21 @@ function Contenido() {
             <ListaEvidencias key={`s-${item.cumplimiento_id}`} soportes={item.soportes ?? []} />,
             ...(puede("cumplimientos.editar")
               ? [
-                  <Button key="e" type="button" variante="ghost" className="px-2" onClick={() => setEditando(item)}>
-                    Editar
-                  </Button>,
+                  <div key="a" className="flex justify-end gap-1">
+                    <Button type="button" variante="ghost" className="px-2" onClick={() => setEditando(item)}>
+                      Editar
+                    </Button>
+                    {item.sesion_id == null ? (
+                      <Button
+                        type="button"
+                        variante="ghost"
+                        className="px-2"
+                        onClick={() => void eliminarHistorial(item)}
+                      >
+                        Eliminar
+                      </Button>
+                    ) : null}
+                  </div>,
                 ]
               : []),
           ])}

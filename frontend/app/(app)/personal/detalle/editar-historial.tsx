@@ -66,36 +66,43 @@ export function EditarHistorial({
     }
 
     setEnviando(true);
+
+    // Primero los archivos: si el curso exige certificado, el PUT no puede pasar sin soporte en BD.
+    if (archivos.length > 0) {
+      const errArchivos = await subirSoportes(item.cumplimiento_id, archivos);
+      if (errArchivos) {
+        setEnviando(false);
+        setError(errArchivos);
+        return;
+      }
+    }
+
     const body: Record<string, string | number | null> = {
       fecha_realizacion: fecha,
       nota_evaluacion: Number(nota.replace(",", ".")),
       horas_efectivas: item.horas_efectivas ?? 1,
       observaciones: item.observaciones ?? null,
+      resultado: "APROBADO",
     };
     if (!ligadoASesion) {
       body.capacitacion_id = Number(capacitacionId);
-    }
-    if (soportes.length > 0) {
-      body.resultado = "APROBADO";
     }
 
     const r = await apiFetch<Cumplimiento>(`/api/cumplimientos/${item.cumplimiento_id}`, {
       method: "PUT",
       body: JSON.stringify(body),
     });
+    setEnviando(false);
     if (r.cancelada) {
-      setEnviando(false);
       return;
     }
     if (!r.success) {
-      setEnviando(false);
-      setError(r.message || "No fue posible actualizar el historial.");
-      return;
-    }
-    const errArchivos = archivos.length > 0 ? await subirSoportes(item.cumplimiento_id, archivos) : null;
-    setEnviando(false);
-    if (errArchivos) {
-      setError(`Los datos se actualizaron, pero un soporte no se cargó: ${errArchivos}`);
+      setError(
+        r.message ||
+          (archivos.length > 0
+            ? "El archivo se cargó, pero no fue posible actualizar el resto del historial."
+            : "No fue posible actualizar el historial."),
+      );
       return;
     }
     await onGuardado(r.message || "Historial actualizado.");

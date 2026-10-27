@@ -172,6 +172,7 @@ $router->group(['prefix' => '/api', 'middleware' => [AuthMiddleware::class]], fu
         $router->get('/{id}/soportes', [CumplimientoController::class, 'soportes'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
         $router->post('/{id}/soportes', [CumplimientoController::class, 'storeSoporte'], [[PermisoMiddleware::class, 'cumplimientos.crear']]);
         $router->put('/{id}', [CumplimientoController::class, 'update'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
+        $router->delete('/{id}', [CumplimientoController::class, 'destroy'], [[PermisoMiddleware::class, 'cumplimientos.editar']]);
         $router->get('/{id}', [CumplimientoController::class, 'show'], [[PermisoMiddleware::class, 'cumplimientos.ver']]);
     });
 

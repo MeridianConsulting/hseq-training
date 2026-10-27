@@ -263,6 +263,12 @@ class CumplimientoController extends Controller
         $this->success($actualizado, 'Cumplimiento actualizado');
     }
 
+    public function destroy(Request $request, string $id): void
+    {
+        $mensaje = $this->service->eliminar((int)$id, AuditoriaService::actorDe($request));
+        $this->success(null, $mensaje);
+    }
+
     public function soportes(Request $request, string $id): void
     {
         $this->success($this->soportes->listar((int)$id), 'Soportes del cumplimiento');

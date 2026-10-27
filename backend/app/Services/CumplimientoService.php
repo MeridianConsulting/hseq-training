@@ -1399,6 +1399,63 @@ class CumplimientoService
         });
     }
 
+    /**
+     * Elimina un historial manual (sin sesión): soportes, cumplimiento y contenedor de asignación.
+     *
+     * @param array{usuario_id:?int,nombre:?string,ip:?string}|null $actor
+     */
+    public function eliminar(int $id, ?array $actor = null): string
+    {
+        $actual = $this->repo->buscarPorId($id);
+        if ($actual === null) {
+            throw new HttpException('El cumplimiento no existe.', 404);
+        }
+        if (($actual['sesion_id'] ?? null) !== null) {
+            throw new HttpException(
+                'No se puede eliminar un cumplimiento ligado a una sesión. Anule la asistencia desde Sesiones.',
+                422
+            );
+        }
+
+        $asigId = (int)$actual['asignacion_id'];
+        $antes = [
+            'cumplimiento_id' => $id,
+            'asignacion_id' => $asigId,
+            'persona_id_ext' => $actual['persona_id_ext'] ?? null,
+            'capacitacion_codigo' => $actual['capacitacion_codigo'] ?? null,
+            'capacitacion_nombre' => $actual['capacitacion_nombre'] ?? null,
+            'fecha_realizacion' => $actual['fecha_realizacion'] ?? null,
+            'resultado' => $actual['resultado'] ?? null,
+        ];
+
+        return $this->repo->transaccion(function () use ($id, $asigId, $antes, $actor): string {
+            $this->soportes->eliminarArchivosDeCumplimiento($id);
+            $this->repo->eliminar($id);
+
+            $asigRepo = new AsignacionRepository();
+            if (!$asigRepo->tieneParticipacionSesion($asigId) && !$asigRepo->tienePlanDetalle($asigId)) {
+                $asigRepo->eliminar($asigId);
+            }
+
+            if ($actor !== null) {
+                $this->auditoria->deActor(
+                    $actor,
+                    'eliminar',
+                    'cumplimientos_capacitacion',
+                    $id,
+                    [
+                        'origen' => AuditoriaService::ORIGEN_USUARIO,
+                        'mensaje' => 'Historial eliminado desde Personal corporativo',
+                        'antes' => $antes,
+                    ],
+                    $antes
+                );
+            }
+
+            return 'Historial eliminado correctamente.';
+        });
+    }
+
     public function mensajeMasivo(array $resultado): string
     {
         $n = (int)$resultado['completados'];

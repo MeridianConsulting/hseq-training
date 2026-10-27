@@ -157,6 +157,11 @@ class CumplimientoRepository
         );
     }
 
+    public function eliminar(int $id): int
+    {
+        return $this->db->delete('cumplimientos_capacitacion', 'cumplimiento_id = ?', [$id]);
+    }
+
     public function participanteEnSesion(int $sesionId, int $asignacionId): ?array
     {
         $personas = Database::personalTable('personas');
